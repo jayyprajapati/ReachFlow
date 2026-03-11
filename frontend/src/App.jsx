@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import RecipientList from './components/RecipientList.jsx';
+import GroupManager from './components/GroupManager.jsx';
 import { Mail, Users, Send, Clock, Heart, ChevronDown, LayoutGrid } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
@@ -126,13 +127,9 @@ export default function App() {
   const variableKeys = useMemo(() => ['name', ...variables.map(v => v.key)], [variables]);
 
   const [groups, setGroups] = useState([]);
-  const [groupDrawer, setGroupDrawer] = useState(null); // null | 'create' | group object
-  const [groupTitle, setGroupTitle] = useState('');
-  const [groupRecipients, setGroupRecipients] = useState([]);
-  const [groupErrors, setGroupErrors] = useState({ recipients: {} });
+  const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   const [importedGroupId, setImportedGroupId] = useState(null);
   const [importedGroupEmails, setImportedGroupEmails] = useState([]);
-  const [pendingGroupExtras, setPendingGroupExtras] = useState(0);
 
   const [templates, setTemplates] = useState([]);
   const [templateDrawer, setTemplateDrawer] = useState(null); // null | 'create' | tpl object
@@ -197,14 +194,6 @@ export default function App() {
     if (!recipients.some(r => r._id === previewRecipientId)) setPreviewRecipientId(recipients[0]._id);
   }, [recipients, previewRecipientId]);
 
-  useEffect(() => {
-    if (!importedGroupId) { setPendingGroupExtras(0); return; }
-    const base = new Set((importedGroupEmails || []).map(e => (e || '').toLowerCase()));
-    setPendingGroupExtras(recipients.filter(r => {
-      const e = (r.email || '').toLowerCase();
-      return e && emailRegex.test(e) && r.name && !base.has(e);
-    }).length);
-  }, [recipients, importedGroupId, importedGroupEmails]);
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
@@ -393,7 +382,7 @@ export default function App() {
   };
 
   const loadHistory = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/campaigns`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); setHistory(d); } catch (e) { setNotice({ type: 'error', message: e.message || 'Failed to load history' }); } };
-  const loadGroups = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/groups`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setGroups(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
+  const loadGroups = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/groups`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setGroups(d); } catch (e) { /* ignore silently — GroupManager handles its own loading */ } };
   const loadTemplates = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/templates`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setTemplates(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
   const loadVariables = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/variables`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setVariables(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
 
@@ -610,59 +599,20 @@ export default function App() {
 
   /* ── group actions ── */
 
-  function importGroup(g) {
-    const m = (g.recipients || []).map(r => ({ ...r, _id: uid(), status: 'pending' }));
-    setRecipients(m); setPreviewRecipientId(m[0]?._id || null); setErrors({ recipients: {} });
-    setImportedGroupId(g.id); setImportedGroupEmails((g.recipients || []).map(r => r.email));
-    setNotice({ type: 'info', message: `Imported "${g.title}"` });
-  }
-
-  function openGroupDrawer(target) {
-    if (target === 'create') {
-      setGroupTitle(''); setGroupRecipients(recipients.map(r => ({ ...r, _id: r._id || uid() }))); setGroupErrors({ recipients: {} });
-    } else {
-      setGroupTitle(target.title); setGroupRecipients((target.recipients || []).map(r => ({ ...r, _id: r._id || uid() }))); setGroupErrors({ recipients: {} });
-    }
-    setGroupDrawer(target);
-  }
-
-  async function saveGroupDrawer() {
-    const { recErrors, general } = valRecs(groupRecipients);
-    const ne = { recipients: recErrors };
-    if (!groupTitle.trim()) ne.title = 'Required';
-    if (general) ne.general = general;
-    setGroupErrors(ne);
-    if (ne.title || ne.general || Object.keys(recErrors).length) return;
-    try {
-      const isCreate = groupDrawer === 'create';
-      const url = isCreate ? `${API_BASE}/api/groups` : `${API_BASE}/api/groups/${groupDrawer.id}`;
-      const method = isCreate ? 'POST' : 'PATCH';
-      const payload = isCreate ? { title: groupTitle.trim(), recipients: groupRecipients.map(san) } : { title: groupTitle.trim(), recipients: groupRecipients.map(san) };
-      const res = await apiFetch(url, { method, headers: hdrs, body: JSON.stringify(payload) });
-      const d = await res.json(); if (!res.ok) throw new Error(d.error || 'Failed');
-      setNotice({ type: 'success', message: isCreate ? 'Group created' : 'Group saved' });
-      setGroupDrawer(null); await loadGroups();
-    } catch (e) { setNotice({ type: 'error', message: e.message }); }
-  }
-
-  async function updateImportedGroup() {
-    if (!importedGroupId) return;
-    const base = new Set((importedGroupEmails || []).map(e => e.toLowerCase()));
-    const extras = recipients.map(san).filter(r => r.email && !base.has(r.email) && emailRegex.test(r.email) && r.name);
-    if (!extras.length) { setNotice({ type: 'info', message: 'No new recipients to add' }); return; }
-    try {
-      const res = await apiFetch(`${API_BASE}/api/groups/${importedGroupId}/append`, { method: 'POST', headers: hdrs, body: JSON.stringify({ recipients: extras }) });
-      const d = await res.json(); if (!res.ok) throw new Error(d.error);
-      setImportedGroupEmails(prev => [...prev, ...extras.map(r => r.email)]); setPendingGroupExtras(0);
-      setNotice({ type: 'success', message: `Added ${d.added || extras.length} to group` });
-    } catch (e) { setNotice({ type: 'error', message: e.message }); }
-  }
-
-  function valRecs(list) {
-    const recErrors = {}; let general;
-    if (!list.length) general = 'Need at least one recipient';
-    list.forEach(r => { const e = {}; if (!emailRegex.test(r.email || '')) e.email = 'Invalid'; if (!r.name?.trim()) e.name = 'Required'; if (Object.keys(e).length) recErrors[r._id] = e; });
-    return { recErrors, general };
+  function handleGroupImport(contacts, groupData) {
+    const m = (contacts || []).map(c => ({
+      _id: uid(),
+      email: c.email || '',
+      name: c.name || '',
+      variables: {},
+      status: 'pending',
+    }));
+    setRecipients(m);
+    setPreviewRecipientId(m[0]?._id || null);
+    setErrors({ recipients: {} });
+    setImportedGroupId(groupData?.id || null);
+    setImportedGroupEmails((contacts || []).map(c => c.email));
+    setNotice({ type: 'info', message: `Imported ${contacts.length} contacts from "${groupData?.companyName || 'group'}"` });
   }
 
   /* ── template actions ── */
@@ -701,22 +651,6 @@ export default function App() {
       setNotice({ type: 'error', message: e.message });
     }
   }
-
-  /* ── group recipient helpers for drawer ── */
-
-  function grUpdate(idx, field, value) {
-    setGroupRecipients(prev => { const n = [...prev]; n[idx] = { ...n[idx], [field]: value, _id: n[idx]._id || uid() }; return n; });
-  }
-  function grDelete(idx) { setGroupRecipients(p => p.filter((_, i) => i !== idx)); }
-  function grVar(idx, key, value) { setGroupRecipients(prev => { const n = [...prev]; if (!n[idx]) return prev; n[idx] = { ...n[idx], variables: { ...(n[idx].variables || {}), [key]: value } }; return n; }); }
-  function grBlur(idx) {
-    setGroupRecipients(prev => {
-      const n = [...prev], r = n[idx]; if (!r || !emailRegex.test(r.email || '')) return prev;
-      n[idx] = { ...r, name: r.name?.trim() ? r.name : nameFrom(r.email) };
-      return n;
-    });
-  }
-  function grAdd() { setGroupRecipients(p => [...p, { _id: uid(), email: '', name: '', variables: {} }]); }
 
   /* ── render ── */
 
@@ -876,142 +810,141 @@ export default function App() {
 
       {/* ── MAIN ── */}
       <main className="main">
-          {/* LEFT */}
-          <section className="side">
-            <div className="side__scroll">
+        {/* LEFT */}
+        <section className="side">
+          <div className="side__scroll">
 
-              {/* Sender */}
-              <div className="card">
-                <div className="card__head">
-                  <span className="card__title"><Mail size={16} /> Sender</span>
-                  <button className="link" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName}>
-                    {savingSenderName ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-                <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
-                {errors.sender && <small className="err">{errors.sender}</small>}
+            {/* Sender */}
+            <div className="card">
+              <div className="card__head">
+                <span className="card__title"><Mail size={16} /> Sender</span>
+                <button className="link" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName}>
+                  {savingSenderName ? 'Saving…' : 'Save'}
+                </button>
               </div>
+              <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
+              {errors.sender && <small className="err">{errors.sender}</small>}
+            </div>
 
-              {/* Recipients */}
-              <div className="card">
-                <div className="card__head">
-                  <span className="card__title"><Users size={16} /> Recipients</span>
+            {/* Recipients */}
+            <div className="card">
+              <div className="card__head">
+                <span className="card__title"><Users size={16} /> Recipients</span>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
                   <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : 'Paste bulk'}</button>
                 </div>
-
-                {bulkMode ? (
-                  <textarea className="inp inp--area" rows={5} placeholder="Paste emails (comma / newline separated)" value={bulkInput} onChange={e => setBulkInput(e.target.value)} onPaste={e => { e.preventDefault(); doBulkPaste(e.clipboardData?.getData('text') || ''); }} />
-                ) : (
-                  <>
-                    <RecipientList recipients={recipients} variables={variables} onChangeField={updateRecipient} onChangeVariable={updateRecipientVariable} onDelete={deleteRecipient} onEmailBlur={onEmailBlur} fieldErrors={errors.recipients} />
-                    <button className="link" onClick={addRow}>+ Add recipient</button>
-                  </>
-                )}
-                {errors.recipientsGeneral && <small className="err">{errors.recipientsGeneral}</small>}
-
-                {pendingGroupExtras > 0 && (
-                  <div className="note">{pendingGroupExtras} new — <button className="link" onClick={updateImportedGroup}>sync to group</button></div>
-                )}
               </div>
 
-              {/* Variables */}
-              <div className="card">
-                <div className="card__head">
-                  <span className="card__title"><Clock size={16} /> Variables</span>
-                </div>
-                {variables.length ? (
-                  <div className="group-chips" style={{ gap: 8 }}>
-                    {variables.map(v => (
-                      <div className="group-chip" key={v.id} style={{ maxWidth: '100%' }}>
-                        <div className="group-chip__info">
-                          <span className="group-chip__name">{`{{${v.key}}}`}</span>
-                          <span className="group-chip__count">{v.label}{v.required ? ' • required' : ''}</span>
-                        </div>
+              {bulkMode ? (
+                <textarea className="inp inp--area" rows={5} placeholder="Paste emails (comma / newline separated)" value={bulkInput} onChange={e => setBulkInput(e.target.value)} onPaste={e => { e.preventDefault(); doBulkPaste(e.clipboardData?.getData('text') || ''); }} />
+              ) : (
+                <>
+                  <RecipientList recipients={recipients} variables={variables} onChangeField={updateRecipient} onChangeVariable={updateRecipientVariable} onDelete={deleteRecipient} onEmailBlur={onEmailBlur} fieldErrors={errors.recipients} />
+                  <button className="link" onClick={addRow}>+ Add recipient</button>
+                </>
+              )}
+              {errors.recipientsGeneral && <small className="err">{errors.recipientsGeneral}</small>}
+            </div>
+
+            {/* Variables */}
+            <div className="card">
+              <div className="card__head">
+                <span className="card__title"><Clock size={16} /> Variables</span>
+              </div>
+              {variables.length ? (
+                <div className="group-chips" style={{ gap: 8 }}>
+                  {variables.map(v => (
+                    <div className="group-chip" key={v.id} style={{ maxWidth: '100%' }}>
+                      <div className="group-chip__info">
+                        <span className="group-chip__name">{`{{${v.key}}}`}</span>
+                        <span className="group-chip__count">{v.label}{v.required ? ' • required' : ''}</span>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="muted">No custom variables yet.</p>}
+              <div className="field">
+                <input className="inp" placeholder="Key (e.g. position)" value={varForm.key} onChange={e => setVarForm(f => ({ ...f, key: e.target.value.toLowerCase() }))} />
+              </div>
+              <div className="field">
+                <input className="inp" placeholder="Label" value={varForm.label} onChange={e => setVarForm(f => ({ ...f, label: e.target.value }))} />
+              </div>
+              <div className="field">
+                <input className="inp" placeholder="Description (optional)" value={varForm.description} onChange={e => setVarForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#555' }}>
+                <input type="checkbox" checked={varForm.required} onChange={e => setVarForm(f => ({ ...f, required: e.target.checked }))} /> Required for recipients
+              </label>
+              <button className="btn btn--ghost" onClick={createVariable} style={{ alignSelf: 'flex-start' }}>Add variable</button>
+            </div>
+
+            {/* Delivery */}
+            <div className="card">
+              <div className="card__head">
+                <span className="card__title"><Send size={16} /> Delivery</span>
+              </div>
+
+              <div className="delivery-row">
+                <div className="delivery-col">
+                  <span className="lbl--upper">Timing</span>
+                  <div className="toggle-row">
+                    <button className={`tog ${deliveryMode === 'now' ? 'tog--on' : ''}`} onClick={() => { setDeliveryMode('now'); setErrors(p => ({ ...p, scheduledAt: undefined })); }}>Send now</button>
+                    <button className={`tog ${deliveryMode === 'schedule' ? 'tog--on' : ''}`} onClick={() => setDeliveryMode('schedule')}>Schedule</button>
+                  </div>
+                  {deliveryMode === 'schedule' && <input className="inp" type="datetime-local" value={scheduledAt} onChange={e => { setScheduledAt(e.target.value); if (errors.scheduledAt) { const d = new Date(e.target.value); if (e.target.value && !Number.isNaN(d.getTime()) && d.getTime() > Date.now()) setErrors(p => ({ ...p, scheduledAt: undefined })); } }} style={{ marginTop: 4 }} />}
+                  {errors.scheduledAt && <small className="err">{errors.scheduledAt}</small>}
+                </div>
+
+                <div className="delivery-col">
+                  <span className="lbl--upper">Send type</span>
+                  <div className="toggle-row">
+                    <button className={`tog ${sendMode === 'individual' ? 'tog--on' : ''}`} onClick={() => setSendMode('individual')}>Individual</button>
+                    <button className={`tog ${sendMode === 'single' ? 'tog--on' : ''}`} onClick={() => setSendMode('single')}>Single</button>
+                  </div>
+                </div>
+              </div>
+              <p className="hint">Individual mode personalizes each email with {'{{name}}'}</p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* RIGHT */}
+        <section className="compose">
+          <div className="compose__inner">
+            <div className="compose__scroll">
+              <input className="compose__subject" value={subject} onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }} placeholder="Subject line" />
+              {errors.subject && <span className="err--blue">{errors.subject}</span>}
+
+              <div className="compose__editor">
+                <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved keys</p>
+                <div className="quill-wrap">
+                  <ReactQuill ref={quillRef} theme="snow" value={body} onChange={v => { setBody(v); if (errors.body && strip(v)) setErrors(p => ({ ...p, body: undefined })); }} modules={QUILL_MODULES} placeholder="Write your email…" />
+                </div>
+                {slashMenu.open && (
+                  <div className="slash-menu" style={{ position: 'fixed', top: slashMenu.top, left: slashMenu.left, zIndex: 100 }}>
+                    {variableKeys.map((opt, idx) => (
+                      <button
+                        key={opt}
+                        className={idx === slashHighlight ? 'active' : ''}
+                        onMouseDown={e => { e.preventDefault(); insertVariable(opt); }}
+                      >
+                        {`{{${opt}}}`}
+                      </button>
                     ))}
                   </div>
-                ) : <p className="muted">No custom variables yet.</p>}
-                <div className="field">
-                  <input className="inp" placeholder="Key (e.g. position)" value={varForm.key} onChange={e => setVarForm(f => ({ ...f, key: e.target.value.toLowerCase() }))} />
-                </div>
-                <div className="field">
-                  <input className="inp" placeholder="Label" value={varForm.label} onChange={e => setVarForm(f => ({ ...f, label: e.target.value }))} />
-                </div>
-                <div className="field">
-                  <input className="inp" placeholder="Description (optional)" value={varForm.description} onChange={e => setVarForm(f => ({ ...f, description: e.target.value }))} />
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#555' }}>
-                  <input type="checkbox" checked={varForm.required} onChange={e => setVarForm(f => ({ ...f, required: e.target.checked }))} /> Required for recipients
-                </label>
-                <button className="btn btn--ghost" onClick={createVariable} style={{ alignSelf: 'flex-start' }}>Add variable</button>
+                )}
               </div>
+              {errors.body && <span className="err--blue">{errors.body}</span>}
 
-              {/* Delivery */}
-              <div className="card">
-                <div className="card__head">
-                  <span className="card__title"><Send size={16} /> Delivery</span>
-                </div>
-
-                <div className="delivery-row">
-                  <div className="delivery-col">
-                    <span className="lbl--upper">Timing</span>
-                    <div className="toggle-row">
-                      <button className={`tog ${deliveryMode === 'now' ? 'tog--on' : ''}`} onClick={() => { setDeliveryMode('now'); setErrors(p => ({ ...p, scheduledAt: undefined })); }}>Send now</button>
-                      <button className={`tog ${deliveryMode === 'schedule' ? 'tog--on' : ''}`} onClick={() => setDeliveryMode('schedule')}>Schedule</button>
-                    </div>
-                    {deliveryMode === 'schedule' && <input className="inp" type="datetime-local" value={scheduledAt} onChange={e => { setScheduledAt(e.target.value); if (errors.scheduledAt) { const d = new Date(e.target.value); if (e.target.value && !Number.isNaN(d.getTime()) && d.getTime() > Date.now()) setErrors(p => ({ ...p, scheduledAt: undefined })); } }} style={{ marginTop: 4 }} />}
-                    {errors.scheduledAt && <small className="err">{errors.scheduledAt}</small>}
-                  </div>
-
-                  <div className="delivery-col">
-                    <span className="lbl--upper">Send type</span>
-                    <div className="toggle-row">
-                      <button className={`tog ${sendMode === 'individual' ? 'tog--on' : ''}`} onClick={() => setSendMode('individual')}>Individual</button>
-                      <button className={`tog ${sendMode === 'single' ? 'tog--on' : ''}`} onClick={() => setSendMode('single')}>Single</button>
-                    </div>
-                  </div>
-                </div>
-                <p className="hint">Individual mode personalizes each email with {'{{name}}'}</p>
-              </div>
-
-            </div>
-          </section>
-
-          {/* RIGHT */}
-          <section className="compose">
-            <div className="compose__inner">
-              <div className="compose__scroll">
-                <input className="compose__subject" value={subject} onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }} placeholder="Subject line" />
-                {errors.subject && <span className="err--blue">{errors.subject}</span>}
-
-                <div className="compose__editor">
-                  <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved keys</p>
-                  <div className="quill-wrap">
-                    <ReactQuill ref={quillRef} theme="snow" value={body} onChange={v => { setBody(v); if (errors.body && strip(v)) setErrors(p => ({ ...p, body: undefined })); }} modules={QUILL_MODULES} placeholder="Write your email…" />
-                  </div>
-                  {slashMenu.open && (
-                    <div className="slash-menu" style={{ position: 'fixed', top: slashMenu.top, left: slashMenu.left, zIndex: 100 }}>
-                      {variableKeys.map((opt, idx) => (
-                        <button
-                          key={opt}
-                          className={idx === slashHighlight ? 'active' : ''}
-                          onMouseDown={e => { e.preventDefault(); insertVariable(opt); }}
-                        >
-                          {`{{${opt}}}`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {errors.body && <span className="err--blue">{errors.body}</span>}
-
-                <div className="compose__actions">
-                  <button className="btn btn--outline" onClick={() => saveDraft(true)} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
-                  <button className="btn btn--white" onClick={doPreview} disabled={isPreviewing || !gmailConnected}>{isPreviewing ? 'Loading…' : 'Preview & Send'}</button>
-                </div>
+              <div className="compose__actions">
+                <button className="btn btn--outline" onClick={() => saveDraft(true)} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
+                <button className="btn btn--white" onClick={doPreview} disabled={isPreviewing || !gmailConnected}>{isPreviewing ? 'Loading…' : 'Preview & Send'}</button>
               </div>
             </div>
-          </section>
+          </div>
+        </section>
       </main>
 
       {/* ── FOOTER ── */}
@@ -1083,21 +1016,20 @@ export default function App() {
           <div className="utility-panel utility-panel--stack">
             <div className="utility-panel__head">
               <h4>Groups</h4>
-              <button className="link" onClick={() => openGroupDrawer('create')}>+ New group</button>
+              <button className="link" onClick={() => { setUtilityDrawerOpen(false); setGroupManagerOpen(true); }}>Manage Groups</button>
             </div>
             {groups.length ? (
               <div className="group-chips">
                 {groups.map(g => (
-                  <div className="group-chip" key={g.id} onClick={() => openGroupDrawer(g)}>
+                  <div className="group-chip" key={g.id} onClick={() => { setUtilityDrawerOpen(false); setGroupManagerOpen(true); }}>
                     <div className="group-chip__info">
-                      <span className="group-chip__name">{g.title}</span>
-                      <span className="group-chip__count">{g.recipients?.length || 0}</span>
+                      <span className="group-chip__name">{g.companyName}</span>
+                      <span className="group-chip__count">{g.contactCount ?? 0} contacts</span>
                     </div>
-                    <button className="group-chip__import" onClick={e => { e.stopPropagation(); importGroup(g); setUtilityDrawerOpen(false); }}>Import</button>
                   </div>
                 ))}
               </div>
-            ) : <p className="muted">No groups saved yet.</p>}
+            ) : <p className="muted">No groups yet.</p>}
           </div>
         )}
 
@@ -1128,17 +1060,13 @@ export default function App() {
         )}
       </Drawer>
 
-      {/* Group drawer */}
-      <Drawer open={!!groupDrawer} title={groupDrawer === 'create' ? 'Create Group' : `Edit: ${groupDrawer?.title || ''}`} onClose={() => setGroupDrawer(null)} from="left" width={480}>
-        <input className="inp" placeholder="Group name" value={groupTitle} onChange={e => setGroupTitle(e.target.value)} style={{ marginBottom: 12 }} />
-        {groupErrors.title && <small className="err">{groupErrors.title}</small>}
-        <RecipientList recipients={groupRecipients} variables={variables} onChangeField={grUpdate} onChangeVariable={grVar} onDelete={grDelete} onEmailBlur={grBlur} fieldErrors={groupErrors.recipients} />
-        <button className="link" onClick={grAdd} style={{ marginTop: 4 }}>+ Add row</button>
-        {groupErrors.general && <small className="err">{groupErrors.general}</small>}
-        <div style={{ marginTop: 16, textAlign: 'right' }}>
-          <button className="btn btn--primary" onClick={saveGroupDrawer}>{groupDrawer === 'create' ? 'Create' : 'Save'}</button>
-        </div>
-      </Drawer>
+      {/* Group Manager popup */}
+      <GroupManager
+        open={groupManagerOpen}
+        onClose={() => setGroupManagerOpen(false)}
+        authedFetch={authedFetch}
+        onImport={handleGroupImport}
+      />
 
       {/* Template view */}
       <Drawer open={!!templateDrawer && templateDrawer !== 'create'} title={templateDrawer?.title || 'Template'} onClose={() => setTemplateDrawer(null)} width={480}>

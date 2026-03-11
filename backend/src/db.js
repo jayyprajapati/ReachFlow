@@ -47,14 +47,14 @@ const recipientSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'pending' },
 });
 
-const groupRecipientSchema = new mongoose.Schema(
-  {
-    email: { type: String, required: true, lowercase: true, trim: true },
-    name: { type: String, required: true, trim: true },
-    variables: { type: Map, of: String, default: {} },
-  },
-  { _id: false }
-);
+const contactSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  role: { type: String, default: '', trim: true },
+  linkedin: { type: String, default: '', trim: true },
+  connectionStatus: { type: String, enum: ['', 'not_connected', 'pending', 'connected'], default: '' },
+  leftCompany: { type: Boolean, default: false },
+});
 
 const campaignSchema = new mongoose.Schema(
   {
@@ -87,8 +87,9 @@ const sendLogSchema = new mongoose.Schema(
 const groupSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    title: { type: String, required: true, trim: true },
-    recipients: { type: [groupRecipientSchema], default: [] },
+    companyName: { type: String, required: true, trim: true },
+    logoUrl: { type: String, default: '', trim: true },
+    contacts: { type: [contactSchema], default: [] },
   },
   {
     timestamps: true,
