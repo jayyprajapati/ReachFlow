@@ -45,6 +45,13 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
     const [importRoles, setImportRoles] = useState([]);
     const [importGroup, setImportGroupData] = useState(null);
 
+    // Bulk paste
+    const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
+    const [bulkText, setBulkText] = useState('');
+    const [bulkRole, setBulkRole] = useState('');
+    const [bulkParsed, setBulkParsed] = useState(null); // null | array
+    const [bulkMessage, setBulkMessage] = useState('');
+
     const overlayRef = useRef(null);
 
     /* ── load groups ── */
@@ -283,6 +290,103 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
         }
     }
 
+    /* ── bulk paste ── */
+
+    function nameFromEmail(email) {
+        const local = (email || '').split('@')[0].replace(/[0-9]/g, '').split(/[._\-+]+/).filter(Boolean);
+        return local.length ? local.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'Unknown';
+    }
+
+    function parseBulkText() {
+        if (!bulkText.trim()) {
+            setBulkMessage('No valid contacts detected. Please paste name and email pairs.');
+            setBulkParsed([]);
+            return;
+        }
+        const lines = bulkText.split('\n').map(l => l.trim()).filter(Boolean);
+        const results = [];
+        for (const line of lines) {
+            // extract email
+            const emailMatch = line.match(/([^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+)/);
+            if (!emailMatch) continue;
+            const email = emailMatch[1].toLowerCase();
+            if (!emailRegex.test(email)) continue;
+            // extract name = everything that's not the email, stripped of delimiters
+            let name = line
+                .replace(emailMatch[0], '')
+                .replace(/[<>\-,;|]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!name) name = nameFromEmail(email);
+            results.push({ name, email });
+        }
+        if (!results.length) {
+            setBulkMessage('No valid contacts detected. Please paste name and email pairs.');
+            setBulkParsed([]);
+            return;
+        }
+        setBulkMessage('');
+        setBulkParsed(results);
+    }
+
+    function removeBulkRow(idx) {
+        setBulkParsed(prev => prev.filter((_, i) => i !== idx));
+    }
+
+    async function doBulkImport() {
+        if (!bulkParsed || !bulkParsed.length) return;
+        const existingEmails = new Set((activeGroup?.contacts || []).map(c => c.email.toLowerCase()));
+        const unique = bulkParsed.filter(c => !existingEmails.has(c.email.toLowerCase()));
+        const dupeCount = bulkParsed.length - unique.length;
+
+        if (!unique.length) {
+            setBulkMessage(`All ${bulkParsed.length} contacts are duplicates.`);
+            return;
+        }
+
+        let addedCount = 0;
+        const newContacts = [];
+        for (const c of unique) {
+            try {
+                const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}/contacts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: c.name,
+                        email: c.email,
+                        role: bulkRole,
+                        connectionStatus: 'not_connected',
+                        leftCompany: false,
+                        linkedin: '',
+                    }),
+                });
+                const d = await r.json();
+                if (r.ok) { newContacts.push(d); addedCount++; }
+            } catch (_) { /* skip failures */ }
+        }
+
+        if (newContacts.length) {
+            setActiveGroup(prev => ({ ...prev, contacts: [...newContacts, ...prev.contacts] }));
+        }
+
+        let msg = `Added ${addedCount} contact${addedCount !== 1 ? 's' : ''}.`;
+        if (dupeCount > 0) msg += ` ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped.`;
+        setBulkMessage(msg);
+        setBulkParsed(null);
+        setBulkText('');
+        setBulkRole('');
+        // Close panel after small delay so user sees the message
+        setTimeout(() => { setBulkPasteOpen(false); setBulkMessage(''); }, 1800);
+    }
+
+    function closeBulkPaste() {
+        setBulkPasteOpen(false);
+        setBulkText('');
+        setBulkRole('');
+        setBulkParsed(null);
+        setBulkMessage('');
+    }
+
     /* ── import flow ── */
 
     async function handleImportSelectGroup(gId) {
@@ -483,8 +587,11 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
 
                         {/* Contacts section */}
                         <div className="gm-contacts-head">
-                            <span className="gm-subtitle">People from {activeGroup.companyName}</span>
-                            <button className="gm-text-btn" onClick={startAddContact}>Add Person</button>
+                            <span className="gm-subtitle">People from {activeGroup.companyName} ({activeGroup.contacts.length})</span>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <button className="gm-text-btn" onClick={startAddContact}>Add Person</button>
+                                <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)}>Bulk Paste</button>
+                            </div>
                         </div>
 
                         <div className="gm-table-wrap">
@@ -580,6 +687,60 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
 
                 {loading && <div className="gm-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</div>}
             </div>
+
+            {/* Bulk Paste panel */}
+            {bulkPasteOpen && (
+                <>
+                    <div className="gm-confirm-overlay" onClick={closeBulkPaste} />
+                    <div className="gm-bulk-panel" onClick={e => e.stopPropagation()}>
+                        <div className="gm-topbar">
+                            <span className="gm-title">Bulk Paste Contacts</span>
+                            <button className="gm-text-btn" onClick={closeBulkPaste}>Cancel</button>
+                        </div>
+
+                        {bulkMessage && <div className={bulkMessage.startsWith('Added') ? 'gm-bulk-success' : 'gm-bulk-warn'}>{bulkMessage}</div>}
+
+                        {!bulkParsed ? (
+                            <>
+                                <textarea
+                                    className="gm-bulk-textarea"
+                                    rows={8}
+                                    value={bulkText}
+                                    onChange={e => setBulkText(e.target.value)}
+                                    placeholder={'John Doe john@company.com\nJane Smith jane@company.com\nJohn Doe <john@company.com>\nJohn Doe - john@company.com'}
+                                    autoFocus
+                                />
+                                <div className="gm-bulk-role-row">
+                                    <label className="gm-label">Role for imported contacts</label>
+                                    <select className="gm-select" value={bulkRole} onChange={e => setBulkRole(e.target.value)}>
+                                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '— None —'}</option>)}
+                                    </select>
+                                </div>
+                                <div className="gm-bulk-actions">
+                                    <button className="btn btn--primary" onClick={parseBulkText} disabled={!bulkText.trim()}>Parse</button>
+                                </div>
+                            </>
+                        ) : bulkParsed.length > 0 ? (
+                            <>
+                                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Parsed Contacts ({bulkParsed.length})</p>
+                                <div className="gm-bulk-preview">
+                                    {bulkParsed.map((c, i) => (
+                                        <div key={i} className="gm-bulk-preview-row">
+                                            <span className="gm-bulk-preview-name">{c.name}</span>
+                                            <span className="gm-bulk-preview-email">{c.email}</span>
+                                            <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => removeBulkRow(i)} title="Remove"><X size={14} /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="gm-bulk-actions">
+                                    <button className="gm-text-btn" onClick={() => { setBulkParsed(null); setBulkMessage(''); }}>Back</button>
+                                    <button className="btn btn--primary" onClick={doBulkImport} disabled={!bulkParsed.length}>Add to Group</button>
+                                </div>
+                            </>
+                        ) : null}
+                    </div>
+                </>
+            )}
 
             {/* Unsaved changes dialog */}
             {confirmDialog && (
