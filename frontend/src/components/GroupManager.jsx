@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Trash2, Pencil, Check, X, ChevronRight } from 'lucide-react';
+import { Trash2, Pencil, Check, X, ChevronRight, Copy, Info } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,7 +12,25 @@ const CONNECTION_OPTIONS = [
     { value: 'connected', label: 'Connected' },
 ];
 
-export default function GroupManager({ open, onClose, authedFetch, onImport }) {
+function Tooltip({ content, children, className = '' }) {
+    return (
+        <span className={`gm-tooltip ${className}`.trim()} tabIndex={0}>
+            {children}
+            <span className="gm-tooltip__bubble" role="tooltip">{content}</span>
+        </span>
+    );
+}
+
+function TruncatedValue({ value, children, className = '' }) {
+    const text = value || '—';
+    return (
+        <Tooltip content={text} className={`gm-truncate ${className}`.trim()}>
+            <span className="gm-truncate__text">{children || text}</span>
+        </Tooltip>
+    );
+}
+
+export default function GroupManager({ open, onClose, authedFetch, onImport, startInImportMode = false, onImportModeHandled }) {
     /* ── state ── */
     const [groups, setGroups] = useState([]);
     const [view, setView] = useState('grid');           // 'grid' | 'detail'
@@ -32,7 +50,7 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
 
     // Contact editing
     const [editingContactId, setEditingContactId] = useState(null); // contact id or '__new__'
-    const [contactForm, setContactForm] = useState({ name: '', email: '', role: '', linkedin: '', connectionStatus: '', leftCompany: false });
+    const [contactForm, setContactForm] = useState({ name: '', email: '', role: '', linkedin: '', connectionStatus: '', leftCompany: false, email_status: 'tentative' });
 
     // Unsaved changes tracking
     const [dirty, setDirty] = useState(false);
@@ -51,6 +69,7 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
     const [bulkRole, setBulkRole] = useState('');
     const [bulkParsed, setBulkParsed] = useState(null); // null | array
     const [bulkMessage, setBulkMessage] = useState('');
+    const [copiedField, setCopiedField] = useState('');
 
     const overlayRef = useRef(null);
 
@@ -91,13 +110,22 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
             setEditingContactId(null);
             setDirty(false);
             setError('');
-            setImportMode(false);
+            setImportMode(!!startInImportMode);
             setImportStep(1);
             setImportGroupId(null);
             setImportRoles([]);
             setImportGroupData(null);
+            if (startInImportMode && typeof onImportModeHandled === 'function') {
+                onImportModeHandled();
+            }
         }
-    }, [open, loadGroups]);
+    }, [open, loadGroups, startInImportMode, onImportModeHandled]);
+
+    useEffect(() => {
+        if (!copiedField) return;
+        const timer = setTimeout(() => setCopiedField(''), 1200);
+        return () => clearTimeout(timer);
+    }, [copiedField]);
 
     /* ── navigation helpers ── */
 
@@ -217,7 +245,7 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
     /* ── contact CRUD ── */
 
     function startAddContact() {
-        setContactForm({ name: '', email: '', role: '', linkedin: '', connectionStatus: '', leftCompany: false });
+        setContactForm({ name: '', email: '', role: '', linkedin: '', connectionStatus: '', leftCompany: false, email_status: 'tentative' });
         setEditingContactId('__new__');
         setDirty(true);
     }
@@ -230,6 +258,7 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
             linkedin: c.linkedin || '',
             connectionStatus: c.connectionStatus || '',
             leftCompany: !!c.leftCompany,
+            email_status: c.email_status || 'tentative',
         });
         setEditingContactId(c.id);
         setDirty(true);
@@ -421,9 +450,35 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
 
     const importPreviewContacts = useMemo(() => {
         if (!importGroup) return [];
-        if (!selectedImportRoles.length) return importGroup.contacts;
-        return importGroup.contacts.filter(c => selectedImportRoles.includes(c.role) || !c.role);
+        const activeContacts = importGroup.contacts.filter(c => !c.leftCompany);
+        if (!selectedImportRoles.length) return activeContacts;
+        return activeContacts.filter(c => selectedImportRoles.includes(c.role) || !c.role);
     }, [importGroup, selectedImportRoles]);
+
+    function onCopyClick(e, key, value) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!value) return;
+        navigator.clipboard.writeText(value).then(() => {
+            setCopiedField(key);
+        }).catch(() => {
+            setCopiedField('');
+        });
+    }
+
+    function renderEmailStatus(status) {
+        const normalized = ['verified', 'tentative', 'flagged'].includes(status) ? status : 'tentative';
+        return <span className={`gm-pill gm-pill--${normalized}`}>{normalized.charAt(0).toUpperCase() + normalized.slice(1)}</span>;
+    }
+
+    function renderLastContacted(c) {
+        if (!c.last_contacted_at || !c.last_contacted_via) return 'Last contacted: -';
+        const d = new Date(c.last_contacted_at);
+        if (Number.isNaN(d.getTime())) return 'Last contacted: -';
+        const formatted = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+        const via = c.last_contacted_via === 'linkedin' ? 'LinkedIn' : 'Email';
+        return `Last contacted: ${formatted} via ${via}`;
+    }
 
     function doImport() {
         if (!importPreviewContacts.length) return;
@@ -501,7 +556,6 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
                         <div className="gm-topbar">
                             <span className="gm-title">Groups</span>
                             <div style={{ display: 'flex', gap: 12 }}>
-                                {onImport && <button className="gm-text-btn" onClick={() => { setImportMode(true); setImportStep(1); setImportGroupId(null); setImportGroupData(null); }}>Import from Groups</button>}
                                 <button className="gm-text-btn" onClick={() => setCreating(true)}>Create Group</button>
                             </div>
                         </div>
@@ -588,99 +642,145 @@ export default function GroupManager({ open, onClose, authedFetch, onImport }) {
                         {/* Contacts section */}
                         <div className="gm-contacts-head">
                             <span className="gm-subtitle">People from {activeGroup.companyName} ({activeGroup.contacts.length})</span>
-                            <div style={{ display: 'flex', gap: 12 }}>
+                            <div className="gm-action-group">
                                 <button className="gm-text-btn" onClick={startAddContact}>Add Person</button>
+                                <span className="gm-action-divider" aria-hidden="true" />
                                 <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)}>Bulk Paste</button>
                             </div>
                         </div>
 
                         <div className="gm-table-wrap">
-                            <table className="gm-table">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Role</th>
-                                        <th>LinkedIn</th>
-                                        <th>Status</th>
-                                        <th>Left</th>
-                                        <th style={{ width: 60 }}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {/* New contact row */}
-                                    {editingContactId === '__new__' && (
-                                        <tr className="gm-row--editing">
-                                            <td><input className="gm-inp" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Name" autoFocus /></td>
-                                            <td><input className="gm-inp" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" /></td>
-                                            <td>
+                            <div className="gm-grid-head">
+                                <div>Name</div>
+                                <div>Email</div>
+                                <div>Role</div>
+                                <div>LinkedIn</div>
+                                <div>Status</div>
+                                <div>
+                                    <span className="gm-th-help">
+                                        Left Company
+                                        <Tooltip content="Person has left the company" className="gm-help-tooltip">
+                                            <span className="gm-help-btn" aria-label="Person has left the company">
+                                                <Info size={12} />
+                                            </span>
+                                        </Tooltip>
+                                    </span>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>Actions</div>
+                            </div>
+
+                            <div className="gm-grid-body">
+                                {editingContactId === '__new__' && (
+                                    <div className="gm-grid-row gm-row--editing">
+                                        <div className="gm-cell"><input className="gm-inp" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Name" autoFocus /></div>
+                                        <div className="gm-cell"><input className="gm-inp" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" /></div>
+                                        <div className="gm-cell">
+                                            <select className="gm-select" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
+                                                {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="gm-cell"><input className="gm-inp" value={contactForm.linkedin} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL" /></div>
+                                        <div className="gm-cell">
+                                            <select className="gm-select" value={contactForm.email_status} onChange={e => setContactForm(f => ({ ...f, email_status: e.target.value }))}>
+                                                <option value="verified">Verified</option>
+                                                <option value="tentative">Tentative</option>
+                                                <option value="flagged">Flagged</option>
+                                            </select>
+                                        </div>
+                                        <div className="gm-cell gm-left-cell"><input type="checkbox" checked={contactForm.leftCompany} onChange={e => setContactForm(f => ({ ...f, leftCompany: e.target.checked }))} /></div>
+                                        <div className="gm-cell gm-row-actions">
+                                            <button className="gm-icon-btn gm-icon-btn--save" onClick={saveContact} title="Save"><Check size={15} /></button>
+                                            <button className="gm-icon-btn" onClick={cancelContactEdit} title="Cancel"><X size={15} /></button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeGroup.contacts.map(c => (
+                                    editingContactId === c.id ? (
+                                        <div key={c.id} className="gm-grid-row gm-row--editing">
+                                            <div className="gm-cell"><input className="gm-inp" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} /></div>
+                                            <div className="gm-cell"><input className="gm-inp" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} /></div>
+                                            <div className="gm-cell">
                                                 <select className="gm-select" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
                                                     {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
                                                 </select>
-                                            </td>
-                                            <td><input className="gm-inp" value={contactForm.linkedin} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL" /></td>
-                                            <td>
-                                                <select className="gm-select" value={contactForm.connectionStatus} onChange={e => setContactForm(f => ({ ...f, connectionStatus: e.target.value }))}>
-                                                    {CONNECTION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                            </div>
+                                            <div className="gm-cell"><input className="gm-inp" value={contactForm.linkedin} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL" /></div>
+                                            <div className="gm-cell">
+                                                <select className="gm-select" value={contactForm.email_status} onChange={e => setContactForm(f => ({ ...f, email_status: e.target.value }))}>
+                                                    <option value="verified">Verified</option>
+                                                    <option value="tentative">Tentative</option>
+                                                    <option value="flagged">Flagged</option>
                                                 </select>
-                                            </td>
-                                            <td><input type="checkbox" checked={contactForm.leftCompany} onChange={e => setContactForm(f => ({ ...f, leftCompany: e.target.checked }))} /></td>
-                                            <td className="gm-row-actions">
+                                            </div>
+                                            <div className="gm-cell gm-left-cell"><input type="checkbox" checked={contactForm.leftCompany} onChange={e => setContactForm(f => ({ ...f, leftCompany: e.target.checked }))} /></div>
+                                            <div className="gm-cell gm-row-actions">
                                                 <button className="gm-icon-btn gm-icon-btn--save" onClick={saveContact} title="Save"><Check size={15} /></button>
                                                 <button className="gm-icon-btn" onClick={cancelContactEdit} title="Cancel"><X size={15} /></button>
-                                            </td>
-                                        </tr>
-                                    )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div key={c.id} className="gm-grid-row">
+                                            <div className="gm-cell">
+                                                <span className="gm-copy-wrap">
+                                                    <TruncatedValue value={c.name} className="gm-copy-text">
+                                                        {c.name}
+                                                    </TruncatedValue>
+                                                    <button className="gm-copy-btn" onClick={e => onCopyClick(e, `name-${c.id}`, c.name)} aria-label="Copy name" title={copiedField === `name-${c.id}` ? 'Copied' : 'Copy'}>
+                                                        <Copy size={12} />
+                                                    </button>
+                                                    {copiedField === `name-${c.id}` && <span className="gm-copy-tip">Copied</span>}
+                                                </span>
+                                            </div>
+                                            <div className="gm-cell">
+                                                <span className="gm-copy-wrap">
+                                                    <TruncatedValue value={c.email} className="gm-copy-text">
+                                                        {c.email}
+                                                    </TruncatedValue>
+                                                    <button className="gm-copy-btn" onClick={e => onCopyClick(e, `email-${c.id}`, c.email)} aria-label="Copy email" title={copiedField === `email-${c.id}` ? 'Copied' : 'Copy'}>
+                                                        <Copy size={12} />
+                                                    </button>
+                                                    {copiedField === `email-${c.id}` && <span className="gm-copy-tip">Copied</span>}
+                                                </span>
+                                            </div>
+                                            <div className="gm-cell">
+                                                <TruncatedValue value={c.role || '—'}>{c.role || '—'}</TruncatedValue>
+                                            </div>
+                                            <div className="gm-cell gm-td-url">
+                                                {c.linkedin ? (
+                                                    <span className="gm-copy-wrap">
+                                                        <TruncatedValue value={c.linkedin} className="gm-copy-text">
+                                                            <a href={c.linkedin} target="_blank" rel="noreferrer" className="gm-link-ellipsis">{c.linkedin}</a>
+                                                        </TruncatedValue>
+                                                        <button className="gm-copy-btn" onClick={e => onCopyClick(e, `linkedin-${c.id}`, c.linkedin)} aria-label="Copy LinkedIn URL" title={copiedField === `linkedin-${c.id}` ? 'Copied' : 'Copy'}>
+                                                            <Copy size={12} />
+                                                        </button>
+                                                        {copiedField === `linkedin-${c.id}` && <span className="gm-copy-tip">Copied</span>}
+                                                    </span>
+                                                ) : '—'}
+                                            </div>
+                                            <div className="gm-cell">
+                                                <div className="gm-meta-col">
+                                                    {renderEmailStatus(c.email_status)}
+                                                    <TruncatedValue value={renderLastContacted(c)} className="gm-meta-line gm-meta-tooltip">
+                                                        {renderLastContacted(c)}
+                                                    </TruncatedValue>
+                                                    <span className="gm-meta-line">Contacted {Number.isFinite(c.contact_count) ? c.contact_count : 0} times</span>
+                                                </div>
+                                            </div>
+                                            <div className="gm-cell gm-left-cell">{c.leftCompany ? 'Yes' : 'No'}</div>
+                                            <div className="gm-cell gm-row-actions">
+                                                <button className="gm-icon-btn" onClick={() => startEditContact(c)} title="Edit"><Pencil size={14} /></button>
+                                                <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => deleteContact(c.id)} title="Delete"><Trash2 size={14} /></button>
+                                            </div>
+                                        </div>
+                                    )
+                                ))}
 
-                                    {activeGroup.contacts.map(c => (
-                                        editingContactId === c.id ? (
-                                            <tr key={c.id} className="gm-row--editing">
-                                                <td><input className="gm-inp" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} /></td>
-                                                <td><input className="gm-inp" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} /></td>
-                                                <td>
-                                                    <select className="gm-select" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
-                                                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td><input className="gm-inp" value={contactForm.linkedin} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL" /></td>
-                                                <td>
-                                                    <select className="gm-select" value={contactForm.connectionStatus} onChange={e => setContactForm(f => ({ ...f, connectionStatus: e.target.value }))}>
-                                                        {CONNECTION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td><input type="checkbox" checked={contactForm.leftCompany} onChange={e => setContactForm(f => ({ ...f, leftCompany: e.target.checked }))} /></td>
-                                                <td className="gm-row-actions">
-                                                    <button className="gm-icon-btn gm-icon-btn--save" onClick={saveContact} title="Save"><Check size={15} /></button>
-                                                    <button className="gm-icon-btn" onClick={cancelContactEdit} title="Cancel"><X size={15} /></button>
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            <tr key={c.id}>
-                                                <td>{c.name}</td>
-                                                <td>{c.email}</td>
-                                                <td>{c.role || '—'}</td>
-                                                <td className="gm-td-url">{c.linkedin ? <a href={c.linkedin} target="_blank" rel="noreferrer" className="gm-text-btn">Link</a> : '—'}</td>
-                                                <td>
-                                                    {c.connectionStatus ? (
-                                                        <span className={`gm-status gm-status--${c.connectionStatus}`}>
-                                                            {CONNECTION_OPTIONS.find(o => o.value === c.connectionStatus)?.label || c.connectionStatus}
-                                                        </span>
-                                                    ) : '—'}
-                                                </td>
-                                                <td>{c.leftCompany ? '✓' : ''}</td>
-                                                <td className="gm-row-actions">
-                                                    <button className="gm-icon-btn" onClick={() => startEditContact(c)} title="Edit"><Pencil size={14} /></button>
-                                                    <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => deleteContact(c.id)} title="Delete"><Trash2 size={14} /></button>
-                                                </td>
-                                            </tr>
-                                        )
-                                    ))}
-
-                                    {!activeGroup.contacts.length && editingContactId !== '__new__' && (
-                                        <tr><td colSpan={7} className="gm-muted" style={{ textAlign: 'center', padding: 20 }}>No contacts yet. Click "Add Person" to add one.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                {!activeGroup.contacts.length && editingContactId !== '__new__' && (
+                                    <div className="gm-empty-row">No contacts yet. Click "+ Add Person" to add one.</div>
+                                )}
+                            </div>
                         </div>
                     </>
                 )}

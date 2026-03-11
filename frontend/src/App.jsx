@@ -128,6 +128,7 @@ export default function App() {
 
   const [groups, setGroups] = useState([]);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const [openImportModalFromRecipients, setOpenImportModalFromRecipients] = useState(false);
   const [importedGroupId, setImportedGroupId] = useState(null);
   const [importedGroupEmails, setImportedGroupEmails] = useState([]);
 
@@ -830,20 +831,21 @@ export default function App() {
             <div className="card">
               <div className="card__head">
                 <span className="card__title"><Users size={16} /> Recipients</span>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
-                  <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : 'Paste bulk'}</button>
+                <div className="rec-actions">
+                  <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : 'Paste Bulk'}</button>
+                  <button className="link" onClick={() => { setOpenImportModalFromRecipients(true); setGroupManagerOpen(true); }}>Import Group</button>
                 </div>
               </div>
 
               {bulkMode ? (
                 <textarea className="inp inp--area" rows={5} placeholder="Paste emails (comma / newline separated)" value={bulkInput} onChange={e => setBulkInput(e.target.value)} onPaste={e => { e.preventDefault(); doBulkPaste(e.clipboardData?.getData('text') || ''); }} />
               ) : (
-                <>
-                  <RecipientList recipients={recipients} variables={variables} onChangeField={updateRecipient} onChangeVariable={updateRecipientVariable} onDelete={deleteRecipient} onEmailBlur={onEmailBlur} fieldErrors={errors.recipients} />
-                  <button className="link" onClick={addRow}>+ Add recipient</button>
-                </>
+                <RecipientList recipients={recipients} variables={variables} onChangeField={updateRecipient} onChangeVariable={updateRecipientVariable} onDelete={deleteRecipient} onEmailBlur={onEmailBlur} fieldErrors={errors.recipients} />
               )}
+              <div className="rec-subactions">
+                <button className="link" onClick={addRow}>+ Add recipient</button>
+                <button className="link" onClick={() => { setOpenImportModalFromRecipients(false); setGroupManagerOpen(true); }}>Manage Groups</button>
+              </div>
               {errors.recipientsGeneral && <small className="err">{errors.recipientsGeneral}</small>}
             </div>
 
@@ -1066,6 +1068,8 @@ export default function App() {
         onClose={() => setGroupManagerOpen(false)}
         authedFetch={authedFetch}
         onImport={handleGroupImport}
+        startInImportMode={openImportModalFromRecipients}
+        onImportModeHandled={() => setOpenImportModalFromRecipients(false)}
       />
 
       {/* Template view */}

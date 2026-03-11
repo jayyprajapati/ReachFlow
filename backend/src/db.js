@@ -54,6 +54,10 @@ const contactSchema = new mongoose.Schema({
   linkedin: { type: String, default: '', trim: true },
   connectionStatus: { type: String, enum: ['', 'not_connected', 'pending', 'connected'], default: '' },
   leftCompany: { type: Boolean, default: false },
+  email_status: { type: String, enum: ['verified', 'tentative', 'flagged'], default: 'tentative' },
+  last_contacted_at: { type: Date, default: null },
+  last_contacted_via: { type: String, enum: ['', 'linkedin', 'email'], default: '' },
+  contact_count: { type: Number, default: 0, min: 0 },
 });
 
 const campaignSchema = new mongoose.Schema(
@@ -117,6 +121,35 @@ const SendLog = mongoose.model('SendLog', sendLogSchema);
 const Group = mongoose.model('Group', groupSchema);
 const Template = mongoose.model('Template', templateSchema);
 
+async function migrateGroupContactFields() {
+  await Group.updateMany(
+    {},
+    [
+      {
+        $set: {
+          contacts: {
+            $map: {
+              input: '$contacts',
+              as: 'contact',
+              in: {
+                $mergeObjects: [
+                  {
+                    email_status: 'tentative',
+                    last_contacted_at: null,
+                    last_contacted_via: '',
+                    contact_count: 0,
+                  },
+                  '$$contact',
+                ],
+              },
+            },
+          },
+        },
+      },
+    ]
+  );
+}
+
 module.exports = {
   connectMongo,
   User,
@@ -125,4 +158,5 @@ module.exports = {
   SendLog,
   Group,
   Template,
+  migrateGroupContactFields,
 };

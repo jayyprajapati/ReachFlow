@@ -12,7 +12,7 @@ const groupRoutes = require('./routes/groups');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
 const { startScheduler } = require('./scheduler');
-const { connectMongo, User } = require('./db');
+const { connectMongo, User, migrateGroupContactFields } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -227,6 +227,15 @@ app.use('/api/variables', requireAuth, variableRoutes);
 connectMongo()
   .then(() => {
     console.log('Connected to MongoDB');
+    return migrateGroupContactFields()
+      .then(() => {
+        console.log('Group contact fields migration complete');
+      })
+      .catch(err => {
+        console.error('Group contact fields migration failed', err.message);
+      });
+  })
+  .then(() => {
     startScheduler();
     app.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`);

@@ -1,7 +1,7 @@
 const express = require('express');
 const { Types } = require('mongoose');
 const sanitizeHtml = require('sanitize-html');
-const { Campaign, SendLog, Variable } = require('../db');
+const { Campaign, Group, SendLog, Variable } = require('../db');
 const { renderTemplate, validateVariables, extractVariables } = require('../services/templateService');
 const { sendMimeEmail } = require('../gmail');
 
@@ -80,6 +80,26 @@ async function ensureSendAllowance(userId, requested) {
   }
 }
 
+async function bumpContactTracking(userId, emailToCount) {
+  const updates = Object.entries(emailToCount || {}).filter(([email, count]) => !!email && Number(count) > 0);
+  if (!updates.length) return;
+
+  const touchedAt = new Date();
+  await Promise.all(updates.map(([email, count]) => (
+    Group.updateMany(
+      { userId, 'contacts.email': email },
+      {
+        $inc: { 'contacts.$[contact].contact_count': Number(count) },
+        $set: {
+          'contacts.$[contact].last_contacted_at': touchedAt,
+          'contacts.$[contact].last_contacted_via': 'email',
+        },
+      },
+      { arrayFilters: [{ 'contact.email': email }] }
+    )
+  )));
+}
+
 async function sendCampaign(campaignId, user) {
   const campaign = await Campaign.findOne({ _id: campaignId, userId: user._id });
   if (!campaign) throw new Error('Campaign not found');
@@ -101,6 +121,7 @@ async function sendCampaign(campaignId, user) {
   let failedCount = 0;
   let lastError = null;
   const logs = [];
+  const sentEmailCounts = {};
 
   if (campaign.send_mode === 'single') {
     const first = pending[0];
@@ -111,6 +132,7 @@ async function sendCampaign(campaignId, user) {
       const subdoc = campaign.recipients.id(r._id);
       if (subdoc) subdoc.status = 'sent';
       logs.push({ userId: user._id, sentAt: new Date() });
+      sentEmailCounts[r.email] = (sentEmailCounts[r.email] || 0) + 1;
     });
     sentCount = pending.length;
   } else {
@@ -121,6 +143,7 @@ async function sendCampaign(campaignId, user) {
         const subdoc = campaign.recipients.id(recipient._id);
         if (subdoc) subdoc.status = 'sent';
         logs.push({ userId: user._id, sentAt: new Date() });
+        sentEmailCounts[recipient.email] = (sentEmailCounts[recipient.email] || 0) + 1;
         sentCount++;
       } catch (err) {
         console.error(`[send] Failed to send to ${recipient.email}:`, err.message);
@@ -133,6 +156,7 @@ async function sendCampaign(campaignId, user) {
   }
 
   if (logs.length) await SendLog.insertMany(logs);
+  await bumpContactTracking(user._id, sentEmailCounts);
 
   if (sentCount === 0 && lastError) {
     campaign.status = 'draft';

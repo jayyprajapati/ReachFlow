@@ -8,6 +8,10 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /* ── helpers ── */
 
 function sanitizeContact(c) {
+  const emailStatus = ['verified', 'tentative', 'flagged'].includes(c.email_status) ? c.email_status : 'tentative';
+  const lastContactedVia = ['linkedin', 'email'].includes(c.last_contacted_via) ? c.last_contacted_via : '';
+  const contactCount = Number.isFinite(Number(c.contact_count)) ? Math.max(0, Math.floor(Number(c.contact_count))) : 0;
+  const lastContactedAt = c.last_contacted_at ? new Date(c.last_contacted_at) : null;
   return {
     name: (c.name || '').trim(),
     email: (c.email || '').toLowerCase().trim(),
@@ -15,6 +19,10 @@ function sanitizeContact(c) {
     linkedin: (c.linkedin || '').trim(),
     connectionStatus: ['', 'not_connected', 'pending', 'connected'].includes(c.connectionStatus) ? c.connectionStatus : '',
     leftCompany: !!c.leftCompany,
+    email_status: emailStatus,
+    last_contacted_at: lastContactedAt && !Number.isNaN(lastContactedAt.getTime()) ? lastContactedAt : null,
+    last_contacted_via: lastContactedVia,
+    contact_count: contactCount,
   };
 }
 
@@ -63,6 +71,10 @@ router.get('/:id', async (req, res) => {
         linkedin: c.linkedin || '',
         connectionStatus: c.connectionStatus || '',
         leftCompany: !!c.leftCompany,
+        email_status: c.email_status || 'tentative',
+        last_contacted_at: c.last_contacted_at || null,
+        last_contacted_via: c.last_contacted_via || '',
+        contact_count: Number.isFinite(c.contact_count) ? c.contact_count : 0,
       })),
       createdAt: group.createdAt,
       updatedAt: group.updatedAt,
@@ -147,6 +159,10 @@ router.post('/:id/contacts', async (req, res) => {
       linkedin: added.linkedin || '',
       connectionStatus: added.connectionStatus || '',
       leftCompany: !!added.leftCompany,
+      email_status: added.email_status || 'tentative',
+      last_contacted_at: added.last_contacted_at || null,
+      last_contacted_via: added.last_contacted_via || '',
+      contact_count: Number.isFinite(added.contact_count) ? added.contact_count : 0,
     });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to add contact' });
@@ -177,6 +193,10 @@ router.patch('/:id/contacts/:contactId', async (req, res) => {
       linkedin: contact.linkedin || '',
       connectionStatus: contact.connectionStatus || '',
       leftCompany: !!contact.leftCompany,
+      email_status: contact.email_status || 'tentative',
+      last_contacted_at: contact.last_contacted_at || null,
+      last_contacted_via: contact.last_contacted_via || '',
+      contact_count: Number.isFinite(contact.contact_count) ? contact.contact_count : 0,
     });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to update contact' });
