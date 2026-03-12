@@ -61,7 +61,6 @@ const contactSchema = new mongoose.Schema({
   role: { type: String, default: '', trim: true },
   linkedin: { type: String, default: '', trim: true },
   connectionStatus: { type: String, enum: ['', 'not_connected', 'request_sent', 'connected'], default: '' },
-  leftCompany: { type: Boolean, default: false },
   email_status: { type: String, enum: ['verified', 'tentative', 'not_valid'], default: 'tentative' },
   contactHistory: { type: [contactHistoryEntrySchema], default: [] },
   lastContactedDate: { type: Date, default: null },

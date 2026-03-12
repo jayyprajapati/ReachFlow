@@ -852,6 +852,7 @@ export default function App() {
                 <span className="card__title"><Users size={16} /> Recipients</span>
                 <div className="rec-actions">
                   <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : 'Paste Bulk'}</button>
+                  <span className="gm-dot-sep" aria-hidden="true">•</span>
                   <button className="link" onClick={() => { loadGroups(); setImportModalOpen(true); }}>Import Group</button>
                 </div>
               </div>
@@ -862,8 +863,11 @@ export default function App() {
                 <RecipientList recipients={recipients} variables={variables} onChangeField={updateRecipient} onChangeVariable={updateRecipientVariable} onDelete={deleteRecipient} onEmailBlur={onEmailBlur} fieldErrors={errors.recipients} />
               )}
               <div className="rec-subactions">
+                <div className="rec-subactions__side" />
                 <button className="link" onClick={addRow}>+ Add recipient</button>
-                <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
+                <div className="rec-subactions__side rec-subactions__side--right">
+                  <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
+                </div>
               </div>
               {errors.recipientsGeneral && <small className="err">{errors.recipientsGeneral}</small>}
             </div>

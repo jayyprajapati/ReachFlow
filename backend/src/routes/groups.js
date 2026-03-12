@@ -54,7 +54,6 @@ function sanitizeContact(c) {
     connectionStatus: ['', 'not_connected', 'request_sent', 'connected', 'pending'].includes(c.connectionStatus)
       ? (c.connectionStatus === 'pending' ? 'request_sent' : c.connectionStatus)
       : '',
-    leftCompany: !!c.leftCompany,
     email_status: normalizedEmailStatus,
     contactHistory,
     lastContactedDate: lastContactedDate && !Number.isNaN(lastContactedDate.getTime())
@@ -85,7 +84,6 @@ function toContactPayload(contact) {
     role: contact.role || '',
     linkedin: contact.linkedin || '',
     connectionStatus: contact.connectionStatus === 'pending' ? 'request_sent' : (contact.connectionStatus || ''),
-    leftCompany: !!contact.leftCompany,
     email_status: normalizedEmailStatus,
     contactHistory: history.map(h => ({ type: h.type, date: h.date })),
     lastContacted: effectiveLastContacted,

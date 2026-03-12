@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Trash2, Pencil, Check, X, ChevronRight } from 'lucide-react';
+import { Trash2, Pencil, Check, X, ChevronRight, Mail, Linkedin } from 'lucide-react';
 import ContactsTable from './ContactsTable.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -38,7 +38,6 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         role: '',
         linkedin: '',
         connectionStatus: 'not_connected',
-        leftCompany: false,
         email_status: 'tentative',
         lastContactedDate: '',
         emailCount: 0,
@@ -227,7 +226,6 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             role: '',
             linkedin: '',
             connectionStatus: 'not_connected',
-            leftCompany: false,
             email_status: 'tentative',
             lastContactedDate: '',
             emailCount: 0,
@@ -251,7 +249,6 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             role: c.role || '',
             linkedin: c.linkedin || '',
             connectionStatus: normalizedConnectionStatus,
-            leftCompany: !!c.leftCompany,
             email_status: normalizedEmailStatus,
             lastContactedDate: dateForInput,
             emailCount: Number.isFinite(Number(c.emailCount)) ? Number(c.emailCount) : 0,
@@ -552,7 +549,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                             <span className="gm-subtitle">People from {activeGroup.companyName} ({activeGroup.contacts.length})</span>
                             <div className="gm-action-group">
                                 <button className="gm-text-btn" onClick={startAddContact}>Add Person</button>
-                                <span className="gm-action-divider" aria-hidden="true" />
+                                <span className="gm-dot-sep" aria-hidden="true">•</span>
                                 <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)}>Bulk Paste</button>
                             </div>
                         </div>
@@ -572,6 +569,17 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                                 roleOptions={ROLE_OPTIONS}
                                 connectionOptions={CONNECTION_OPTIONS}
                             />
+                        </div>
+
+                        <div className="gm-legend">
+                            <div className="gm-legend-icons">
+                                <span><Mail size={12} /> = Email contact</span>
+                                <span><Linkedin size={12} /> = LinkedIn contact</span>
+                            </div>
+                            <p className="gm-legend-note">
+                                <strong>Contact History</strong> shows the last time you contacted someone and how many emails and LinkedIn messages were sent.
+                                You can manually update the date and counters if you contacted someone outside this platform.
+                            </p>
                         </div>
                     </>
                 )}
