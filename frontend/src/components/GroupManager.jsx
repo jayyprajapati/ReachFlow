@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Trash2, Pencil, Check, X, ChevronRight, Copy, Info } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -30,7 +30,7 @@ function TruncatedValue({ value, children, className = '' }) {
     );
 }
 
-export default function GroupManager({ open, onClose, authedFetch, onImport, startInImportMode = false, onImportModeHandled }) {
+export default function GroupManager({ open, onClose, authedFetch }) {
     /* ── state ── */
     const [groups, setGroups] = useState([]);
     const [view, setView] = useState('grid');           // 'grid' | 'detail'
@@ -56,13 +56,6 @@ export default function GroupManager({ open, onClose, authedFetch, onImport, sta
     const [dirty, setDirty] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState(null); // null | { action: fn }
 
-    // Import mode
-    const [importMode, setImportMode] = useState(false);
-    const [importStep, setImportStep] = useState(1);
-    const [importGroupId, setImportGroupId] = useState(null);
-    const [importRoles, setImportRoles] = useState([]);
-    const [importGroup, setImportGroupData] = useState(null);
-
     // Bulk paste
     const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
     const [bulkText, setBulkText] = useState('');
@@ -70,8 +63,6 @@ export default function GroupManager({ open, onClose, authedFetch, onImport, sta
     const [bulkParsed, setBulkParsed] = useState(null); // null | array
     const [bulkMessage, setBulkMessage] = useState('');
     const [copiedField, setCopiedField] = useState('');
-
-    const overlayRef = useRef(null);
 
     /* ── load groups ── */
 
@@ -110,16 +101,8 @@ export default function GroupManager({ open, onClose, authedFetch, onImport, sta
             setEditingContactId(null);
             setDirty(false);
             setError('');
-            setImportMode(!!startInImportMode);
-            setImportStep(1);
-            setImportGroupId(null);
-            setImportRoles([]);
-            setImportGroupData(null);
-            if (startInImportMode && typeof onImportModeHandled === 'function') {
-                onImportModeHandled();
-            }
         }
-    }, [open, loadGroups, startInImportMode, onImportModeHandled]);
+    }, [open, loadGroups]);
 
     useEffect(() => {
         if (!copiedField) return;
@@ -416,44 +399,6 @@ export default function GroupManager({ open, onClose, authedFetch, onImport, sta
         setBulkMessage('');
     }
 
-    /* ── import flow ── */
-
-    async function handleImportSelectGroup(gId) {
-        setImportGroupId(gId);
-        try {
-            const r = await authedFetch(`${API_BASE}/api/groups/${gId}`);
-            const d = await r.json();
-            if (!r.ok) throw new Error(d.error);
-            setImportGroupData(d);
-            // collect unique roles
-            const roles = [...new Set(d.contacts.map(c => c.role).filter(Boolean))];
-            setImportRoles(roles.length ? roles : []);
-            setImportStep(2);
-        } catch (e) {
-            setError(e.message);
-        }
-    }
-
-    const [selectedImportRoles, setSelectedImportRoles] = useState([]);
-
-    useEffect(() => {
-        if (importStep === 2 && importRoles.length) {
-            setSelectedImportRoles([...importRoles]);
-        }
-    }, [importStep, importRoles]);
-
-    function toggleRole(role) {
-        setSelectedImportRoles(prev =>
-            prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
-        );
-    }
-
-    const importPreviewContacts = useMemo(() => {
-        if (!importGroup) return [];
-        const activeContacts = importGroup.contacts.filter(c => !c.leftCompany);
-        if (!selectedImportRoles.length) return activeContacts;
-        return activeContacts.filter(c => selectedImportRoles.includes(c.role) || !c.role);
-    }, [importGroup, selectedImportRoles]);
 
     function onCopyClick(e, key, value) {
         e.preventDefault();
@@ -480,66 +425,9 @@ export default function GroupManager({ open, onClose, authedFetch, onImport, sta
         return `Last contacted: ${formatted} via ${via}`;
     }
 
-    function doImport() {
-        if (!importPreviewContacts.length) return;
-        onImport(importPreviewContacts, importGroup);
-        onClose();
-    }
-
     /* ── render guard ── */
 
     if (!open) return null;
-
-    /* ── import modal ── */
-
-    if (importMode) {
-        return (
-            <div className="gm-overlay" onClick={() => setImportMode(false)}>
-                <div className="gm-popup gm-popup--sm" onClick={e => e.stopPropagation()}>
-                    <div className="gm-topbar">
-                        <span className="gm-title">Import from Groups</span>
-                        <button className="gm-text-btn" onClick={() => setImportMode(false)}>Cancel</button>
-                    </div>
-
-                    {importStep === 1 && (
-                        <div className="gm-import-list">
-                            {groups.length ? groups.map(g => (
-                                <button key={g.id} className="gm-import-row" onClick={() => handleImportSelectGroup(g.id)}>
-                                    {g.logoUrl && <img src={g.logoUrl} className="gm-tile-logo" alt="" />}
-                                    <span>{g.companyName}</span>
-                                    <span className="gm-muted">{g.contactCount} contacts</span>
-                                </button>
-                            )) : <p className="gm-muted">No groups yet.</p>}
-                        </div>
-                    )}
-
-                    {importStep === 2 && importGroup && (
-                        <div className="gm-import-step2">
-                            <p className="gm-muted" style={{ marginBottom: 8 }}>Filter by role (optional)</p>
-                            <div className="gm-role-chips">
-                                {importRoles.length ? importRoles.map(role => (
-                                    <button
-                                        key={role}
-                                        className={`gm-role-chip ${selectedImportRoles.includes(role) ? 'gm-role-chip--active' : ''}`}
-                                        onClick={() => toggleRole(role)}
-                                    >
-                                        {role}
-                                    </button>
-                                )) : <span className="gm-muted">No roles assigned</span>}
-                            </div>
-                            <p style={{ margin: '12px 0', fontSize: 13 }}>
-                                <strong>{importPreviewContacts.length}</strong> contact{importPreviewContacts.length !== 1 ? 's' : ''} will be imported
-                            </p>
-                            <div className="gm-import-actions">
-                                <button className="gm-text-btn" onClick={() => { setImportStep(1); setImportGroupData(null); }}>Back</button>
-                                <button className="btn btn--primary" onClick={doImport} disabled={!importPreviewContacts.length}>Import</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
 
     /* ── main popup ── */
 

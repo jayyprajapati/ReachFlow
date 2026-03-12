@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import RecipientList from './components/RecipientList.jsx';
 import GroupManager from './components/GroupManager.jsx';
+import ImportGroupModal from './components/ImportGroupModal.jsx';
 import { Mail, Users, Send, Clock, Heart, ChevronDown, LayoutGrid } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
@@ -128,9 +129,7 @@ export default function App() {
 
   const [groups, setGroups] = useState([]);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
-  const [openImportModalFromRecipients, setOpenImportModalFromRecipients] = useState(false);
-  const [importedGroupId, setImportedGroupId] = useState(null);
-  const [importedGroupEmails, setImportedGroupEmails] = useState([]);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const [templates, setTemplates] = useState([]);
   const [templateDrawer, setTemplateDrawer] = useState(null); // null | 'create' | tpl object
@@ -482,7 +481,6 @@ export default function App() {
     setPreviewRecipientId(parsed[0]?._id || null);
     setBulkMode(false); setBulkInput('');
     setErrors(p => ({ ...p, recipients: {}, recipientsGeneral: undefined }));
-    setImportedGroupId(null); setImportedGroupEmails([]);
   }
 
   /* ── validation ── */
@@ -592,7 +590,7 @@ export default function App() {
       const res = await apiFetch(`${API_BASE}/api/campaigns/${id}`); const d = await res.json(); if (!res.ok) throw new Error(d.error);
       setSubject(d.subject || ''); setBody(d.body_html || ''); setSendMode(d.send_mode || 'individual'); setSenderName(d.sender_name || '');
       const recs = (d.recipients || []).map(r => ({ ...r, _id: r._id || uid() })); setRecipients(recs); setPreviewRecipientId(recs[0]?._id || null);
-      setErrors({ recipients: {} }); setImportedGroupId(null); setImportedGroupEmails([]);
+      setErrors({ recipients: {} });
       if (d.scheduled_at) { setDeliveryMode('schedule'); setScheduledAt(d.scheduled_at.slice(0, 16)); } else { setDeliveryMode('now'); setScheduledAt(''); }
       setDraftId(d.id); setNotice({ type: 'info', message: 'Draft loaded' }); setUtilityDrawerOpen(false);
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
@@ -601,19 +599,40 @@ export default function App() {
   /* ── group actions ── */
 
   function handleGroupImport(contacts, groupData) {
-    const m = (contacts || []).map(c => ({
-      _id: uid(),
-      email: c.email || '',
-      name: c.name || '',
-      variables: {},
-      status: 'pending',
-    }));
-    setRecipients(m);
-    setPreviewRecipientId(m[0]?._id || null);
+    const incoming = (contacts || []).filter(c => c?.email);
+    if (!incoming.length) {
+      setNotice({ type: 'error', message: 'No contacts to import' });
+      return;
+    }
+
+    const existingEmails = new Set(recipients.map(r => (r.email || '').toLowerCase()));
+    const seen = new Set(existingEmails);
+    const additions = [];
+
+    for (const c of incoming) {
+      const email = (c.email || '').toLowerCase().trim();
+      if (!emailRegex.test(email) || seen.has(email)) continue;
+      seen.add(email);
+      additions.push({
+        _id: uid(),
+        email,
+        name: (c.name || '').trim() || nameFrom(email),
+        variables: {},
+        status: 'pending',
+      });
+    }
+
+    const dupeCount = incoming.length - additions.length;
+    if (!additions.length) {
+      setNotice({ type: 'info', message: 'All selected contacts are already in your recipients list.' });
+      return;
+    }
+
+    setRecipients(prev => [...prev, ...additions]);
+    setPreviewRecipientId(prev => prev || additions[0]._id || null);
     setErrors({ recipients: {} });
-    setImportedGroupId(groupData?.id || null);
-    setImportedGroupEmails((contacts || []).map(c => c.email));
-    setNotice({ type: 'info', message: `Imported ${contacts.length} contacts from "${groupData?.companyName || 'group'}"` });
+    const baseMsg = `Imported ${additions.length} contact${additions.length !== 1 ? 's' : ''} from "${groupData?.companyName || 'group'}"`;
+    setNotice({ type: 'info', message: dupeCount > 0 ? `${baseMsg}; ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped.` : baseMsg });
   }
 
   /* ── template actions ── */
@@ -833,7 +852,7 @@ export default function App() {
                 <span className="card__title"><Users size={16} /> Recipients</span>
                 <div className="rec-actions">
                   <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : 'Paste Bulk'}</button>
-                  <button className="link" onClick={() => { setOpenImportModalFromRecipients(true); setGroupManagerOpen(true); }}>Import Group</button>
+                  <button className="link" onClick={() => { loadGroups(); setImportModalOpen(true); }}>Import Group</button>
                 </div>
               </div>
 
@@ -844,7 +863,7 @@ export default function App() {
               )}
               <div className="rec-subactions">
                 <button className="link" onClick={addRow}>+ Add recipient</button>
-                <button className="link" onClick={() => { setOpenImportModalFromRecipients(false); setGroupManagerOpen(true); }}>Manage Groups</button>
+                <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
               </div>
               {errors.recipientsGeneral && <small className="err">{errors.recipientsGeneral}</small>}
             </div>
@@ -1067,9 +1086,14 @@ export default function App() {
         open={groupManagerOpen}
         onClose={() => setGroupManagerOpen(false)}
         authedFetch={authedFetch}
+      />
+
+      <ImportGroupModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        authedFetch={authedFetch}
+        groups={groups}
         onImport={handleGroupImport}
-        startInImportMode={openImportModalFromRecipients}
-        onImportModeHandled={() => setOpenImportModalFromRecipients(false)}
       />
 
       {/* Template view */}
