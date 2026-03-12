@@ -3,7 +3,7 @@ import ReactQuill, { Quill } from 'react-quill';
 import RecipientList from './components/RecipientList.jsx';
 import GroupManager from './components/GroupManager.jsx';
 import ImportGroupModal from './components/ImportGroupModal.jsx';
-import { Mail, Users, Send, Clock, Heart, ChevronDown, LayoutGrid } from 'lucide-react';
+import { Mail, Users, Send, Clock, Heart, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, MessageCircle, Zap } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -680,7 +680,10 @@ export default function App() {
         <header className="hdr hdr--landing">
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
-            <b className="hdr__name">Outreachly</b>
+            <div className="hdr__branding">
+              <b className="hdr__name">Outreachly</b>
+              <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
+            </div>
           </div>
           <div className="hdr__right" />
         </header>
@@ -690,13 +693,15 @@ export default function App() {
             <div className="landing-copy">
               <h1 className="landing-title">Send personalized outreach faster, with control.</h1>
               <p className="landing-subtitle">Securely connect Gmail, personalize each message with variables, and review before every send.</p>
-
               <div className="feature-chips">
-                <span className="feature-chip">Secure Gmail sending</span>
-                <span className="feature-chip">Custom variables</span>
-                <span className="feature-chip">Save templates</span>
-                <span className="feature-chip">Controlled daily limits</span>
-                <span className="feature-chip">Preview before send</span>
+                <span className="feature-chip"><Shield size={14} />Secure Gmail compose</span>
+                <span className="feature-chip"><Send size={14} />Multi-recipient individual emails</span>
+                <span className="feature-chip"><Code size={14} />Custom variables</span>
+                <span className="feature-chip"><FileText size={14} />Save templates</span>
+                <span className="feature-chip"><Eye size={14} />Preview before send</span>
+                <span className="feature-chip"><Users size={14} />Create groups</span>
+                <span className="feature-chip"><Download size={14} />Import groups</span>
+                <span className="feature-chip"><History size={14} />Contact history</span>
               </div>
 
               <button className="btn btn--primary landing-cta" onClick={login}>Login with Google</button>
@@ -716,9 +721,22 @@ export default function App() {
                 </div>
 
                 <div className="demo-controls">
-                  <span className="demo-control">Groups • Eng Hiring</span>
+                  <span className="demo-control">Groups • Company Recruiters</span>
+                  <span className="demo-control">Groups • Engineers</span>
                   <span className="demo-control">Templates • Intro Follow-up</span>
-                  <span className="demo-control">History • 12 sent</span>
+                </div>
+
+                <div className="demo-block">
+                  <span className="demo-label">Contacts</span>
+                  <div className="demo-contacts">
+                    <div className="demo-contact">John Doe • john.doe@example.com • Engineer • LinkedIn connected</div>
+                    <div className="demo-contact">Jacob Smith • jacob.smith@example.com • Designer • LinkedIn pending</div>
+                  </div>
+                </div>
+
+                <div className="demo-history">
+                  <span className="demo-control">History • 12 emails sent</span>
+                  <span className="demo-control">History • 4 contacts tracked</span>
                 </div>
 
                 <div className="demo-block">
@@ -751,15 +769,16 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="landing-shell">
         <header className="hdr hdr--landing">
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
-            <b className="hdr__name">Outreachly</b>
+            <div className="hdr__branding">
+              <b className="hdr__name">Outreachly</b>
+              <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
+            </div>
           </div>
           <div className="hdr__right" />
         </header>
-      </div>
     );
   }
 
