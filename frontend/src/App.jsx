@@ -680,7 +680,7 @@ export default function App() {
         <header className="hdr hdr--landing">
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
-            <b className="hdr__name">Recruiter Mailer</b>
+            <b className="hdr__name">Outreachly</b>
           </div>
           <div className="hdr__right" />
         </header>
@@ -755,7 +755,7 @@ export default function App() {
         <header className="hdr hdr--landing">
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
-            <b className="hdr__name">Recruiter Mailer</b>
+            <b className="hdr__name">Outreachly</b>
           </div>
           <div className="hdr__right" />
         </header>
@@ -769,7 +769,10 @@ export default function App() {
       <header className="hdr">
         <div className="hdr__left">
           <Mail size={20} className="hdr__logo" />
-          <b className="hdr__name">Recruiter Mailer</b>
+          <div className="hdr__branding">
+            <b className="hdr__name">Outreachly</b>
+            <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
+          </div>
         </div>
         <div className="hdr__right">
           <button
@@ -974,7 +977,7 @@ export default function App() {
 
       {/* ── FOOTER ── */}
       <footer className="ftr">
-        <Heart size={12} /> Built with care · Recruiter Mailer
+        <Heart size={12} /> Built with care · Outreachly © { new Date().getFullYear() }
       </footer>
 
       <Toast notice={notice} onClose={() => setNotice(null)} />
