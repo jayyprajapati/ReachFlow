@@ -17,6 +17,10 @@ function normalizeDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function firstNameFromFullName(fullName) {
+  return String(fullName || '').trim().split(' ')[0] || 'There';
+}
+
 function sanitizeBody(html) {
   return sanitizeHtml(html || '', {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'span', 'br']),
@@ -89,10 +93,16 @@ async function bumpContactTracking(userId, emailToCount) {
     Group.updateMany(
       { userId, 'contacts.email': email },
       {
-        $inc: { 'contacts.$[contact].contact_count': Number(count) },
+        $push: {
+          'contacts.$[contact].contactHistory': {
+            $each: Array.from({ length: Number(count) }, () => ({ type: 'email', date: touchedAt })),
+          },
+        },
+        $inc: {
+          'contacts.$[contact].emailCount': Number(count),
+        },
         $set: {
-          'contacts.$[contact].last_contacted_at': touchedAt,
-          'contacts.$[contact].last_contacted_via': 'email',
+          'contacts.$[contact].lastContactedDate': touchedAt,
         },
       },
       { arrayFilters: [{ 'contact.email': email }] }
@@ -125,7 +135,7 @@ async function sendCampaign(campaignId, user) {
 
   if (campaign.send_mode === 'single') {
     const first = pending[0];
-    const html = renderTemplate(campaign.body_html, { name: first?.name || 'There', ...(first.variables || {}) });
+    const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(first?.name), ...(first.variables || {}) });
     const toList = pending.map(r => r.email);
     await sendMimeEmail({ user, to: toList, subject: campaign.subject, html, senderName: campaign.sender_name });
     pending.forEach(r => {
@@ -137,7 +147,7 @@ async function sendCampaign(campaignId, user) {
     sentCount = pending.length;
   } else {
     for (const recipient of pending) {
-      const html = renderTemplate(campaign.body_html, { name: recipient.name, ...(recipient.variables || {}) });
+      const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(recipient.name), ...(recipient.variables || {}) });
       try {
         await sendMimeEmail({ user, to: recipient.email, subject: campaign.subject, html, senderName: campaign.sender_name });
         const subdoc = campaign.recipients.id(recipient._id);
@@ -302,7 +312,7 @@ router.post('/:id/preview', async (req, res) => {
     const validation = validateVariables(campaign.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
 
-    const html = renderTemplate(campaign.body_html, { name: target.name || 'There', ...(target.variables || {}) });
+    const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(target.name), ...(target.variables || {}) });
     res.json({ html, warnings: validation.unknown.length ? validation.unknown.map(k => `Unknown variable {{${k}}} found.`) : [] });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to render preview' });

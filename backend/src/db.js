@@ -47,17 +47,26 @@ const recipientSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'pending' },
 });
 
+const contactHistoryEntrySchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ['email', 'linkedin'], required: true },
+    date: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
 const contactSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, lowercase: true, trim: true },
   role: { type: String, default: '', trim: true },
   linkedin: { type: String, default: '', trim: true },
-  connectionStatus: { type: String, enum: ['', 'not_connected', 'pending', 'connected'], default: '' },
+  connectionStatus: { type: String, enum: ['', 'not_connected', 'request_sent', 'connected'], default: '' },
   leftCompany: { type: Boolean, default: false },
-  email_status: { type: String, enum: ['verified', 'tentative', 'flagged'], default: 'tentative' },
-  last_contacted_at: { type: Date, default: null },
-  last_contacted_via: { type: String, enum: ['', 'linkedin', 'email'], default: '' },
-  contact_count: { type: Number, default: 0, min: 0 },
+  email_status: { type: String, enum: ['verified', 'tentative', 'not_valid'], default: 'tentative' },
+  contactHistory: { type: [contactHistoryEntrySchema], default: [] },
+  lastContactedDate: { type: Date, default: null },
+  emailCount: { type: Number, default: 0, min: 0 },
+  linkedInCount: { type: Number, default: 0, min: 0 },
 });
 
 const campaignSchema = new mongoose.Schema(
@@ -132,15 +141,132 @@ async function migrateGroupContactFields() {
               input: '$contacts',
               as: 'contact',
               in: {
-                $mergeObjects: [
-                  {
-                    email_status: 'tentative',
-                    last_contacted_at: null,
-                    last_contacted_via: '',
-                    contact_count: 0,
+                $let: {
+                  vars: {
+                    normalizedStatus: {
+                      $switch: {
+                        branches: [
+                          {
+                            case: { $in: ['$$contact.email_status', ['verified', 'tentative', 'not_valid']] },
+                            then: '$$contact.email_status',
+                          },
+                          {
+                            case: { $eq: ['$$contact.email_status', 'flagged'] },
+                            then: 'not_valid',
+                          },
+                        ],
+                        default: 'tentative',
+                      },
+                    },
+                    normalizedConnectionStatus: {
+                      $switch: {
+                        branches: [
+                          {
+                            case: { $in: ['$$contact.connectionStatus', ['not_connected', 'request_sent', 'connected']] },
+                            then: '$$contact.connectionStatus',
+                          },
+                          {
+                            case: { $eq: ['$$contact.connectionStatus', 'pending'] },
+                            then: 'request_sent',
+                          },
+                        ],
+                        default: '',
+                      },
+                    },
+                    baseContactDate: {
+                      $cond: [
+                        { $ifNull: ['$$contact.last_contacted_at', false] },
+                        '$$contact.last_contacted_at',
+                        '$$NOW',
+                      ],
+                    },
+                    legacyContactCount: {
+                      $max: [
+                        0,
+                        {
+                          $convert: {
+                            input: '$$contact.contact_count',
+                            to: 'int',
+                            onError: 0,
+                            onNull: 0,
+                          },
+                        },
+                      ],
+                    },
+                    legacyVia: {
+                      $cond: [
+                        { $eq: ['$$contact.last_contacted_via', 'linkedin'] },
+                        'linkedin',
+                        'email',
+                      ],
+                    },
                   },
-                  '$$contact',
-                ],
+                  in: {
+                    $mergeObjects: [
+                      '$$contact',
+                      {
+                        email_status: '$$normalizedStatus',
+                        connectionStatus: '$$normalizedConnectionStatus',
+                        contactHistory: {
+                          $cond: [
+                            {
+                              $and: [
+                                { $isArray: '$$contact.contactHistory' },
+                                { $gt: [{ $size: '$$contact.contactHistory' }, 0] },
+                              ],
+                            },
+                            '$$contact.contactHistory',
+                            {
+                              $cond: [
+                                { $gt: ['$$legacyContactCount', 0] },
+                                {
+                                  $map: {
+                                    input: { $range: [0, '$$legacyContactCount'] },
+                                    as: 'i',
+                                    in: {
+                                      type: '$$legacyVia',
+                                      date: '$$baseContactDate',
+                                    },
+                                  },
+                                },
+                                [],
+                              ],
+                            },
+                          ],
+                        },
+                        lastContactedDate: {
+                          $ifNull: ['$$contact.lastContactedDate', '$$baseContactDate'],
+                        },
+                        emailCount: {
+                          $max: [
+                            0,
+                            {
+                              $convert: {
+                                input: '$$contact.emailCount',
+                                to: 'int',
+                                onError: '$$legacyContactCount',
+                                onNull: '$$legacyContactCount',
+                              },
+                            },
+                          ],
+                        },
+                        linkedInCount: {
+                          $max: [
+                            0,
+                            {
+                              $convert: {
+                                input: '$$contact.linkedInCount',
+                                to: 'int',
+                                onError: 0,
+                                onNull: 0,
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
               },
             },
           },

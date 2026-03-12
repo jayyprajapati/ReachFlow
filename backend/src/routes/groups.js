@@ -4,25 +4,94 @@ const { Group } = require('../db');
 
 const router = express.Router();
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_GROUP_CONTACTS = 300;
 
 /* ── helpers ── */
 
+function sanitizeHistoryEntry(entry) {
+  const type = ['email', 'linkedin'].includes(entry?.type) ? entry.type : null;
+  const parsedDate = entry?.date ? new Date(entry.date) : null;
+  if (!type || !parsedDate || Number.isNaN(parsedDate.getTime())) return null;
+  return { type, date: parsedDate };
+}
+
+function sanitizeContactHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map(sanitizeHistoryEntry)
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+function deriveContactMetrics(contactHistory) {
+  const history = sanitizeContactHistory(contactHistory);
+  const emailCount = history.filter(h => h.type === 'email').length;
+  const linkedinCount = history.filter(h => h.type === 'linkedin').length;
+  const last = history.length ? history[history.length - 1] : null;
+  return {
+    lastContacted: last ? { type: last.type, date: last.date } : null,
+    emailCount,
+    linkedinCount,
+  };
+}
+
 function sanitizeContact(c) {
-  const emailStatus = ['verified', 'tentative', 'flagged'].includes(c.email_status) ? c.email_status : 'tentative';
-  const lastContactedVia = ['linkedin', 'email'].includes(c.last_contacted_via) ? c.last_contacted_via : '';
-  const contactCount = Number.isFinite(Number(c.contact_count)) ? Math.max(0, Math.floor(Number(c.contact_count))) : 0;
-  const lastContactedAt = c.last_contacted_at ? new Date(c.last_contacted_at) : null;
+  const emailStatus = ['verified', 'tentative', 'not_valid', 'flagged'].includes(c.email_status)
+    ? c.email_status
+    : 'tentative';
+  const contactHistory = sanitizeContactHistory(c.contactHistory || []);
+  const lastContactedDate = c.lastContactedDate ? new Date(c.lastContactedDate) : null;
+  const emailCount = Number.isFinite(Number(c.emailCount)) ? Math.max(0, Math.floor(Number(c.emailCount))) : null;
+  const linkedInCount = Number.isFinite(Number(c.linkedInCount)) ? Math.max(0, Math.floor(Number(c.linkedInCount))) : null;
+
+  const derived = deriveContactMetrics(contactHistory);
+  const normalizedEmailStatus = emailStatus === 'flagged' ? 'not_valid' : emailStatus;
   return {
     name: (c.name || '').trim(),
     email: (c.email || '').toLowerCase().trim(),
     role: (c.role || '').trim(),
     linkedin: (c.linkedin || '').trim(),
-    connectionStatus: ['', 'not_connected', 'pending', 'connected'].includes(c.connectionStatus) ? c.connectionStatus : '',
+    connectionStatus: ['', 'not_connected', 'request_sent', 'connected', 'pending'].includes(c.connectionStatus)
+      ? (c.connectionStatus === 'pending' ? 'request_sent' : c.connectionStatus)
+      : '',
     leftCompany: !!c.leftCompany,
-    email_status: emailStatus,
-    last_contacted_at: lastContactedAt && !Number.isNaN(lastContactedAt.getTime()) ? lastContactedAt : null,
-    last_contacted_via: lastContactedVia,
-    contact_count: contactCount,
+    email_status: normalizedEmailStatus,
+    contactHistory,
+    lastContactedDate: lastContactedDate && !Number.isNaN(lastContactedDate.getTime())
+      ? lastContactedDate
+      : (derived.lastContacted?.date || null),
+    emailCount: emailCount === null ? derived.emailCount : emailCount,
+    linkedInCount: linkedInCount === null ? derived.linkedinCount : linkedInCount,
+  };
+}
+
+function toContactPayload(contact) {
+  const history = sanitizeContactHistory(contact.contactHistory || []);
+  const metrics = deriveContactMetrics(history);
+  const manualLastContacted = contact.lastContactedDate ? new Date(contact.lastContactedDate) : null;
+  const safeManualLast = manualLastContacted && !Number.isNaN(manualLastContacted.getTime()) ? manualLastContacted : null;
+  const manualEmailCount = Number.isFinite(Number(contact.emailCount)) ? Math.max(0, Math.floor(Number(contact.emailCount))) : null;
+  const manualLinkedInCount = Number.isFinite(Number(contact.linkedInCount)) ? Math.max(0, Math.floor(Number(contact.linkedInCount))) : null;
+  const effectiveLastContacted = safeManualLast
+    ? { type: metrics.lastContacted?.type || 'email', date: safeManualLast }
+    : metrics.lastContacted;
+  const effectiveEmailCount = manualEmailCount === null ? metrics.emailCount : manualEmailCount;
+  const effectiveLinkedInCount = manualLinkedInCount === null ? metrics.linkedinCount : manualLinkedInCount;
+  const normalizedEmailStatus = contact.email_status === 'flagged' ? 'not_valid' : (contact.email_status || 'tentative');
+  return {
+    id: contact._id.toString(),
+    name: contact.name,
+    email: contact.email,
+    role: contact.role || '',
+    linkedin: contact.linkedin || '',
+    connectionStatus: contact.connectionStatus === 'pending' ? 'request_sent' : (contact.connectionStatus || ''),
+    leftCompany: !!contact.leftCompany,
+    email_status: normalizedEmailStatus,
+    contactHistory: history.map(h => ({ type: h.type, date: h.date })),
+    lastContacted: effectiveLastContacted,
+    lastContactedDate: effectiveLastContacted?.date || null,
+    emailCount: effectiveEmailCount,
+    linkedInCount: effectiveLinkedInCount,
   };
 }
 
@@ -63,19 +132,7 @@ router.get('/:id', async (req, res) => {
       id: group._id.toString(),
       companyName: group.companyName,
       logoUrl: group.logoUrl || '',
-      contacts: group.contacts.map(c => ({
-        id: c._id.toString(),
-        name: c.name,
-        email: c.email,
-        role: c.role || '',
-        linkedin: c.linkedin || '',
-        connectionStatus: c.connectionStatus || '',
-        leftCompany: !!c.leftCompany,
-        email_status: c.email_status || 'tentative',
-        last_contacted_at: c.last_contacted_at || null,
-        last_contacted_via: c.last_contacted_via || '',
-        contact_count: Number.isFinite(c.contact_count) ? c.contact_count : 0,
-      })),
+      contacts: group.contacts.map(toContactPayload),
       createdAt: group.createdAt,
       updatedAt: group.updatedAt,
     });
@@ -148,22 +205,13 @@ router.post('/:id/contacts', async (req, res) => {
   try {
     const group = await Group.findOne({ _id: id, userId: req.user._id });
     if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.contacts.length >= MAX_GROUP_CONTACTS) {
+      return res.status(400).json({ error: 'Group contact limit reached (300).' });
+    }
     group.contacts.push(clean);
     await group.save();
     const added = group.contacts[group.contacts.length - 1];
-    res.json({
-      id: added._id.toString(),
-      name: added.name,
-      email: added.email,
-      role: added.role || '',
-      linkedin: added.linkedin || '',
-      connectionStatus: added.connectionStatus || '',
-      leftCompany: !!added.leftCompany,
-      email_status: added.email_status || 'tentative',
-      last_contacted_at: added.last_contacted_at || null,
-      last_contacted_via: added.last_contacted_via || '',
-      contact_count: Number.isFinite(added.contact_count) ? added.contact_count : 0,
-    });
+    res.json(toContactPayload(added));
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to add contact' });
   }
@@ -185,19 +233,7 @@ router.patch('/:id/contacts/:contactId', async (req, res) => {
     if (err) return res.status(400).json({ error: err });
     Object.assign(contact, updates);
     await group.save();
-    res.json({
-      id: contact._id.toString(),
-      name: contact.name,
-      email: contact.email,
-      role: contact.role || '',
-      linkedin: contact.linkedin || '',
-      connectionStatus: contact.connectionStatus || '',
-      leftCompany: !!contact.leftCompany,
-      email_status: contact.email_status || 'tentative',
-      last_contacted_at: contact.last_contacted_at || null,
-      last_contacted_via: contact.last_contacted_via || '',
-      contact_count: Number.isFinite(contact.contact_count) ? contact.contact_count : 0,
-    });
+    res.json(toContactPayload(contact));
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to update contact' });
   }
