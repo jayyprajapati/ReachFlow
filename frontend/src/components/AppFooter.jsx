@@ -1,5 +1,7 @@
 import React from 'react';
-import { Heart } from 'lucide-react';
+import { ExternalLink, Heart } from 'lucide-react';
+
+const PERSONAL_SITE_URL = import.meta.env.VITE_PERSONAL_SITE_URL || 'https://jayprajapati.dev';
 
 export default function AppFooter({ onNavigate }) {
   return (
@@ -9,6 +11,10 @@ export default function AppFooter({ onNavigate }) {
         <button className="ftr__link" onClick={() => onNavigate('/about')}>About</button>
         <span>•</span>
         <button className="ftr__link" onClick={() => onNavigate('/privacy-policy')}>Privacy Policy</button>
+        <span>•</span>
+        <a className="ftr__link ftr__link--ext" href={PERSONAL_SITE_URL} target="_blank" rel="noreferrer noopener">
+          Personal site <ExternalLink size={12} />
+        </a>
       </span>
     </footer>
   );

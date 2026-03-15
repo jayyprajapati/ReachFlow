@@ -47,6 +47,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     // Unsaved changes tracking
     const [dirty, setDirty] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState(null); // null | { action: fn }
+    const [deleteGroupDialogOpen, setDeleteGroupDialogOpen] = useState(false);
 
     // Bulk paste
     const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
@@ -93,6 +94,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             setEditingContactId(null);
             setDirty(false);
             setError('');
+            setDeleteGroupDialogOpen(false);
         }
     }, [open, loadGroups]);
 
@@ -169,9 +171,8 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         }
     }
 
-    async function deleteGroup() {
+    async function performDeleteGroup() {
         if (!activeGroup) return;
-        if (!window.confirm(`Delete "${activeGroup.companyName}" and all its contacts?`)) return;
         try {
             const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}`, { method: 'DELETE' });
             const d = await r.json();
@@ -181,7 +182,14 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             await loadGroups();
         } catch (e) {
             setError(e.message);
+        } finally {
+            setDeleteGroupDialogOpen(false);
         }
+    }
+
+    function deleteGroup() {
+        if (!activeGroup) return;
+        setDeleteGroupDialogOpen(true);
     }
 
     /* ── company info edit ── */
@@ -649,6 +657,18 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                         <div className="gm-confirm-actions">
                             <button className="gm-text-btn gm-text-btn--danger" onClick={() => handleConfirm('discard')}>Discard changes</button>
                             <button className="gm-text-btn" onClick={() => handleConfirm('cancel')}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {deleteGroupDialogOpen && activeGroup && (
+                <div className="gm-confirm-overlay" onClick={() => setDeleteGroupDialogOpen(false)}>
+                    <div className="gm-confirm" onClick={e => e.stopPropagation()}>
+                        <p>Delete “{activeGroup.companyName}” and all its contacts?</p>
+                        <div className="gm-confirm-actions">
+                            <button className="gm-text-btn" onClick={() => setDeleteGroupDialogOpen(false)}>Cancel</button>
+                            <button className="gm-text-btn gm-text-btn--danger" onClick={performDeleteGroup}>Delete group</button>
                         </div>
                     </div>
                 </div>

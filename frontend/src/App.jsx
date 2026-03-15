@@ -72,6 +72,24 @@ function Toast({ notice, onClose }) {
   );
 }
 
+function WarningDialog({ dialog, onCancel, onConfirm }) {
+  if (!dialog) return null;
+  return (
+    <div className="warn-overlay" onClick={onCancel}>
+      <div className="warn-dialog" onClick={e => e.stopPropagation()}>
+        <h3>{dialog.title || 'Are you sure?'}</h3>
+        <p>{dialog.message || ''}</p>
+        <div className="warn-dialog__actions">
+          <button className="link" onClick={onCancel}>Cancel</button>
+          <button className={`btn ${dialog.intent === 'danger' ? 'btn--danger' : 'btn--primary'}`} onClick={onConfirm}>
+            {dialog.confirmText || 'Continue'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Drawer({ open, title, onClose, children, from = 'right', width = 480 }) {
   return (
     <>
@@ -119,6 +137,7 @@ export default function App() {
   const [pagePath, setPagePath] = useState(window.location.pathname || '/');
   const [savedSenderName, setSavedSenderName] = useState('');
   const [savingSenderName, setSavingSenderName] = useState(false);
+  const [warningDialog, setWarningDialog] = useState(null);
 
   const quillRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -731,30 +750,36 @@ export default function App() {
   }
 
   async function deleteVariable(variableId) {
-    try {
-      const target = variables.find(v => v.id === variableId);
-      const targetName = target?.variableName;
-      if (target && !String(variableId).startsWith('local-')) {
-        const res = await apiFetch(`${API_BASE}/api/variables/${variableId}`, { method: 'DELETE' });
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error || 'Failed to delete variable');
-      }
-      setVariables(prev => prev.filter(v => v.id !== variableId));
-      setRecipients(prev => prev.map(r => {
-        const nextVars = { ...(r.variables || {}) };
-        if (targetName) delete nextVars[targetName];
-        return { ...r, variables: nextVars };
-      }));
-      setNotice({ type: 'info', message: 'Variable deleted' });
-    } catch (e) {
-      setNotice({ type: 'error', message: e.message });
-    }
+    const target = variables.find(v => v.id === variableId);
+    if (!target) return;
+    setWarningDialog({
+      title: 'Delete variable?',
+      message: `This removes {{${target.variableName}}} and clears its values from all recipients in this draft.`,
+      confirmText: 'Delete variable',
+      intent: 'danger',
+      onConfirm: async () => {
+        try {
+          const targetName = target?.variableName;
+          if (target && !String(variableId).startsWith('local-')) {
+            const res = await apiFetch(`${API_BASE}/api/variables/${variableId}`, { method: 'DELETE' });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error || 'Failed to delete variable');
+          }
+          setVariables(prev => prev.filter(v => v.id !== variableId));
+          setRecipients(prev => prev.map(r => {
+            const nextVars = { ...(r.variables || {}) };
+            if (targetName) delete nextVars[targetName];
+            return { ...r, variables: nextVars };
+          }));
+          setNotice({ type: 'info', message: 'Variable deleted' });
+        } catch (e) {
+          setNotice({ type: 'error', message: e.message });
+        }
+      },
+    });
   }
 
-  async function resetComposeState() {
-    const confirmed = window.confirm('Reset compose state? This clears recipients, variables, subject, and body.');
-    if (!confirmed) return;
-
+  async function runResetComposeState() {
     try {
       await Promise.all(variables.map(v => apiFetch(`${API_BASE}/api/variables/${v.id}`, { method: 'DELETE' }).catch(() => null)));
       setRecipients([]);
@@ -775,6 +800,16 @@ export default function App() {
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Failed to reset compose state' });
     }
+  }
+
+  async function resetComposeState() {
+    setWarningDialog({
+      title: 'Reset compose state?',
+      message: 'This clears recipients, variables, subject, and body for your current draft.',
+      confirmText: 'Reset now',
+      intent: 'danger',
+      onConfirm: runResetComposeState,
+    });
   }
 
   /* ── render ── */
@@ -1080,7 +1115,7 @@ export default function App() {
                 <label className="lbl">Description</label>
                 <input className="inp" placeholder="Description (optional)" value={varForm.description} onChange={e => setVarForm(f => ({ ...f, description: e.target.value }))} />
               </div>
-              <button className="btn btn--ghost" onClick={createVariable} disabled={variables.length >= MAX_CUSTOM_VARIABLES} style={{ alignSelf: 'flex-start' }}>Add variable</button>
+              <button className="btn btn--primary" onClick={createVariable} disabled={variables.length >= MAX_CUSTOM_VARIABLES} style={{ alignSelf: 'flex-start' }}>Add variable</button>
               {variables.length >= MAX_CUSTOM_VARIABLES ? <small className="muted">You’ve reached the maximum of 2 custom variables.</small> : null}
             </div>
 
@@ -1142,6 +1177,15 @@ export default function App() {
       <AppFooter onNavigate={navigateTo} />
 
       <Toast notice={notice} onClose={() => setNotice(null)} />
+      <WarningDialog
+        dialog={warningDialog}
+        onCancel={() => setWarningDialog(null)}
+        onConfirm={async () => {
+          const action = warningDialog?.onConfirm;
+          setWarningDialog(null);
+          if (typeof action === 'function') await action();
+        }}
+      />
 
       {/* ── DRAWERS ── */}
 

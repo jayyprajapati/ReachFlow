@@ -803,10 +803,17 @@ body {
   color: var(--blue);
   cursor: pointer;
   padding: 0;
+  text-decoration: none;
 }
 
 .ftr__link:hover {
   text-decoration: underline;
+}
+
+.ftr__link--ext {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .ftr svg {
@@ -1522,6 +1529,15 @@ body {
   background: var(--blue-dark);
 }
 
+.btn--danger {
+  background: #dc2626;
+  color: #fff;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
 .btn--ghost {
   background: transparent;
   color: var(--text);
@@ -1607,6 +1623,12 @@ body {
   line-height: 1.75;
 }
 
+.info-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ── Template area ── */
 
 .tpl-area {
@@ -1660,6 +1682,44 @@ body {
 .toast--info {
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.warn-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .28);
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.warn-dialog {
+  width: min(480px, 100%);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .16);
+}
+
+.warn-dialog h3 {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+
+.warn-dialog p {
+  color: var(--sub);
+  line-height: 1.65;
+}
+
+.warn-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 @keyframes slideIn {

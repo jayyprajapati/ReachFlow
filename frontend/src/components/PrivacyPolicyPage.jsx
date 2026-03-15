@@ -1,4 +1,19 @@
 import React from 'react';
+import { Shield, Database, KeyRound, Mail, Lock, EyeOff, ExternalLink } from 'lucide-react';
+
+function PrivacyCard({ icon, title, text }) {
+  return (
+    <article className="info-card">
+      <div className="info-card__icon">{icon}</div>
+      <div>
+        <h3>{title}</h3>
+        <p>{text}</p>
+      </div>
+    </article>
+  );
+}
+
+const PERSONAL_SITE_URL = import.meta.env.VITE_PERSONAL_SITE_URL || 'https://jayprajapati.dev';
 
 export default function PrivacyPolicyPage({ onBack }) {
   return (
@@ -6,8 +21,44 @@ export default function PrivacyPolicyPage({ onBack }) {
       <div className="info-page-head">
         <button className="link" onClick={onBack}>← Back to app</button>
         <h1>Privacy Policy</h1>
-        <p>Last updated: March 2026</p>
+        <p>
+          Last updated: March 2026. This policy explains what ReachFlow stores, how Gmail/Firebase are used,
+          and how your outreach data is handled.
+        </p>
       </div>
+
+      <section className="info-grid">
+        <PrivacyCard
+          icon={<Shield size={18} />}
+          title="Data protection principles"
+          text="ReachFlow keeps data handling focused on campaign workflows and avoids unnecessary inbox-access permissions."
+        />
+        <PrivacyCard
+          icon={<Database size={18} />}
+          title="What we store"
+          text="Account basics, contacts/groups, templates, draft snapshots, and campaign metadata are stored so work can be resumed reliably."
+        />
+        <PrivacyCard
+          icon={<KeyRound size={18} />}
+          title="Auth and identity"
+          text="Firebase authentication is used for sign-in, and backend APIs verify Firebase ID tokens for each protected request."
+        />
+        <PrivacyCard
+          icon={<Mail size={18} />}
+          title="Gmail usage"
+          text="Gmail OAuth is used for sending workflows and sender identity checks; emails send only after explicit user action."
+        />
+        <PrivacyCard
+          icon={<EyeOff size={18} />}
+          title="Inbox access"
+          text="ReachFlow does not request Gmail read-only inbox scope and does not read mailbox content for campaign operation."
+        />
+        <PrivacyCard
+          icon={<Lock size={18} />}
+          title="Token security"
+          text="Refresh tokens used to keep Gmail connected are stored encrypted in backend storage."
+        />
+      </section>
 
       <section className="info-section">
         <h2>Overview</h2>
@@ -74,6 +125,12 @@ export default function PrivacyPolicyPage({ onBack }) {
       <section className="info-section">
         <h2>Contact</h2>
         <p>For privacy questions, contact: jay.prajapati5717@gmail.com.</p>
+        <p>
+          Personal site:{' '}
+          <a className="link info-inline-link" href={PERSONAL_SITE_URL} target="_blank" rel="noreferrer noopener">
+            Visit website <ExternalLink size={13} />
+          </a>
+        </p>
       </section>
     </div>
   );
