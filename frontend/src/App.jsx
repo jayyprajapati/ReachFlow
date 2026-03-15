@@ -6,7 +6,7 @@ import ImportGroupModal from './components/ImportGroupModal.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import AppFooter from './components/AppFooter.jsx';
-import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw } from 'lucide-react';
+import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -519,8 +519,6 @@ export default function App() {
     const e = { recipients: {} };
     if (!subject.trim()) e.subject = 'Required';
     if (!strip(body)) e.body = 'Required';
-    if (!appUser) e.sender = 'Login required';
-    else if (!gmailConnected) e.sender = 'Connect Gmail first';
     if (!recipients.length) e.recipientsGeneral = 'Add at least one recipient';
     if (recipients.length > 50) e.recipientsGeneral = 'Max 50 recipients per send';
 
@@ -546,7 +544,7 @@ export default function App() {
 
   const hasErr = e => {
     const rr = Object.values(e.recipients || {}).some(o => Object.keys(o || {}).length);
-    return !!(e.subject || e.body || e.sender || e.recipientsGeneral || rr);
+    return !!(e.subject || e.body || e.recipientsGeneral || rr);
   };
 
   /* ── campaign actions ── */
@@ -783,7 +781,7 @@ export default function App() {
 
   if (pagePath === '/about' || pagePath === '/privacy-policy') {
     return (
-      <div className="landing-shell">
+      <div className="landing-shell docs-shell">
         <header className="hdr hdr--landing">
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
@@ -795,7 +793,7 @@ export default function App() {
           <div className="hdr__right" />
         </header>
 
-        <main className="landing-main info-main">
+        <main className="docs-main">
           {pagePath === '/about'
             ? <AboutPage onBack={() => navigateTo('/')} />
             : <PrivacyPolicyPage onBack={() => navigateTo('/')} />}
@@ -936,6 +934,17 @@ export default function App() {
             className="hdr__utility-btn"
             onClick={() => {
               setUtilityDrawerOpen(true);
+              setUtilityTab('settings');
+            }}
+            aria-label="Open settings"
+          >
+            <Settings size={16} />
+          </button>
+
+          <button
+            className="hdr__utility-btn"
+            onClick={() => {
+              setUtilityDrawerOpen(true);
               setUtilityTab('history');
             }}
             aria-label="Open utility drawer"
@@ -993,17 +1002,25 @@ export default function App() {
         {/* LEFT */}
         <section className="side">
           <div className="side__scroll">
-
-            {/* Sender */}
-            <div className="card">
-              <div className="card__head">
-                <span className="card__title"><Mail size={16} /> Sender</span>
-                <button className="link" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName}>
-                  {savingSenderName ? 'Saving…' : 'Save'}
+            <div className="side__topbar">
+              <p className="muted side__topnote">
+                You can change sender name from
+                <button
+                  className="link side__inline-link"
+                  onClick={() => {
+                    setUtilityDrawerOpen(true);
+                    setUtilityTab('settings');
+                  }}
+                >
+                  Settings
                 </button>
+                .
+              </p>
+              <div className="side__topactions">
+                <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
+                <span className="gm-dot-sep" aria-hidden="true">•</span>
+                <button className="link" onClick={resetComposeState}><RotateCcw size={13} /> Reset</button>
               </div>
-              <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
-              {errors.sender && <small className="err">{errors.sender}</small>}
             </div>
 
             {/* Recipients */}
@@ -1023,11 +1040,7 @@ export default function App() {
                 <RecipientList recipients={recipients} variables={variables} onChangeField={updateRecipient} onChangeVariable={updateRecipientVariable} onDelete={deleteRecipient} onEmailBlur={onEmailBlur} fieldErrors={errors.recipients} />
               )}
               <div className="rec-subactions">
-                <div className="rec-subactions__side" />
                 <button className="link" onClick={addRow}>+ Add recipient</button>
-                <div className="rec-subactions__side rec-subactions__side--right">
-                  <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
-                </div>
               </div>
               {errors.recipientsGeneral && <small className="err">{errors.recipientsGeneral}</small>}
             </div>
@@ -1036,7 +1049,6 @@ export default function App() {
             <div className="card">
               <div className="card__head">
                 <span className="card__title"><Clock size={16} /> Variables</span>
-                <button className="link" onClick={resetComposeState}><RotateCcw size={13} /> Reset</button>
               </div>
               <div className="group-chips" style={{ gap: 8 }}>
                 <div className="group-chip" style={{ maxWidth: '100%' }}>
@@ -1051,17 +1063,11 @@ export default function App() {
                       <span className="group-chip__name">{`{{${v.variableName}}}`}</span>
                       <span className="group-chip__count">{v.description || 'Custom variable'}</span>
                     </div>
-                    <button className="chip-sm" onClick={() => deleteVariable(v.id)}>Delete</button>
+                    <button className="chip-sm chip-sm--icon" onClick={() => deleteVariable(v.id)} aria-label={`Delete ${v.variableName}`} title="Delete variable">
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 ))}
-              </div>
-
-              <div className="field">
-                <label className="lbl">Name format</label>
-                <select className="inp" value={nameFormat} onChange={e => setNameFormat(e.target.value)}>
-                  <option value="first">First name</option>
-                  <option value="full">Full name</option>
-                </select>
               </div>
 
               <p className="muted" style={{ marginTop: -4 }}>Custom variables limit: {variables.length}/{MAX_CUSTOM_VARIABLES}</p>
@@ -1089,7 +1095,20 @@ export default function App() {
               {errors.subject && <span className="err--blue">{errors.subject}</span>}
 
               <div className="compose__editor">
-                <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved variable names</p>
+                <div className="compose__meta">
+                  <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved variable names</p>
+                  <label className="mini-switch" title="Name format for {{name}}">
+                    <span className="mini-switch__label">{nameFormat === 'full' ? 'Full name' : 'First name'}</span>
+                    <input
+                      type="checkbox"
+                      checked={nameFormat === 'full'}
+                      onChange={e => setNameFormat(e.target.checked ? 'full' : 'first')}
+                    />
+                    <span className="mini-switch__track">
+                      <span className="mini-switch__thumb" />
+                    </span>
+                  </label>
+                </div>
                 <div className="quill-wrap">
                   <ReactQuill ref={quillRef} theme="snow" value={body} onChange={v => { setBody(v); if (errors.body && strip(v)) setErrors(p => ({ ...p, body: undefined })); }} modules={QUILL_MODULES} placeholder="Write your email…" />
                 </div>
@@ -1110,8 +1129,8 @@ export default function App() {
               {errors.body && <span className="err--blue">{errors.body}</span>}
 
               <div className="compose__actions">
-                <button className="btn btn--outline" onClick={() => saveDraft(true)} disabled={saving}><FileText size={15} />{saving ? 'Saving…' : 'Save Draft'}</button>
-                <button className="btn btn--outline" onClick={openCreateTemplate}><Bookmark size={15} />Save as Template</button>
+                <button className="btn btn--outline compose__subtle-btn" onClick={() => saveDraft(true)} disabled={saving}><FileText size={15} />{saving ? 'Saving…' : 'Save Draft'}</button>
+                <button className="btn btn--outline compose__subtle-btn" onClick={openCreateTemplate}><Bookmark size={15} />Save as Template</button>
                 <button className="btn btn--white" onClick={doPreview} disabled={isPreviewing || !gmailConnected}><Send size={15} />{isPreviewing ? 'Loading…' : 'Preview & Send'}</button>
               </div>
             </div>

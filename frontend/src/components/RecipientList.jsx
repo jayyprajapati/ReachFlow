@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function RecipientList({ recipients, variables = [], onChangeField, onChangeVariable, onDelete, onEmailBlur, fieldErrors }) {
   if (!recipients.length) {
-    return <p className="muted" style={{ padding: '8px 0' }}>No recipients added yet.</p>;
+    return <p className="muted recipient-empty" style={{ padding: '8px 0' }}>No recipients added yet.</p>;
   }
 
   const columnCount = Math.min(2 + variables.length, 4);
