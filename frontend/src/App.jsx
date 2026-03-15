@@ -3,7 +3,10 @@ import ReactQuill, { Quill } from 'react-quill';
 import RecipientList from './components/RecipientList.jsx';
 import GroupManager from './components/GroupManager.jsx';
 import ImportGroupModal from './components/ImportGroupModal.jsx';
-import { Mail, Users, Send, Clock, Heart, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, MessageCircle, Zap } from 'lucide-react';
+import AboutPage from './components/AboutPage.jsx';
+import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
+import AppFooter from './components/AppFooter.jsx';
+import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -29,7 +32,7 @@ const QUILL_MODULES = {
   ],
 };
 
-const VARIABLE_OPTIONS = ['name'];
+const MAX_CUSTOM_VARIABLES = 2;
 
 const Embed = Quill.import('blots/embed');
 class VariableBlot extends Embed {
@@ -105,12 +108,15 @@ export default function App() {
   const [bulkInput, setBulkInput] = useState('');
   const [errors, setErrors] = useState({ recipients: {} });
   const [history, setHistory] = useState([]);
+  const [drafts, setDrafts] = useState([]);
   const [utilityDrawerOpen, setUtilityDrawerOpen] = useState(false);
   const [utilityTab, setUtilityTab] = useState('history');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftId, setDraftId] = useState(null);
   const [groupImports, setGroupImports] = useState([]);
+  const [nameFormat, setNameFormat] = useState('first');
+  const [pagePath, setPagePath] = useState(window.location.pathname || '/');
   const [savedSenderName, setSavedSenderName] = useState('');
   const [savingSenderName, setSavingSenderName] = useState(false);
 
@@ -121,9 +127,9 @@ export default function App() {
   const [slashTriggerIdx, setSlashTriggerIdx] = useState(null);
 
   const [variables, setVariables] = useState([]);
-  const [varForm, setVarForm] = useState({ key: '', label: '', required: false, description: '' });
+  const [varForm, setVarForm] = useState({ variableName: '', description: '' });
 
-  const variableKeys = useMemo(() => ['name', ...variables.map(v => v.key)], [variables]);
+  const variableKeys = useMemo(() => ['name', ...variables.map(v => v.variableName)], [variables]);
 
   const [groups, setGroups] = useState([]);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
@@ -146,6 +152,7 @@ export default function App() {
         await hydrateProfile(token);
         loadVariables(token);
         loadHistory(token);
+        loadDrafts(token);
         loadGroups(token);
         loadTemplates(token);
       } else {
@@ -158,6 +165,11 @@ export default function App() {
         setUserMenuOpen(false);
         setRecipients([]);
         setGroupImports([]);
+        setNameFormat('first');
+        setDrafts([]);
+        setDraftId(null);
+        setSubject('');
+        setBody('');
       }
     });
     return () => unsub();
@@ -180,6 +192,12 @@ export default function App() {
   useEffect(() => { if (!notice) return; const t = setTimeout(() => setNotice(null), 3500); return () => clearTimeout(t); }, [notice]);
 
   useEffect(() => {
+    const onPopState = () => setPagePath(window.location.pathname || '/');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
     if (!userMenuOpen) return;
     const onDocClick = e => {
       if (!userMenuRef.current?.contains(e.target)) setUserMenuOpen(false);
@@ -192,6 +210,12 @@ export default function App() {
     if (!recipients.length) { setPreviewRecipientId(null); return; }
     if (!recipients.some(r => r._id === previewRecipientId)) setPreviewRecipientId(recipients[0]._id);
   }, [recipients, previewRecipientId]);
+
+  const navigateTo = nextPath => {
+    if (!nextPath || nextPath === pagePath) return;
+    window.history.pushState({}, '', nextPath);
+    setPagePath(nextPath);
+  };
 
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
@@ -372,7 +396,12 @@ export default function App() {
     setSavedSenderName('');
     setRecipients([]);
     setHistory([]);
+    setDrafts([]);
     setGroupImports([]);
+    setNameFormat('first');
+    setDraftId(null);
+    setSubject('');
+    setBody('');
   }
 
   const authedFetch = async (url, options = {}, tokenOverride) => {
@@ -381,7 +410,8 @@ export default function App() {
     return fetch(url, { ...options, headers: { ...hdrs, ...(options.headers || {}), Authorization: `Bearer ${tok}` } });
   };
 
-  const loadHistory = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/campaigns`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); setHistory(d); } catch (e) { setNotice({ type: 'error', message: e.message || 'Failed to load history' }); } };
+  const loadHistory = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/campaigns?view=history`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); setHistory(d); } catch (e) { setNotice({ type: 'error', message: e.message || 'Failed to load history' }); } };
+  const loadDrafts = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/campaigns?view=drafts`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); setDrafts(d); } catch (e) { setNotice({ type: 'error', message: e.message || 'Failed to load drafts' }); } };
   const loadGroups = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/groups`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setGroups(d); } catch (e) { /* ignore silently — GroupManager handles its own loading */ } };
   const loadTemplates = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/templates`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setTemplates(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
   const loadVariables = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/variables`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setVariables(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
@@ -495,21 +525,22 @@ export default function App() {
     if (recipients.length > 50) e.recipientsGeneral = 'Max 50 recipients per send';
 
     const usedVars = new Set([...findVars(subject), ...findVars(body)]);
-    const allowedKeys = ['name', ...variables.map(v => v.key)];
+    const allowedKeys = ['name', ...variables.map(v => v.variableName)];
     if (hasUnmatched(body)) {
       e.body = 'Invalid variable syntax detected.';
     }
 
-    const requiredKeys = variables.filter(v => v.required && usedVars.has(v.key)).map(v => v.key);
     recipients.forEach(r => {
       const re = {};
       if (!emailRegex.test(r.email || '')) re.email = 'Invalid';
       if (!r.name?.trim()) re.name = 'Required';
-      requiredKeys.forEach(k => {
-        if (!r.variables?.[k]) re[k] = 'Required';
-      });
       if (Object.keys(re).length) e.recipients[r._id] = re;
     });
+
+    const unknown = Array.from(usedVars).filter(k => !allowedKeys.includes(k));
+    if (unknown.length) {
+      e.body = `Unknown variable {{${unknown[0]}}} found.`;
+    }
     return e;
   }
 
@@ -521,11 +552,12 @@ export default function App() {
   /* ── campaign actions ── */
 
   function buildPayload() {
-    const variablesUsed = Array.from(new Set([...findVars(subject), ...findVars(body)])).filter(Boolean);
+    const variablesUsed = variables.map(v => v.variableName).filter(Boolean);
     return {
       subject,
       body_html: body,
       sender_name: senderName,
+      name_format: nameFormat,
       recipients: recipients.map(san),
       variables: variablesUsed,
       group_imports: groupImports,
@@ -543,6 +575,7 @@ export default function App() {
       const d = await res.json(); if (!res.ok) throw new Error(d.error || 'Save failed');
       if (!draftId && d.id) setDraftId(d.id);
       if (toast) setNotice({ type: 'info', message: 'Draft saved' });
+      loadDrafts();
       return d.id || draftId;
     } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setSaving(false); }
   }
@@ -584,7 +617,7 @@ export default function App() {
         throw new Error(d.error || 'Send failed');
       }
       setNotice({ type: 'success', message: `Sent to ${recipients.length} recipients` });
-      setErrors({ recipients: {} }); setPreviewOpen(false); await loadHistory();
+      setErrors({ recipients: {} }); setPreviewOpen(false); await loadHistory(); await loadDrafts();
     } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsSending(false); }
   }
 
@@ -592,9 +625,21 @@ export default function App() {
     try {
       const res = await apiFetch(`${API_BASE}/api/campaigns/${id}`); const d = await res.json(); if (!res.ok) throw new Error(d.error);
       setSubject(d.subject || ''); setBody(d.body_html || ''); setSenderName(d.sender_name || '');
+      setNameFormat(d.name_format === 'full' ? 'full' : 'first');
       const recs = (d.recipients || []).map(r => ({ ...r, _id: r._id || uid() })); setRecipients(recs); setPreviewRecipientId(recs[0]?._id || null);
       setErrors({ recipients: {} });
       setGroupImports(Array.isArray(d.group_imports) ? d.group_imports : []);
+      const existingByName = new Map(variables.map(v => [v.variableName, v]));
+      const restoredCustom = Array.isArray(d.variables)
+        ? d.variables
+          .filter(v => v && v !== 'name')
+          .slice(0, MAX_CUSTOM_VARIABLES)
+          .map(v => {
+            const key = String(v);
+            return existingByName.get(key) || { id: `local-${key}`, variableName: key, description: '' };
+          })
+        : [];
+      setVariables(restoredCustom);
       setDraftId(d.id); setNotice({ type: 'info', message: 'Draft loaded' }); setUtilityDrawerOpen(false);
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
@@ -672,20 +717,95 @@ export default function App() {
   /* ── variables actions ── */
 
   async function createVariable() {
-    if (!/^[a-z0-9]+$/.test(varForm.key || '')) { setNotice({ type: 'error', message: 'Key must be lowercase alphanumeric' }); return; }
-    if (!varForm.label.trim()) { setNotice({ type: 'error', message: 'Label required' }); return; }
+    const cleaned = String(varForm.variableName || '').toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (!cleaned) { setNotice({ type: 'error', message: 'Variable name is required' }); return; }
+    if (!/^[a-z0-9_]+$/.test(cleaned)) { setNotice({ type: 'error', message: 'Variable name must use lowercase letters, numbers, or underscore' }); return; }
+    if (variables.length >= MAX_CUSTOM_VARIABLES) { setNotice({ type: 'error', message: 'Only 2 custom variables are allowed' }); return; }
     try {
-      const res = await apiFetch(`${API_BASE}/api/variables`, { method: 'POST', headers: hdrs, body: JSON.stringify({ ...varForm, key: varForm.key.toLowerCase() }) });
+      const res = await apiFetch(`${API_BASE}/api/variables`, { method: 'POST', headers: hdrs, body: JSON.stringify({ variableName: cleaned, description: varForm.description }) });
       const d = await res.json(); if (!res.ok) throw new Error(d.error);
       setVariables(prev => [...prev, d]);
-      setVarForm({ key: '', label: '', required: false, description: '' });
+      setVarForm({ variableName: '', description: '' });
       setNotice({ type: 'success', message: 'Variable added' });
     } catch (e) {
       setNotice({ type: 'error', message: e.message });
     }
   }
 
+  async function deleteVariable(variableId) {
+    try {
+      const target = variables.find(v => v.id === variableId);
+      const targetName = target?.variableName;
+      if (target && !String(variableId).startsWith('local-')) {
+        const res = await apiFetch(`${API_BASE}/api/variables/${variableId}`, { method: 'DELETE' });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Failed to delete variable');
+      }
+      setVariables(prev => prev.filter(v => v.id !== variableId));
+      setRecipients(prev => prev.map(r => {
+        const nextVars = { ...(r.variables || {}) };
+        if (targetName) delete nextVars[targetName];
+        return { ...r, variables: nextVars };
+      }));
+      setNotice({ type: 'info', message: 'Variable deleted' });
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    }
+  }
+
+  async function resetComposeState() {
+    const confirmed = window.confirm('Reset compose state? This clears recipients, variables, subject, and body.');
+    if (!confirmed) return;
+
+    try {
+      await Promise.all(variables.map(v => apiFetch(`${API_BASE}/api/variables/${v.id}`, { method: 'DELETE' }).catch(() => null)));
+      setRecipients([]);
+      setSubject('');
+      setBody('');
+      setVariables([]);
+      setVarForm({ variableName: '', description: '' });
+      setGroupImports([]);
+      setNameFormat('first');
+      setDraftId(null);
+      setPreviewHtml('');
+      setPreviewRecipientMeta(null);
+      setPreviewRecipientId(null);
+      setPreviewOpen(false);
+      setErrors({ recipients: {} });
+      await loadDrafts();
+      setNotice({ type: 'info', message: 'Compose state reset' });
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Failed to reset compose state' });
+    }
+  }
+
   /* ── render ── */
+
+  if (pagePath === '/about' || pagePath === '/privacy-policy') {
+    return (
+      <div className="landing-shell">
+        <header className="hdr hdr--landing">
+          <div className="hdr__left">
+            <Mail size={20} className="hdr__logo" />
+            <div className="hdr__branding">
+              <b className="hdr__name">ReachFlow</b>
+              <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
+            </div>
+          </div>
+          <div className="hdr__right" />
+        </header>
+
+        <main className="landing-main info-main">
+          {pagePath === '/about'
+            ? <AboutPage onBack={() => navigateTo('/')} />
+            : <PrivacyPolicyPage onBack={() => navigateTo('/')} />}
+        </main>
+
+        <AppFooter onNavigate={navigateTo} />
+        <Toast notice={notice} onClose={() => setNotice(null)} />
+      </div>
+    );
+  }
 
   if (!authLoading && !appUser) {
     return (
@@ -694,7 +814,7 @@ export default function App() {
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
             <div className="hdr__branding">
-              <b className="hdr__name">Outreachly</b>
+              <b className="hdr__name">ReachFlow</b>
               <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
             </div>
           </div>
@@ -775,6 +895,7 @@ export default function App() {
           </section>
         </main>
 
+        <AppFooter onNavigate={navigateTo} />
         <Toast notice={notice} onClose={() => setNotice(null)} />
       </div>
     );
@@ -782,16 +903,20 @@ export default function App() {
 
   if (authLoading) {
     return (
+      <div className="landing-shell">
         <header className="hdr hdr--landing">
           <div className="hdr__left">
             <Mail size={20} className="hdr__logo" />
             <div className="hdr__branding">
-              <b className="hdr__name">Outreachly</b>
+              <b className="hdr__name">ReachFlow</b>
               <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
             </div>
           </div>
           <div className="hdr__right" />
         </header>
+        <main className="landing-main" />
+        <AppFooter onNavigate={navigateTo} />
+      </div>
     );
   }
 
@@ -802,7 +927,7 @@ export default function App() {
         <div className="hdr__left">
           <Mail size={20} className="hdr__logo" />
           <div className="hdr__branding">
-            <b className="hdr__name">Outreachly</b>
+            <b className="hdr__name">ReachFlow</b>
             <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
           </div>
         </div>
@@ -911,32 +1036,46 @@ export default function App() {
             <div className="card">
               <div className="card__head">
                 <span className="card__title"><Clock size={16} /> Variables</span>
+                <button className="link" onClick={resetComposeState}><RotateCcw size={13} /> Reset</button>
               </div>
-              {variables.length ? (
-                <div className="group-chips" style={{ gap: 8 }}>
-                  {variables.map(v => (
-                    <div className="group-chip" key={v.id} style={{ maxWidth: '100%' }}>
-                      <div className="group-chip__info">
-                        <span className="group-chip__name">{`{{${v.key}}}`}</span>
-                        <span className="group-chip__count">{v.label}{v.required ? ' • required' : ''}</span>
-                      </div>
-                    </div>
-                  ))}
+              <div className="group-chips" style={{ gap: 8 }}>
+                <div className="group-chip" style={{ maxWidth: '100%' }}>
+                  <div className="group-chip__info">
+                    <span className="group-chip__name">{'{{name}}'}</span>
+                    <span className="group-chip__count">Default variable (cannot delete)</span>
+                  </div>
                 </div>
-              ) : <p className="muted">No custom variables yet.</p>}
+                {variables.map(v => (
+                  <div className="group-chip" key={v.id} style={{ maxWidth: '100%' }}>
+                    <div className="group-chip__info">
+                      <span className="group-chip__name">{`{{${v.variableName}}}`}</span>
+                      <span className="group-chip__count">{v.description || 'Custom variable'}</span>
+                    </div>
+                    <button className="chip-sm" onClick={() => deleteVariable(v.id)}>Delete</button>
+                  </div>
+                ))}
+              </div>
+
               <div className="field">
-                <input className="inp" placeholder="Key (e.g. position)" value={varForm.key} onChange={e => setVarForm(f => ({ ...f, key: e.target.value.toLowerCase() }))} />
+                <label className="lbl">Name format</label>
+                <select className="inp" value={nameFormat} onChange={e => setNameFormat(e.target.value)}>
+                  <option value="first">First name</option>
+                  <option value="full">Full name</option>
+                </select>
+              </div>
+
+              <p className="muted" style={{ marginTop: -4 }}>Custom variables limit: {variables.length}/{MAX_CUSTOM_VARIABLES}</p>
+
+              <div className="field">
+                <label className="lbl">Variable name</label>
+                <input className="inp" placeholder="Variable name (e.g. role)" value={varForm.variableName} onChange={e => setVarForm(f => ({ ...f, variableName: e.target.value }))} disabled={variables.length >= MAX_CUSTOM_VARIABLES} />
               </div>
               <div className="field">
-                <input className="inp" placeholder="Label" value={varForm.label} onChange={e => setVarForm(f => ({ ...f, label: e.target.value }))} />
-              </div>
-              <div className="field">
+                <label className="lbl">Description</label>
                 <input className="inp" placeholder="Description (optional)" value={varForm.description} onChange={e => setVarForm(f => ({ ...f, description: e.target.value }))} />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#555' }}>
-                <input type="checkbox" checked={varForm.required} onChange={e => setVarForm(f => ({ ...f, required: e.target.checked }))} /> Required for recipients
-              </label>
-              <button className="btn btn--ghost" onClick={createVariable} style={{ alignSelf: 'flex-start' }}>Add variable</button>
+              <button className="btn btn--ghost" onClick={createVariable} disabled={variables.length >= MAX_CUSTOM_VARIABLES} style={{ alignSelf: 'flex-start' }}>Add variable</button>
+              {variables.length >= MAX_CUSTOM_VARIABLES ? <small className="muted">You’ve reached the maximum of 2 custom variables.</small> : null}
             </div>
 
           </div>
@@ -950,7 +1089,7 @@ export default function App() {
               {errors.subject && <span className="err--blue">{errors.subject}</span>}
 
               <div className="compose__editor">
-                <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved keys</p>
+                <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved variable names</p>
                 <div className="quill-wrap">
                   <ReactQuill ref={quillRef} theme="snow" value={body} onChange={v => { setBody(v); if (errors.body && strip(v)) setErrors(p => ({ ...p, body: undefined })); }} modules={QUILL_MODULES} placeholder="Write your email…" />
                 </div>
@@ -971,9 +1110,9 @@ export default function App() {
               {errors.body && <span className="err--blue">{errors.body}</span>}
 
               <div className="compose__actions">
-                <button className="btn btn--outline" onClick={() => saveDraft(true)} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
-                <button className="btn btn--white" onClick={openCreateTemplate}>Save as Template</button>
-                <button className="btn btn--primary" onClick={doPreview} disabled={isPreviewing || !gmailConnected}>{isPreviewing ? 'Loading…' : 'Send'}</button>
+                <button className="btn btn--outline" onClick={() => saveDraft(true)} disabled={saving}><FileText size={15} />{saving ? 'Saving…' : 'Save Draft'}</button>
+                <button className="btn btn--outline" onClick={openCreateTemplate}><Bookmark size={15} />Save as Template</button>
+                <button className="btn btn--white" onClick={doPreview} disabled={isPreviewing || !gmailConnected}><Send size={15} />{isPreviewing ? 'Loading…' : 'Preview & Send'}</button>
               </div>
             </div>
           </div>
@@ -981,9 +1120,7 @@ export default function App() {
       </main>
 
       {/* ── FOOTER ── */}
-      <footer className="ftr">
-        <Heart size={12} /> Built with care · Outreachly © { new Date().getFullYear() }
-      </footer>
+      <AppFooter onNavigate={navigateTo} />
 
       <Toast notice={notice} onClose={() => setNotice(null)} />
 
@@ -1011,6 +1148,7 @@ export default function App() {
       <Drawer open={utilityDrawerOpen} title="Utilities" onClose={() => setUtilityDrawerOpen(false)} width={520}>
         <div className="utility-tabs">
           <button className={`utility-tab ${utilityTab === 'history' ? 'utility-tab--active' : ''}`} onClick={() => setUtilityTab('history')}>History</button>
+          <button className={`utility-tab ${utilityTab === 'drafts' ? 'utility-tab--active' : ''}`} onClick={() => setUtilityTab('drafts')}>Drafts</button>
           <button className={`utility-tab ${utilityTab === 'templates' ? 'utility-tab--active' : ''}`} onClick={() => setUtilityTab('templates')}>Templates</button>
           <button className={`utility-tab ${utilityTab === 'groups' ? 'utility-tab--active' : ''}`} onClick={() => setUtilityTab('groups')}>Groups</button>
           <button className={`utility-tab ${utilityTab === 'settings' ? 'utility-tab--active' : ''}`} onClick={() => setUtilityTab('settings')}>Settings</button>
@@ -1026,7 +1164,26 @@ export default function App() {
                 </div>
                 <div className="hist-row__right"><span className={`pill pill--${h.status}`}>{h.status}</span><small className="muted">{h.recipient_count} recipients</small></div>
               </button>
-            )) : <p className="muted">No campaigns yet.</p>}
+            )) : <p className="muted">No sent campaigns yet.</p>}
+          </div>
+        )}
+
+        {utilityTab === 'drafts' && (
+          <div className="utility-panel">
+            {drafts.length ? drafts.map(d => (
+              <button className="hist-row" key={d.id} onClick={() => loadCampaign(d.id)}>
+                <div>
+                  <b>{d.subject || '(No subject)'}</b><br />
+                  <small className="muted">Last edited: {new Date(d.updated_at || d.created_at).toLocaleString()}</small>
+                  {d.body_preview ? <small className="muted" style={{ display: 'block' }}>{d.body_preview}</small> : null}
+                </div>
+                <div className="hist-row__right">
+                  <span className="pill pill--draft">draft</span>
+                  <small className="muted">{d.recipient_count} recipients</small>
+                  <small className="muted">{d.variable_count || 0} variables</small>
+                </div>
+              </button>
+            )) : <p className="muted">No drafts yet.</p>}
           </div>
         )}
 

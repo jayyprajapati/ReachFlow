@@ -2,7 +2,7 @@ const express = require('express');
 const { Types } = require('mongoose');
 const sanitizeHtml = require('sanitize-html');
 const { Campaign, Group, SendLog, Variable } = require('../db');
-const { renderTemplate, validateVariables, extractVariables } = require('../services/templateService');
+const { renderTemplate, validateVariables } = require('../services/templateService');
 const { sendMimeEmail } = require('../gmail');
 
 const router = express.Router();
@@ -13,6 +13,30 @@ const MAX_RECIPIENTS = 50;
 
 function firstNameFromFullName(fullName) {
   return String(fullName || '').trim().split(' ')[0] || 'There';
+}
+
+function normalizeVariableKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function getVariableKey(variable) {
+  return normalizeVariableKey(variable?.variableName || variable?.key || variable?.label);
+}
+
+function normalizeNameFormat(value) {
+  return String(value || '').toLowerCase() === 'full' ? 'full' : 'first';
+}
+
+function resolveNameValue(fullName, nameFormat) {
+  const safeFullName = String(fullName || '').trim();
+  if (!safeFullName) return 'There';
+  return normalizeNameFormat(nameFormat) === 'full'
+    ? safeFullName
+    : firstNameFromFullName(safeFullName);
 }
 
 function sanitizeBody(html) {
@@ -29,7 +53,7 @@ function sanitizeBody(html) {
 
 async function getAllowedVariables(userId) {
   const vars = await Variable.find({ userId });
-  return ['name', ...vars.map(v => v.key)];
+  return ['name', ...vars.map(getVariableKey).filter(Boolean)];
 }
 
 function normalizeRecipients(raw, allowedVars) {
@@ -51,18 +75,13 @@ function normalizeRecipients(raw, allowedVars) {
   });
 }
 
-function validateRecipients(list, requiredKeys) {
+function validateRecipients(list) {
   const errors = [];
-  const required = new Set(requiredKeys.map(k => k.toLowerCase()));
   if (!Array.isArray(list) || !list.length) return ['At least one recipient is required'];
   if (list.length > MAX_RECIPIENTS) return [`Max ${MAX_RECIPIENTS} recipients per campaign`];
   list.forEach(r => {
     if (!emailRegex.test(r.email || '')) errors.push(`Invalid email: ${r.email || ''}`);
     if (!r.name) errors.push(`Name missing for ${r.email}`);
-    required.forEach(k => {
-      const val = r.variables?.[k];
-      if (!val) errors.push(`Missing required variable ${k} for ${r.email}`);
-    });
   });
   return errors;
 }
@@ -71,10 +90,20 @@ function normalizeVariablesUsed(raw) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
   raw.forEach(item => {
-    const key = String(item || '').trim().toLowerCase();
+    const key = normalizeVariableKey(item);
     if (key) seen.add(key);
   });
-  return Array.from(seen);
+  return Array.from(seen).filter(key => key !== 'name').slice(0, 2);
+}
+
+function mergeVariableKeys(...groups) {
+  const merged = new Set();
+  groups.flat().forEach(item => {
+    const key = normalizeVariableKey(item);
+    if (key) merged.add(key);
+  });
+  merged.add('name');
+  return Array.from(merged);
 }
 
 function normalizeGroupImports(raw) {
@@ -157,7 +186,10 @@ async function sendCampaign(campaignId, user) {
   }
 
   for (const recipient of pending) {
-    const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(recipient.name), ...(recipient.variables || {}) });
+    const html = renderTemplate(campaign.body_html, {
+      name: resolveNameValue(recipient.name, campaign.name_format),
+      ...(recipient.variables || {}),
+    });
     try {
       await sendMimeEmail({ user, to: recipient.email, subject: campaign.subject, html, senderName: campaign.sender_name });
       const subdoc = campaign.recipients.id(recipient._id);
@@ -190,7 +222,7 @@ async function sendCampaign(campaignId, user) {
 
 router.post('/', async (req, res) => {
   try {
-    const { subject, body_html, recipients, sender_name, variables, group_imports } = req.body || {};
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
     if (!subject || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
     }
@@ -198,10 +230,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Body is required' });
     }
 
-    const allowedVars = await getAllowedVariables(req.user._id);
-    const requiredVars = (await Variable.find({ userId: req.user._id, required: true })).map(v => v.key);
+    const snapshotVariables = normalizeVariablesUsed(variables);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), snapshotVariables);
     const normalizedRecipients = normalizeRecipients(recipients, allowedVars);
-    const recErrors = validateRecipients(normalizedRecipients, requiredVars.filter(k => extractVariables(body_html).includes(k)));
+    const recErrors = validateRecipients(normalizedRecipients);
     if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
 
     const validation = validateVariables(body_html, allowedVars);
@@ -213,9 +245,10 @@ router.post('/', async (req, res) => {
       subject,
       body_html: sanitizeBody(body_html),
       sender_name: sender_name || '',
+      name_format: normalizeNameFormat(name_format),
       recipients: normalizedRecipients,
       send_mode: 'individual',
-      variables: normalizeVariablesUsed(variables),
+      variables: snapshotVariables,
       group_imports: normalizeGroupImports(group_imports),
       status: 'draft',
     });
@@ -230,25 +263,30 @@ router.patch('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
-    const { subject, body_html, recipients, sender_name, variables, group_imports } = req.body || {};
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
+    const existingCampaign = await Campaign.findOne({ _id: id, userId: req.user._id });
+    if (!existingCampaign) return res.status(404).json({ error: 'Not found' });
+
     const update = {};
     if (subject !== undefined) update.subject = subject;
     if (body_html !== undefined) update.body_html = sanitizeBody(body_html);
     if (sender_name !== undefined) update.sender_name = sender_name;
-    if (variables !== undefined) update.variables = normalizeVariablesUsed(variables);
+    if (name_format !== undefined) update.name_format = normalizeNameFormat(name_format);
+    const snapshotVariables = variables !== undefined
+      ? normalizeVariablesUsed(variables)
+      : normalizeVariablesUsed(existingCampaign.variables || []);
+    if (variables !== undefined) update.variables = snapshotVariables;
     if (group_imports !== undefined) update.group_imports = normalizeGroupImports(group_imports);
 
     if (Array.isArray(recipients)) {
-      const allowedVars = await getAllowedVariables(req.user._id);
-      const requiredVars = (await Variable.find({ userId: req.user._id, required: true })).map(v => v.key);
+      const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), snapshotVariables);
       const normalizedRecipients = normalizeRecipients(recipients, allowedVars);
-      const recErrors = validateRecipients(normalizedRecipients, requiredVars.filter(k => extractVariables(body_html || '').includes(k)));
+      const recErrors = validateRecipients(normalizedRecipients);
       if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
       update.recipients = normalizedRecipients;
     }
 
     const doc = await Campaign.findOneAndUpdate({ _id: id, userId: req.user._id }, update, { new: true });
-    if (!doc) return res.status(404).json({ error: 'Not found' });
     return res.json({ id: doc._id.toString(), status: doc.status });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to update campaign' });
@@ -257,23 +295,36 @@ router.patch('/:id', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
+    const view = String(req.query?.view || 'all').toLowerCase();
+    const match = { userId: req.user._id };
+    if (view === 'history') match.status = 'sent';
+    if (view === 'drafts') match.status = 'draft';
+
     const rows = await Campaign.aggregate([
-      { $match: { userId: req.user._id } },
+      { $match: match },
       {
         $project: {
           subject: 1,
           status: 1,
+          body_html: 1,
+          variables: 1,
           created_at: 1,
           updated_at: 1,
           recipient_count: { $size: '$recipients' },
+          variable_count: { $size: { $ifNull: ['$variables', []] } },
         },
       },
       { $sort: { updated_at: -1 } },
     ]);
     res.json(rows.map(r => ({
-      ...r,
       id: r._id.toString(),
+      subject: r.subject,
       status: r.status === 'sent' ? 'sent' : 'draft',
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      recipient_count: r.recipient_count || 0,
+      variable_count: r.variable_count || 0,
+      body_preview: String(r.body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
     })));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load campaigns' });
@@ -311,11 +362,14 @@ router.post('/:id/preview', async (req, res) => {
       : campaign.recipients[0];
     if (!target) return res.status(404).json({ error: 'No recipients' });
 
-    const allowedVars = await getAllowedVariables(req.user._id);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), campaign.variables || []);
     const validation = validateVariables(campaign.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
 
-    const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(target.name), ...(target.variables || {}) });
+    const html = renderTemplate(campaign.body_html, {
+      name: resolveNameValue(target.name, campaign.name_format),
+      ...(target.variables || {}),
+    });
     res.json({ html, warnings: validation.unknown.length ? validation.unknown.map(k => `Unknown variable {{${k}}} found.`) : [] });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to render preview' });
@@ -339,7 +393,7 @@ router.post('/:id/send', async (req, res) => {
       return res.status(400).json({ error: `Max ${MAX_RECIPIENTS} recipients per campaign` });
     }
 
-    const allowedVars = await getAllowedVariables(req.user._id);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), campaign.variables || []);
     const validation = validateVariables(campaign.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
     if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });

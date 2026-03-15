@@ -30,15 +30,16 @@ const userSchema = new mongoose.Schema(
 const variableSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    key: { type: String, required: true, lowercase: true, trim: true },
-    label: { type: String, required: true, trim: true },
-    required: { type: Boolean, default: false },
+    variableName: { type: String, lowercase: true, trim: true },
     description: { type: String, default: '', trim: true },
+    key: { type: String, lowercase: true, trim: true },
+    label: { type: String, trim: true },
+    required: { type: Boolean, default: false },
   },
   { timestamps: true, versionKey: false }
 );
 
-variableSchema.index({ userId: 1, key: 1 }, { unique: true });
+variableSchema.index({ userId: 1, variableName: 1 }, { unique: true, sparse: true });
 
 const recipientSchema = new mongoose.Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
@@ -85,6 +86,7 @@ const campaignSchema = new mongoose.Schema(
     subject: { type: String, required: true, trim: true },
     body_html: { type: String, required: true },
     sender_name: { type: String, default: '' },
+    name_format: { type: String, enum: ['first', 'full'], default: 'first' },
     recipients: { type: [recipientSchema], default: [] },
     send_mode: { type: String, enum: ['individual'], default: 'individual' },
     variables: { type: [String], default: [] },
@@ -287,6 +289,44 @@ async function migrateGroupContactFields() {
   );
 }
 
+function normalizeVariableName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+async function migrateVariableFields() {
+  const legacyRows = await Variable.find({
+    $or: [
+      { variableName: { $exists: false } },
+      { variableName: null },
+      { variableName: '' },
+    ],
+  }).sort({ createdAt: 1 });
+
+  for (const row of legacyRows) {
+    const baseFromLegacy = normalizeVariableName(row.variableName || row.key || row.label);
+    if (!baseFromLegacy) continue;
+
+    const base = baseFromLegacy === 'name' ? 'name_custom' : baseFromLegacy;
+    let candidate = base;
+    let suffix = 2;
+
+    while (await Variable.exists({ userId: row.userId, variableName: candidate, _id: { $ne: row._id } })) {
+      candidate = `${base}${suffix}`;
+      suffix += 1;
+    }
+
+    row.variableName = candidate;
+    if (!row.description && row.label && row.label !== row.key) {
+      row.description = String(row.label || '').trim();
+    }
+    await row.save();
+  }
+}
+
 module.exports = {
   connectMongo,
   User,
@@ -296,4 +336,5 @@ module.exports = {
   Group,
   Template,
   migrateGroupContactFields,
+  migrateVariableFields,
 };

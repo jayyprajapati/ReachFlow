@@ -11,7 +11,7 @@ const { router: campaignRoutes } = require('./routes/campaigns');
 const groupRoutes = require('./routes/groups');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
-const { connectMongo, User, migrateGroupContactFields } = require('./db');
+const { connectMongo, User, migrateGroupContactFields, migrateVariableFields } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -228,6 +228,15 @@ connectMongo()
       })
       .catch(err => {
         console.error('Group contact fields migration failed', err.message);
+      });
+  })
+  .then(() => {
+    return migrateVariableFields()
+      .then(() => {
+        console.log('Variable fields migration complete');
+      })
+      .catch(err => {
+        console.error('Variable fields migration failed', err.message);
       });
   })
   .then(() => {
