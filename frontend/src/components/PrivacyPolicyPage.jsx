@@ -67,13 +67,13 @@ export default function PrivacyPolicyPage({ onBack }) {
         <h2>Disconnecting Gmail and data removal</h2>
         <p>
           You can disconnect Gmail from within ReachFlow settings. If account deletion/self-serve data deletion is not yet exposed in product UI,
-          request support via: TODO add support email.
+          request support via: jay.prajapati5717@gmail.com.
         </p>
       </section>
 
       <section className="info-section">
         <h2>Contact</h2>
-        <p>For privacy questions, contact: TODO add support email.</p>
+        <p>For privacy questions, contact: jay.prajapati5717@gmail.com.</p>
       </section>
     </div>
   );

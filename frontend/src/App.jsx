@@ -6,7 +6,7 @@ import ImportGroupModal from './components/ImportGroupModal.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import AppFooter from './components/AppFooter.jsx';
-import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2 } from 'lucide-react';
+import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -1051,14 +1051,14 @@ export default function App() {
                 <span className="card__title"><Clock size={16} /> Variables</span>
               </div>
               <div className="group-chips" style={{ gap: 8 }}>
-                <div className="group-chip" style={{ maxWidth: '100%' }}>
+                <div className="group-chip var-chip" style={{ maxWidth: '100%' }}>
                   <div className="group-chip__info">
                     <span className="group-chip__name">{'{{name}}'}</span>
-                    <span className="group-chip__count">Default variable (cannot delete)</span>
+                    <span className="group-chip__count">Default variable</span>
                   </div>
                 </div>
                 {variables.map(v => (
-                  <div className="group-chip" key={v.id} style={{ maxWidth: '100%' }}>
+                  <div className="group-chip var-chip" key={v.id} style={{ maxWidth: '100%' }}>
                     <div className="group-chip__info">
                       <span className="group-chip__name">{`{{${v.variableName}}}`}</span>
                       <span className="group-chip__count">{v.description || 'Custom variable'}</span>
@@ -1098,7 +1098,7 @@ export default function App() {
                 <div className="compose__meta">
                   <p className="editor-hint">Type <b>/</b> in the editor to insert variables like {'{{name}}'} or your saved variable names</p>
                   <label className="mini-switch" title="Name format for {{name}}">
-                    <span className="mini-switch__label">{nameFormat === 'full' ? 'Full name' : 'First name'}</span>
+                    <span className="mini-switch__label">use {nameFormat === 'full' ? 'full name' : 'first name'}</span>
                     <input
                       type="checkbox"
                       checked={nameFormat === 'full'}
@@ -1248,26 +1248,34 @@ export default function App() {
         {utilityTab === 'settings' && (
           <div className="utility-panel utility-panel--stack">
             <div className="utility-settings-row">
-              <span className="muted">Gmail Status</span>
-              <span className={`hdr__status ${gmailConnected ? 'hdr__status--ok' : 'hdr__status--err'}`}>
-                {gmailConnected ? 'Connected' : 'Not Connected'}
-              </span>
+              <div className="utility-settings-status">
+                <span className="muted">Gmail Status</span>
+                <span className={`hdr__status ${gmailConnected ? 'hdr__status--ok' : 'hdr__status--err'}`}>
+                  {gmailConnected ? 'Connected' : 'Not Connected'}
+                </span>
+              </div>
+              {gmailConnected ? (
+                <button className="settings-disconnect" onClick={disconnectGmail}>Disconnect</button>
+              ) : (
+                <button className="link" onClick={connectGmail}>Connect</button>
+              )}
             </div>
-            {gmailConnected ? (
-              <button className="btn btn--ghost" onClick={disconnectGmail} style={{ alignSelf: 'flex-start' }}>Disconnect Gmail</button>
-            ) : (
-              <button className="btn btn--primary" onClick={connectGmail} style={{ alignSelf: 'flex-start' }}>Connect Gmail</button>
-            )}
-            <button className="btn btn--white" onClick={reconnectGmail} style={{ alignSelf: 'flex-start' }}>
+            <button className="link" onClick={reconnectGmail} style={{ alignSelf: 'flex-start' }}>
               Reconnect Gmail (fresh OAuth)
             </button>
             <div className="field" style={{ marginTop: 8 }}>
               <label className="lbl">Sender display name</label>
-              <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
+              <div className="settings-sender-row">
+                <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
+                <button className="link settings-save-link" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName}>
+                  <Save size={14} />
+                  {savingSenderName ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              <small className="muted settings-help-text">
+                Sender name controls the display name shown in outgoing emails. If left empty, your default sender is your email address, and recipients will see your email as the sender instead of your name.
+              </small>
             </div>
-            <button className="btn btn--primary" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName} style={{ alignSelf: 'flex-start' }}>
-              {savingSenderName ? 'Saving…' : 'Save sender name'}
-            </button>
           </div>
         )}
       </Drawer>
