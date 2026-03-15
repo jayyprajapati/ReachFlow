@@ -6,7 +6,7 @@ import ImportGroupModal from './components/ImportGroupModal.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import AppFooter from './components/AppFooter.jsx';
-import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save } from 'lucide-react';
+import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -1052,7 +1052,7 @@ export default function App() {
                 .
               </p>
               <div className="side__topactions">
-                <button className="link" onClick={() => setGroupManagerOpen(true)}>Manage Groups</button>
+                <button className="link" onClick={() => setGroupManagerOpen(true)}><Building2 size={13} /> Manage Groups</button>
                 <span className="gm-dot-sep" aria-hidden="true">•</span>
                 <button className="link" onClick={resetComposeState}><RotateCcw size={13} /> Reset</button>
               </div>
@@ -1063,9 +1063,9 @@ export default function App() {
               <div className="card__head">
                 <span className="card__title"><Users size={16} /> Recipients</span>
                 <div className="rec-actions">
-                  <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : 'Paste Bulk'}</button>
+                  <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : <><ClipboardPaste size={13} /> Paste Bulk</>}</button>
                   <span className="gm-dot-sep" aria-hidden="true">•</span>
-                  <button className="link" onClick={() => { loadGroups(); setImportModalOpen(true); }}>Import Group</button>
+                  <button className="link" onClick={() => { loadGroups(); setImportModalOpen(true); }}><FileUp size={13} /> Import Group</button>
                 </div>
               </div>
 
@@ -1115,7 +1115,7 @@ export default function App() {
                 <label className="lbl">Description</label>
                 <input className="inp" placeholder="Description (optional)" value={varForm.description} onChange={e => setVarForm(f => ({ ...f, description: e.target.value }))} />
               </div>
-              <button className="btn btn--primary" onClick={createVariable} disabled={variables.length >= MAX_CUSTOM_VARIABLES} style={{ alignSelf: 'flex-start' }}>Add variable</button>
+              <button className="btn btn--primary" onClick={createVariable} disabled={variables.length >= MAX_CUSTOM_VARIABLES} style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Plus size={14} /> Add variable</button>
               {variables.length >= MAX_CUSTOM_VARIABLES ? <small className="muted">You’ve reached the maximum of 2 custom variables.</small> : null}
             </div>
 
@@ -1272,7 +1272,7 @@ export default function App() {
           <div className="utility-panel utility-panel--stack">
             <div className="utility-panel__head">
               <h4>Groups</h4>
-              <button className="link" onClick={() => { setUtilityDrawerOpen(false); setGroupManagerOpen(true); }}>Manage Groups</button>
+              <button className="link" onClick={() => { setUtilityDrawerOpen(false); setGroupManagerOpen(true); }}><Building2 size={13} /> Manage Groups</button>
             </div>
             {groups.length ? (
               <div className="group-chips">

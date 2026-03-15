@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Trash2, Pencil, Check, X, ChevronRight, Mail, Linkedin } from 'lucide-react';
+import { Trash2, Pencil, Check, X, ChevronRight, Mail, Linkedin, Plus, ClipboardPaste, FileUp, FileDown, AlertTriangle } from 'lucide-react';
 import ContactsTable from './ContactsTable.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -258,19 +258,50 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                 targetGroupId: matched?.id || null,
                 targetGroupName: matched?.companyName || row.companyName,
                 targetExists: !!matched,
+                isDuplicate: false,
             };
         });
     }
 
-    function parseGlobalBulkText() {
+    async function markGlobalDuplicates(rows) {
+        const groupIds = Array.from(new Set(rows.filter(r => r.targetExists && r.targetGroupId).map(r => r.targetGroupId)));
+        if (!groupIds.length) return rows;
+
+        const emailMapByGroupId = new Map();
+        await Promise.all(groupIds.map(async (groupId) => {
+            const resp = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || 'Failed to check duplicates');
+            const emailSet = new Set((data.contacts || []).map(c => String(c.email || '').toLowerCase()));
+            emailMapByGroupId.set(groupId, emailSet);
+        }));
+
+        return rows.map(row => {
+            if (!row.targetExists || !row.targetGroupId) return row;
+            const emailSet = emailMapByGroupId.get(row.targetGroupId);
+            return {
+                ...row,
+                isDuplicate: !!emailSet?.has(String(row.email || '').toLowerCase()),
+            };
+        });
+    }
+
+    async function parseGlobalBulkText() {
         const parsed = parseGlobalInputToRows(globalText);
         if (!parsed.length) {
             setGlobalMessage('No valid contacts detected. Please paste name and email pairs.');
             setGlobalParsed([]);
             return;
         }
-        setGlobalMessage('');
-        setGlobalParsed(annotateParsedRows(parsed));
+        try {
+            setGlobalMessage('');
+            const annotated = annotateParsedRows(parsed);
+            const withDuplicates = await markGlobalDuplicates(annotated);
+            setGlobalParsed(withDuplicates);
+        } catch (e) {
+            setGlobalParsed(null);
+            setGlobalMessage(e.message || 'Failed to parse pasted contacts.');
+        }
     }
 
     function parseCsvTextContent(text) {
@@ -315,7 +346,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         if (!parsed.length) {
             throw new Error('This is not a valid data inside file to parse.');
         }
-        return annotateParsedRows(parsed);
+        return parsed;
     }
 
     function onCsvFilePicked(event) {
@@ -329,7 +360,15 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                 const content = String(reader.result || '');
                 const parsed = parseCsvTextContent(content);
                 setGlobalFileName(file.name);
-                setGlobalParsed(parsed);
+                setGlobalParsed(null);
+                markGlobalDuplicates(annotateParsedRows(parsed))
+                    .then(withDuplicates => {
+                        setGlobalParsed(withDuplicates);
+                    })
+                    .catch(err => {
+                        setGlobalParsed(null);
+                        setGlobalMessage(err.message || 'Failed to parse CSV file.');
+                    });
             } catch (e) {
                 setGlobalParsed(null);
                 setGlobalFileName(file.name);
@@ -389,6 +428,11 @@ export default function GroupManager({ open, onClose, authedFetch }) {
 
         for (const row of globalParsed) {
             try {
+                if (row.isDuplicate) {
+                    duplicateCount += 1;
+                    continue;
+                }
+
                 const bucket = await getBucketForCompany(row);
                 if (bucket.full || bucket.emails.has(row.email)) {
                     duplicateCount += 1;
@@ -856,18 +900,18 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                         <div className="gm-topbar">
                             <span className="gm-title">Groups</span>
                             <div className="gm-grid-actions">
-                                <button className="gm-text-btn" onClick={() => setCreating(true)}>Create Group</button>
+                                <button className="gm-text-btn" onClick={() => setCreating(true)}><Plus size={14} /> Create Group</button>
                                 <span className="gm-dot-sep" aria-hidden="true">•</span>
-                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('bulk'); setGlobalImportOpen(true); }}>Bulk Paste</button>
+                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('bulk'); setGlobalImportOpen(true); }}><ClipboardPaste size={14} /> Bulk Paste</button>
                                 <span className="gm-dot-sep" aria-hidden="true">•</span>
-                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('csv'); setGlobalImportOpen(true); }}>Import CSV</button>
+                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('csv'); setGlobalImportOpen(true); }}><FileUp size={14} /> Import CSV</button>
                                 <span className="gm-dot-sep" aria-hidden="true">•</span>
                                 <button
                                     className="gm-text-btn"
                                     onClick={exportAllAsCsv}
                                     disabled={exportBusy || groups.reduce((sum, g) => sum + Number(g.contactCount || 0), 0) === 0}
                                 >
-                                    {exportBusy ? 'Exporting…' : 'Export All as CSV'}
+                                    <FileDown size={14} /> {exportBusy ? 'Exporting…' : 'Export All as CSV'}
                                 </button>
                             </div>
                         </div>
@@ -955,9 +999,9 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                         <div className="gm-contacts-head">
                             <span className="gm-subtitle">People from {activeGroup.companyName} ({activeGroup.contacts.length})</span>
                             <div className="gm-action-group">
-                                <button className="gm-text-btn" onClick={startAddContact}>Add Person</button>
+                                <button className="gm-text-btn" onClick={startAddContact}><Plus size={14} /> Add Person</button>
                                 <span className="gm-dot-sep" aria-hidden="true">•</span>
-                                <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)}>Bulk Paste</button>
+                                <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)}><ClipboardPaste size={14} /> Bulk Paste</button>
                             </div>
                         </div>
 
@@ -1108,14 +1152,25 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                         ) : globalParsed.length > 0 ? (
                             <>
                                 <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Confirm Import ({globalParsed.length})</p>
+                                {globalParsed.some(row => row.isDuplicate) && (
+                                    <div className="gm-bulk-warn gm-bulk-warn--dupes">
+                                        <AlertTriangle size={14} />
+                                        <span>
+                                            {globalParsed.filter(row => row.isDuplicate).length} duplicate contact{globalParsed.filter(row => row.isDuplicate).length !== 1 ? 's are' : ' is'} already in target group and will be skipped.
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="gm-bulk-preview">
                                     {globalParsed.map((row, i) => (
-                                        <div key={`${row.email}-${i}`} className="gm-bulk-preview-row gm-bulk-preview-row--wide">
+                                        <div key={`${row.email}-${i}`} className={`gm-bulk-preview-row gm-bulk-preview-row--wide ${row.isDuplicate ? 'gm-bulk-preview-row--duplicate' : ''}`}>
                                             <span className="gm-bulk-preview-name">{row.name}</span>
                                             <span className="gm-bulk-preview-email">{row.email}</span>
-                                            <span className={`gm-bulk-preview-group ${row.targetExists ? '' : 'gm-bulk-preview-group--new'}`}>
-                                                {row.targetGroupName} {row.targetExists ? '' : '(new)'}
-                                            </span>
+                                            <div className="gm-bulk-preview-meta">
+                                                <span className={`gm-bulk-preview-group ${row.targetExists ? '' : 'gm-bulk-preview-group--new'}`}>
+                                                    {row.targetGroupName} {row.targetExists ? '' : '(new)'}
+                                                </span>
+                                                {row.isDuplicate && <span className="gm-bulk-preview-dupemark">Will skip</span>}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

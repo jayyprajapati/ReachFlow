@@ -2973,6 +2973,14 @@ body {
   gap: 10px;
 }
 
+.gm-bulk-preview-row--duplicate {
+  background: #fff7ed;
+}
+
+.gm-bulk-preview-row--duplicate:hover {
+  background: #ffedd5;
+}
+
 .gm-bulk-preview-name {
   flex: 1;
   font-weight: 500;
@@ -2992,8 +3000,25 @@ body {
   white-space: nowrap;
 }
 
+.gm-bulk-preview-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
 .gm-bulk-preview-group--new {
   color: #0f766e;
+}
+
+.gm-bulk-preview-dupemark {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 
 .gm-import-mode-tabs {
@@ -3069,4 +3094,10 @@ body {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
+}
+
+.gm-bulk-warn--dupes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
