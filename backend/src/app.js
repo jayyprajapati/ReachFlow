@@ -11,7 +11,6 @@ const { router: campaignRoutes } = require('./routes/campaigns');
 const groupRoutes = require('./routes/groups');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
-const { startScheduler } = require('./scheduler');
 const { connectMongo, User, migrateGroupContactFields } = require('./db');
 
 const app = express();
@@ -209,10 +208,6 @@ app.get('/auth/google/callback', async (req, res) => {
     return res.redirect(`${frontendOrigin}?gmail=success`);
   } catch (err) {
     console.error('[oauth] Callback error:', err.message);
-    console.error('[oauth] Callback error FULL:', err);
-    if (err.response?.data) {
-      console.error('[oauth] Google error response:', JSON.stringify(err.response.data));
-    }
     return redirectError('token_exchange_failed', err.message);
   }
 });
@@ -236,7 +231,6 @@ connectMongo()
       });
   })
   .then(() => {
-    startScheduler();
     app.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`);
     });

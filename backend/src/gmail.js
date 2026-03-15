@@ -1,6 +1,5 @@
 const { google } = require('googleapis');
 const { resolveSenderIdentity, resolveDisplayName } = require('./services/senderResolver');
-const { User } = require('./db');
 const { encrypt, decrypt } = require('./utils/crypto');
 require('dotenv').config();
 
@@ -20,8 +19,10 @@ function getAuthUrl({ state, forceConsent = false }) {
     access_type: 'offline',
     prompt: forceConsent ? 'consent' : 'select_account',
     scope: [
+      'openid',
+      'email',
+      'profile',
       'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/gmail.readonly',
     ],
     state,
   });
@@ -34,7 +35,7 @@ async function clearGmailAuthorization(user, reason) {
   user.gmailState = undefined;
   user.gmailStateExpiresAt = undefined;
   await user.save();
-  console.log(`[oauth] Authorization cleared${reason ? `: ${reason}` : ''}`);
+  console.log('[oauth] Authorization cleared');
 }
 
 async function ensureFreshAccessToken(user, oAuth2Client) {
@@ -45,7 +46,6 @@ async function ensureFreshAccessToken(user, oAuth2Client) {
       err.code = 'AUTH_EXPIRED';
       throw err;
     }
-    console.log('[oauth] Refresh success');
     return token;
   } catch (err) {
     const errMsg = err?.response?.data?.error_description || err?.response?.data?.error || err.message || '';
@@ -53,70 +53,70 @@ async function ensureFreshAccessToken(user, oAuth2Client) {
       await clearGmailAuthorization(user, errMsg);
       const authErr = new Error('Gmail authorization expired. Please reconnect.');
       authErr.code = 'AUTH_EXPIRED';
-      console.warn(`[oauth] Refresh failed: ${errMsg}`);
+      console.warn('[oauth] Refresh failed: auth expired');
       throw authErr;
     }
-    console.warn('[oauth] Refresh failed: unexpected', errMsg);
+    console.warn('[oauth] Refresh failed: unexpected');
     throw err;
   }
+}
+
+async function getProfileFromIdToken(oAuth2Client, tokens) {
+  if (!tokens?.id_token) return null;
+  const ticket = await oAuth2Client.verifyIdToken({
+    idToken: tokens.id_token,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+  if (!payload?.email) return null;
+  return {
+    email: payload.email,
+    name: payload.name || payload.given_name || payload.email,
+    sub: payload.sub,
+  };
+}
+
+async function getProfileFromUserInfo(oAuth2Client) {
+  const res = await oAuth2Client.request({ url: 'https://www.googleapis.com/oauth2/v3/userinfo' });
+  const data = res?.data || {};
+  if (!data.email) return null;
+  return {
+    email: data.email,
+    name: data.name || data.given_name || data.email,
+    sub: data.id,
+  };
 }
 
 async function exchangeCodeForUser(user, code) {
   const oAuth2Client = getOAuthClient();
 
-  // STEP 2 — Log which CLIENT_ID is being used
-  console.log('[oauth] CLIENT_ID USED:', process.env.GOOGLE_CLIENT_ID);
-
   const { tokens } = await oAuth2Client.getToken(code);
-
-  // STEP 4 — Log token details
-  console.log('[oauth] TOKENS RECEIVED:', JSON.stringify({
-    access_token: tokens.access_token ? '✓ present' : '✗ missing',
-    refresh_token: tokens.refresh_token ? '✓ present' : '✗ missing',
-    scope: tokens.scope,
-    token_type: tokens.token_type,
-    expiry_date: tokens.expiry_date,
-  }));
 
   const incomingRefresh = tokens?.refresh_token;
   if (!incomingRefresh && !user.encryptedRefreshToken) {
     throw new Error('No refresh token returned. Please remove app access in Google and try again.');
   }
-  const refreshToken = incomingRefresh || decrypt(user.encryptedRefreshToken);
   oAuth2Client.setCredentials(tokens);
 
-  // STEP 4 — Verify scope & audience via tokenInfo
+  let profile = null;
   try {
-    const tokenInfo = await oAuth2Client.getTokenInfo(tokens.access_token);
-    console.log('[oauth] TOKEN INFO:', JSON.stringify(tokenInfo));
-  } catch (tiErr) {
-    console.warn('[oauth] getTokenInfo failed (non-fatal):', tiErr.message);
+    profile = await getProfileFromIdToken(oAuth2Client, tokens);
+  } catch (err) {
+    console.warn('[oauth] ID token verification failed');
   }
-
-  // STEP 1 — Precise Gmail API call with full error logging
-  console.log('[oauth] About to call Gmail API (users.getProfile)');
-  let profile;
-  try {
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
-    const res = await gmail.users.getProfile({ userId: 'me' });
-    profile = res.data;
-    console.log('[oauth] Gmail profile success:', profile);
-  } catch (apiErr) {
-    console.error('[oauth] Gmail API error FULL OBJECT:', apiErr);
-    console.error('[oauth] Gmail API error response:', apiErr.response?.data);
-    throw apiErr;
+  if (!profile) {
+    profile = await getProfileFromUserInfo(oAuth2Client);
   }
-
-  if (!profile?.emailAddress) {
-    throw new Error('Failed to read Gmail profile');
+  if (!profile?.email) {
+    throw new Error('Failed to read Google profile');
   }
 
   const encryptedRefreshToken = incomingRefresh ? encrypt(incomingRefresh) : user.encryptedRefreshToken;
 
-  user.googleId = profile.emailAddress;
-  user.gmailEmail = profile.emailAddress.toLowerCase();
-  user.email = user.email || profile.emailAddress.toLowerCase();
-  user.displayName = user.displayName || profile.emailAddress;
+  user.googleId = profile.sub || profile.email;
+  user.gmailEmail = profile.email.toLowerCase();
+  user.email = user.email || profile.email.toLowerCase();
+  user.displayName = user.displayName || profile.name || profile.email;
   user.encryptedRefreshToken = encryptedRefreshToken;
   user.gmailConnected = true;
   await user.save();
@@ -151,9 +151,13 @@ async function verifyAuth(user) {
   try {
     if (!user) return { valid: false };
     const auth = await getAuthorizedClient(user, { verifyAccess: true });
-    const gmail = google.gmail({ version: 'v1', auth });
-    const res = await gmail.users.getProfile({ userId: 'me' });
-    const primaryEmail = res?.data?.emailAddress || user.email;
+    const identity = await resolveSenderIdentity({
+      auth,
+      customSenderName: null,
+      getCachedIdentity: null,
+      saveIdentity: null,
+    });
+    const primaryEmail = identity?.sendAsEmail || user.email;
     return {
       valid: !!primaryEmail,
       email: primaryEmail,
@@ -215,7 +219,7 @@ async function sendMimeEmail({ user, to, subject, html, senderName }) {
       userId: 'me',
       requestBody: { raw: encodedMessage },
     });
-    console.log(`[gmail] Sent to ${toHeader}, messageId: ${result.data?.id}`);
+    console.log('[gmail] Message sent', { messageId: result.data?.id });
   } catch (err) {
     const errMsg = err?.response?.data?.error?.message || err.message || '';
     if (/invalid_grant|Token has been expired|revoked|insufficient permission/i.test(errMsg)) {

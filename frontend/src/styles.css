@@ -1057,54 +1057,6 @@ body {
   border-color: rgba(255, 255, 255, .5);
 }
 
-/* ── Toggle buttons ── */
-
-.toggle-row {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  overflow: hidden;
-  align-self: flex-start;
-  background: #fff;
-}
-
-.tog {
-  border: none;
-  padding: 8px 20px;
-  background: transparent;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  color: var(--muted);
-  transition: background .12s, color .12s;
-}
-
-.tog+.tog {
-  border-left: 1px solid var(--border);
-}
-
-.tog--on {
-  background: var(--blue);
-  color: #fff;
-  font-weight: 600;
-}
-
-/* ── Delivery inline row ── */
-
-.delivery-row {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
-}
-
-.delivery-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
 /* ── Recipient list ── */
 
 .recipient-list {
@@ -1597,11 +1549,6 @@ body {
   color: #065f46;
 }
 
-.pill--scheduled {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
 .pill--draft {
   background: #f1f5f9;
   color: var(--muted);
@@ -1626,11 +1573,6 @@ body {
 
   .compose {
     min-height: 50vh;
-  }
-
-  .delivery-row {
-    flex-direction: column;
-    gap: 14px;
   }
 
   .group-chip {

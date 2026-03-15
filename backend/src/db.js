@@ -47,6 +47,17 @@ const recipientSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'pending' },
 });
 
+const groupImportSchema = new mongoose.Schema(
+  {
+    groupId: { type: String, trim: true },
+    companyName: { type: String, trim: true },
+    category: { type: String, trim: true },
+    importedCount: { type: Number, default: 0, min: 0 },
+    importedAt: { type: Date },
+  },
+  { _id: false }
+);
+
 const contactHistoryEntrySchema = new mongoose.Schema(
   {
     type: { type: String, enum: ['email', 'linkedin'], required: true },
@@ -75,9 +86,10 @@ const campaignSchema = new mongoose.Schema(
     body_html: { type: String, required: true },
     sender_name: { type: String, default: '' },
     recipients: { type: [recipientSchema], default: [] },
-    send_mode: { type: String, enum: ['single', 'individual'], required: true },
-    scheduled_at: { type: Date, default: null },
-    status: { type: String, enum: ['draft', 'scheduled', 'sent'], default: 'draft' },
+    send_mode: { type: String, enum: ['individual'], default: 'individual' },
+    variables: { type: [String], default: [] },
+    group_imports: { type: [groupImportSchema], default: [] },
+    status: { type: String, enum: ['draft', 'sent'], default: 'draft' },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
@@ -85,8 +97,8 @@ const campaignSchema = new mongoose.Schema(
   }
 );
 
-campaignSchema.index({ status: 1, scheduled_at: 1 });
-campaignSchema.index({ userId: 1, created_at: -1 });
+campaignSchema.index({ status: 1, updated_at: -1 });
+campaignSchema.index({ userId: 1, updated_at: -1 });
 
 const sendLogSchema = new mongoose.Schema(
   {

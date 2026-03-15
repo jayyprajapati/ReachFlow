@@ -69,7 +69,7 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
       return;
     }
 
-    onImport?.(contacts, groupDetail);
+    onImport?.(contacts, groupDetail, selectedCategory);
     onClose();
   }
 

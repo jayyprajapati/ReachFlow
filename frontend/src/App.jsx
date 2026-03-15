@@ -89,9 +89,6 @@ export default function App() {
   const [recipients, setRecipients] = useState([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
-  const [sendMode, setSendMode] = useState('individual');
-  const [deliveryMode, setDeliveryMode] = useState('now');
-  const [scheduledAt, setScheduledAt] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
   const [previewRecipientId, setPreviewRecipientId] = useState(null);
   const [previewRecipientMeta, setPreviewRecipientMeta] = useState(null);
@@ -113,6 +110,7 @@ export default function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftId, setDraftId] = useState(null);
+  const [groupImports, setGroupImports] = useState([]);
   const [savedSenderName, setSavedSenderName] = useState('');
   const [savingSenderName, setSavingSenderName] = useState(false);
 
@@ -159,6 +157,7 @@ export default function App() {
         setUtilityDrawerOpen(false);
         setUserMenuOpen(false);
         setRecipients([]);
+        setGroupImports([]);
       }
     });
     return () => unsub();
@@ -373,6 +372,7 @@ export default function App() {
     setSavedSenderName('');
     setRecipients([]);
     setHistory([]);
+    setGroupImports([]);
   }
 
   const authedFetch = async (url, options = {}, tokenOverride) => {
@@ -510,23 +510,26 @@ export default function App() {
       });
       if (Object.keys(re).length) e.recipients[r._id] = re;
     });
-    if (deliveryMode === 'schedule') {
-      const d = new Date(scheduledAt);
-      if (!scheduledAt || Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) e.scheduledAt = 'Must be in the future';
-    }
     return e;
   }
 
   const hasErr = e => {
     const rr = Object.values(e.recipients || {}).some(o => Object.keys(o || {}).length);
-    return !!(e.subject || e.body || e.sender || e.scheduledAt || e.recipientsGeneral || rr);
+    return !!(e.subject || e.body || e.sender || e.recipientsGeneral || rr);
   };
 
   /* ── campaign actions ── */
 
   function buildPayload() {
-    const when = deliveryMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
-    return { subject, body_html: body, sender_name: senderName, send_mode: sendMode, recipients: recipients.map(san), scheduled_at: when && !Number.isNaN(when) ? when.toISOString() : null, status: deliveryMode === 'schedule' && when && when.getTime() > Date.now() ? 'scheduled' : 'draft' };
+    const variablesUsed = Array.from(new Set([...findVars(subject), ...findVars(body)])).filter(Boolean);
+    return {
+      subject,
+      body_html: body,
+      sender_name: senderName,
+      recipients: recipients.map(san),
+      variables: variablesUsed,
+      group_imports: groupImports,
+    };
   }
 
   async function saveDraft(toast = false) {
@@ -580,7 +583,7 @@ export default function App() {
         }
         throw new Error(d.error || 'Send failed');
       }
-      setNotice({ type: 'success', message: d.status === 'scheduled' ? `Scheduled for ${scheduledAt}` : `Sent to ${recipients.length} recipients` });
+      setNotice({ type: 'success', message: `Sent to ${recipients.length} recipients` });
       setErrors({ recipients: {} }); setPreviewOpen(false); await loadHistory();
     } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsSending(false); }
   }
@@ -588,17 +591,17 @@ export default function App() {
   async function loadCampaign(id) {
     try {
       const res = await apiFetch(`${API_BASE}/api/campaigns/${id}`); const d = await res.json(); if (!res.ok) throw new Error(d.error);
-      setSubject(d.subject || ''); setBody(d.body_html || ''); setSendMode(d.send_mode || 'individual'); setSenderName(d.sender_name || '');
+      setSubject(d.subject || ''); setBody(d.body_html || ''); setSenderName(d.sender_name || '');
       const recs = (d.recipients || []).map(r => ({ ...r, _id: r._id || uid() })); setRecipients(recs); setPreviewRecipientId(recs[0]?._id || null);
       setErrors({ recipients: {} });
-      if (d.scheduled_at) { setDeliveryMode('schedule'); setScheduledAt(d.scheduled_at.slice(0, 16)); } else { setDeliveryMode('now'); setScheduledAt(''); }
+      setGroupImports(Array.isArray(d.group_imports) ? d.group_imports : []);
       setDraftId(d.id); setNotice({ type: 'info', message: 'Draft loaded' }); setUtilityDrawerOpen(false);
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
 
   /* ── group actions ── */
 
-  function handleGroupImport(contacts, groupData) {
+  function handleGroupImport(contacts, groupData, category) {
     const incoming = (contacts || []).filter(c => c?.email);
     if (!incoming.length) {
       setNotice({ type: 'error', message: 'No contacts to import' });
@@ -631,6 +634,16 @@ export default function App() {
     setRecipients(prev => [...prev, ...additions]);
     setPreviewRecipientId(prev => prev || additions[0]._id || null);
     setErrors({ recipients: {} });
+    setGroupImports(prev => ([
+      ...prev,
+      {
+        groupId: groupData?.id || '',
+        companyName: groupData?.companyName || '',
+        category: category || '',
+        importedCount: additions.length,
+        importedAt: new Date().toISOString(),
+      },
+    ]));
     const baseMsg = `Imported ${additions.length} contact${additions.length !== 1 ? 's' : ''} from "${groupData?.companyName || 'group'}"`;
     setNotice({ type: 'info', message: dupeCount > 0 ? `${baseMsg}; ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped.` : baseMsg });
   }
@@ -926,34 +939,6 @@ export default function App() {
               <button className="btn btn--ghost" onClick={createVariable} style={{ alignSelf: 'flex-start' }}>Add variable</button>
             </div>
 
-            {/* Delivery */}
-            <div className="card">
-              <div className="card__head">
-                <span className="card__title"><Send size={16} /> Delivery</span>
-              </div>
-
-              <div className="delivery-row">
-                <div className="delivery-col">
-                  <span className="lbl--upper">Timing</span>
-                  <div className="toggle-row">
-                    <button className={`tog ${deliveryMode === 'now' ? 'tog--on' : ''}`} onClick={() => { setDeliveryMode('now'); setErrors(p => ({ ...p, scheduledAt: undefined })); }}>Send now</button>
-                    <button className={`tog ${deliveryMode === 'schedule' ? 'tog--on' : ''}`} onClick={() => setDeliveryMode('schedule')}>Schedule</button>
-                  </div>
-                  {deliveryMode === 'schedule' && <input className="inp" type="datetime-local" value={scheduledAt} onChange={e => { setScheduledAt(e.target.value); if (errors.scheduledAt) { const d = new Date(e.target.value); if (e.target.value && !Number.isNaN(d.getTime()) && d.getTime() > Date.now()) setErrors(p => ({ ...p, scheduledAt: undefined })); } }} style={{ marginTop: 4 }} />}
-                  {errors.scheduledAt && <small className="err">{errors.scheduledAt}</small>}
-                </div>
-
-                <div className="delivery-col">
-                  <span className="lbl--upper">Send type</span>
-                  <div className="toggle-row">
-                    <button className={`tog ${sendMode === 'individual' ? 'tog--on' : ''}`} onClick={() => setSendMode('individual')}>Individual</button>
-                    <button className={`tog ${sendMode === 'single' ? 'tog--on' : ''}`} onClick={() => setSendMode('single')}>Single</button>
-                  </div>
-                </div>
-              </div>
-              <p className="hint">Individual mode personalizes each email with {'{{name}}'}</p>
-            </div>
-
           </div>
         </section>
 
@@ -987,7 +972,8 @@ export default function App() {
 
               <div className="compose__actions">
                 <button className="btn btn--outline" onClick={() => saveDraft(true)} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
-                <button className="btn btn--white" onClick={doPreview} disabled={isPreviewing || !gmailConnected}>{isPreviewing ? 'Loading…' : 'Preview & Send'}</button>
+                <button className="btn btn--white" onClick={openCreateTemplate}>Save as Template</button>
+                <button className="btn btn--primary" onClick={doPreview} disabled={isPreviewing || !gmailConnected}>{isPreviewing ? 'Loading…' : 'Send'}</button>
               </div>
             </div>
           </div>
@@ -1017,7 +1003,7 @@ export default function App() {
         <div className="pv-frame" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         <div className="pv-foot">
           <button className="btn btn--ghost" onClick={() => setPreviewOpen(false)}>Cancel</button>
-          <button className="btn btn--primary" onClick={doSend} disabled={isSending}>{isSending ? 'Sending…' : 'Confirm & Send'}</button>
+          <button className="btn btn--primary" onClick={doSend} disabled={isSending}>{isSending ? 'Sending…' : 'Send'}</button>
         </div>
       </Drawer>
 
@@ -1034,7 +1020,10 @@ export default function App() {
           <div className="utility-panel">
             {history.length ? history.map(h => (
               <button className="hist-row" key={h.id} onClick={() => loadCampaign(h.id)}>
-                <div><b>{h.subject}</b><br /><small className="muted">{new Date(h.created_at).toLocaleString()}</small></div>
+                <div>
+                  <b>{h.subject}</b><br />
+                  <small className="muted">Last edited: {new Date(h.updated_at || h.created_at).toLocaleString()}</small>
+                </div>
                 <div className="hist-row__right"><span className={`pill pill--${h.status}`}>{h.status}</span><small className="muted">{h.recipient_count} recipients</small></div>
               </button>
             )) : <p className="muted">No campaigns yet.</p>}

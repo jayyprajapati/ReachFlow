@@ -11,12 +11,6 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DAILY_LIMIT = 350;
 const MAX_RECIPIENTS = 50;
 
-function normalizeDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 function firstNameFromFullName(fullName) {
   return String(fullName || '').trim().split(' ')[0] || 'There';
 }
@@ -71,6 +65,31 @@ function validateRecipients(list, requiredKeys) {
     });
   });
   return errors;
+}
+
+function normalizeVariablesUsed(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  raw.forEach(item => {
+    const key = String(item || '').trim().toLowerCase();
+    if (key) seen.add(key);
+  });
+  return Array.from(seen);
+}
+
+function normalizeGroupImports(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(item => {
+    const importedAt = item?.importedAt ? new Date(item.importedAt) : null;
+    const safeImportedAt = importedAt && !Number.isNaN(importedAt.getTime()) ? importedAt : undefined;
+    return {
+      groupId: item?.groupId ? String(item.groupId).trim() : '',
+      companyName: item?.companyName ? String(item.companyName).trim() : '',
+      category: item?.category ? String(item.category).trim() : '',
+      importedCount: Number.isFinite(Number(item?.importedCount)) ? Math.max(0, Number(item.importedCount)) : 0,
+      importedAt: safeImportedAt,
+    };
+  });
 }
 
 async function ensureSendAllowance(userId, requested) {
@@ -133,35 +152,25 @@ async function sendCampaign(campaignId, user) {
   const logs = [];
   const sentEmailCounts = {};
 
-  if (campaign.send_mode === 'single') {
-    const first = pending[0];
-    const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(first?.name), ...(first.variables || {}) });
-    const toList = pending.map(r => r.email);
-    await sendMimeEmail({ user, to: toList, subject: campaign.subject, html, senderName: campaign.sender_name });
-    pending.forEach(r => {
-      const subdoc = campaign.recipients.id(r._id);
+  if (campaign.send_mode !== 'individual') {
+    campaign.send_mode = 'individual';
+  }
+
+  for (const recipient of pending) {
+    const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(recipient.name), ...(recipient.variables || {}) });
+    try {
+      await sendMimeEmail({ user, to: recipient.email, subject: campaign.subject, html, senderName: campaign.sender_name });
+      const subdoc = campaign.recipients.id(recipient._id);
       if (subdoc) subdoc.status = 'sent';
       logs.push({ userId: user._id, sentAt: new Date() });
-      sentEmailCounts[r.email] = (sentEmailCounts[r.email] || 0) + 1;
-    });
-    sentCount = pending.length;
-  } else {
-    for (const recipient of pending) {
-      const html = renderTemplate(campaign.body_html, { name: firstNameFromFullName(recipient.name), ...(recipient.variables || {}) });
-      try {
-        await sendMimeEmail({ user, to: recipient.email, subject: campaign.subject, html, senderName: campaign.sender_name });
-        const subdoc = campaign.recipients.id(recipient._id);
-        if (subdoc) subdoc.status = 'sent';
-        logs.push({ userId: user._id, sentAt: new Date() });
-        sentEmailCounts[recipient.email] = (sentEmailCounts[recipient.email] || 0) + 1;
-        sentCount++;
-      } catch (err) {
-        console.error(`[send] Failed to send to ${recipient.email}:`, err.message);
-        const subdoc = campaign.recipients.id(recipient._id);
-        if (subdoc) subdoc.status = 'failed';
-        failedCount++;
-        lastError = err;
-      }
+      sentEmailCounts[recipient.email] = (sentEmailCounts[recipient.email] || 0) + 1;
+      sentCount++;
+    } catch (err) {
+      console.warn('[send] Email failed', { campaignId: campaign._id.toString(), userId: user._id.toString() });
+      const subdoc = campaign.recipients.id(recipient._id);
+      if (subdoc) subdoc.status = 'failed';
+      failedCount++;
+      lastError = err;
     }
   }
 
@@ -181,15 +190,12 @@ async function sendCampaign(campaignId, user) {
 
 router.post('/', async (req, res) => {
   try {
-    const { subject, body_html, send_mode, recipients, scheduled_at, status, sender_name } = req.body || {};
+    const { subject, body_html, recipients, sender_name, variables, group_imports } = req.body || {};
     if (!subject || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
     }
     if (!body_html || !body_html.trim()) {
       return res.status(400).json({ error: 'Body is required' });
-    }
-    if (!send_mode || !['single', 'individual'].includes(send_mode)) {
-      return res.status(400).json({ error: 'send_mode must be single or individual' });
     }
 
     const allowedVars = await getAllowedVariables(req.user._id);
@@ -202,22 +208,16 @@ router.post('/', async (req, res) => {
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
     if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
 
-    const when = normalizeDate(scheduled_at);
-    const initialStatus = status && ['draft', 'scheduled'].includes(status)
-      ? status
-      : when && when.getTime() > Date.now()
-        ? 'scheduled'
-        : 'draft';
-
     const doc = await Campaign.create({
       userId: req.user._id,
       subject,
       body_html: sanitizeBody(body_html),
       sender_name: sender_name || '',
-      send_mode,
       recipients: normalizedRecipients,
-      scheduled_at: when,
-      status: initialStatus,
+      send_mode: 'individual',
+      variables: normalizeVariablesUsed(variables),
+      group_imports: normalizeGroupImports(group_imports),
+      status: 'draft',
     });
 
     return res.json({ id: doc._id.toString(), status: doc.status });
@@ -230,14 +230,13 @@ router.patch('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
-    const { subject, body_html, send_mode, recipients, scheduled_at, status, sender_name } = req.body || {};
+    const { subject, body_html, recipients, sender_name, variables, group_imports } = req.body || {};
     const update = {};
     if (subject !== undefined) update.subject = subject;
     if (body_html !== undefined) update.body_html = sanitizeBody(body_html);
     if (sender_name !== undefined) update.sender_name = sender_name;
-    if (send_mode && ['single', 'individual'].includes(send_mode)) update.send_mode = send_mode;
-    if (status && ['draft', 'scheduled', 'sent'].includes(status)) update.status = status;
-    if (scheduled_at !== undefined) update.scheduled_at = normalizeDate(scheduled_at);
+    if (variables !== undefined) update.variables = normalizeVariablesUsed(variables);
+    if (group_imports !== undefined) update.group_imports = normalizeGroupImports(group_imports);
 
     if (Array.isArray(recipients)) {
       const allowedVars = await getAllowedVariables(req.user._id);
@@ -264,14 +263,18 @@ router.get('/', async (req, res) => {
         $project: {
           subject: 1,
           status: 1,
-          scheduled_at: 1,
           created_at: 1,
+          updated_at: 1,
           recipient_count: { $size: '$recipients' },
         },
       },
-      { $sort: { created_at: -1 } },
+      { $sort: { updated_at: -1 } },
     ]);
-    res.json(rows.map(r => ({ ...r, id: r._id.toString() })));
+    res.json(rows.map(r => ({
+      ...r,
+      id: r._id.toString(),
+      status: r.status === 'sent' ? 'sent' : 'draft',
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load campaigns' });
   }
@@ -340,15 +343,6 @@ router.post('/:id/send', async (req, res) => {
     const validation = validateVariables(campaign.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
     if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
-
-    const scheduledAt = campaign.scheduled_at ? new Date(campaign.scheduled_at) : null;
-    const isFuture = scheduledAt && !Number.isNaN(scheduledAt) && scheduledAt.getTime() > Date.now();
-
-    if (isFuture) {
-      campaign.status = 'scheduled';
-      await campaign.save();
-      return res.json({ status: 'scheduled' });
-    }
 
     const result = await sendCampaign(id, req.user);
     return res.json(result);
