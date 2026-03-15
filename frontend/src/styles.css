@@ -1975,6 +1975,21 @@ body {
   align-items: center;
   justify-content: space-between;
   min-height: 28px;
+  gap: 12px;
+}
+
+.gm-grid-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gm-grid-actions .gm-text-btn:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  text-decoration: none;
 }
 
 .gm-title {
@@ -2951,6 +2966,13 @@ body {
   background: #f8faff;
 }
 
+.gm-bulk-preview-row--wide {
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 1fr) minmax(140px, 1fr);
+  display: grid;
+  align-items: center;
+  gap: 10px;
+}
+
 .gm-bulk-preview-name {
   flex: 1;
   font-weight: 500;
@@ -2960,6 +2982,75 @@ body {
 .gm-bulk-preview-email {
   flex: 1;
   color: var(--sub);
+}
+
+.gm-bulk-preview-group {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.gm-bulk-preview-group--new {
+  color: #0f766e;
+}
+
+.gm-import-mode-tabs {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.gm-import-tab {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--sub);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.gm-import-tab:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.gm-import-tab--active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+
+.gm-import-tab:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gm-csv-upload {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text);
+  background: #fafbfc;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gm-csv-upload:hover {
+  border-color: var(--blue);
+  background: #f7faff;
+}
+
+.gm-csv-upload input {
+  display: none;
 }
 
 .gm-bulk-success {

@@ -12,6 +12,80 @@ const CONNECTION_OPTIONS = [
     { value: 'connected', label: 'Connected' },
 ];
 
+function normalizeCompanyKey(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function toTitleCase(value) {
+    return String(value || '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ');
+}
+
+function companyFromEmail(email) {
+    const domain = String(email || '').split('@')[1] || '';
+    const companyPart = domain.split('.')[0] || '';
+    const normalizedPart = companyPart.replace(/[-_]+/g, ' ').trim();
+    const fallback = normalizedPart || 'Unknown Company';
+    return toTitleCase(fallback);
+}
+
+function parseCsvRows(text) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                field += '"';
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (char === ',' && !inQuotes) {
+            row.push(field);
+            field = '';
+            continue;
+        }
+
+        if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (char === '\r' && next === '\n') i += 1;
+            row.push(field);
+            rows.push(row);
+            row = [];
+            field = '';
+            continue;
+        }
+
+        field += char;
+    }
+
+    if (field.length || row.length) {
+        row.push(field);
+        rows.push(row);
+    }
+
+    return rows;
+}
+
+function csvEscape(value) {
+    const text = String(value || '');
+    if (/[",\n\r]/.test(text)) {
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+}
+
 export default function GroupManager({ open, onClose, authedFetch }) {
     /* ── state ── */
     const [groups, setGroups] = useState([]);
@@ -57,6 +131,16 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     const [bulkMessage, setBulkMessage] = useState('');
     const [copiedField, setCopiedField] = useState('');
 
+    // Global import/export (groups page)
+    const [globalImportOpen, setGlobalImportOpen] = useState(false);
+    const [globalImportMode, setGlobalImportMode] = useState('bulk'); // 'bulk' | 'csv'
+    const [globalText, setGlobalText] = useState('');
+    const [globalFileName, setGlobalFileName] = useState('');
+    const [globalParsed, setGlobalParsed] = useState(null); // null | parsed array
+    const [globalMessage, setGlobalMessage] = useState('');
+    const [globalBusy, setGlobalBusy] = useState(false);
+    const [exportBusy, setExportBusy] = useState(false);
+
     /* ── load groups ── */
 
     const loadGroups = useCallback(async () => {
@@ -95,6 +179,14 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             setDirty(false);
             setError('');
             setDeleteGroupDialogOpen(false);
+            setGlobalImportOpen(false);
+            setGlobalImportMode('bulk');
+            setGlobalText('');
+            setGlobalFileName('');
+            setGlobalParsed(null);
+            setGlobalMessage('');
+            setGlobalBusy(false);
+            setExportBusy(false);
         }
     }, [open, loadGroups]);
 
@@ -112,6 +204,301 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         } else {
             action();
         }
+    }
+
+    function buildGroupLookup(sourceGroups) {
+        const map = new Map();
+        for (const g of sourceGroups) {
+            const fullKey = normalizeCompanyKey(g.companyName);
+            if (fullKey && !map.has(fullKey)) map.set(fullKey, g);
+            const firstWord = String(g.companyName || '').trim().split(/\s+/)[0] || '';
+            const shortKey = normalizeCompanyKey(firstWord);
+            if (shortKey && !map.has(shortKey)) map.set(shortKey, g);
+        }
+        return map;
+    }
+
+    function parseGlobalInputToRows(rawInput) {
+        const lines = String(rawInput || '').split('\n').map(l => l.trim()).filter(Boolean);
+        const seenEmails = new Set();
+        const parsed = [];
+
+        for (const line of lines) {
+            const emailMatch = line.match(/([^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+)/);
+            if (!emailMatch) continue;
+            const email = emailMatch[1].toLowerCase().trim();
+            if (!emailRegex.test(email) || seenEmails.has(email)) continue;
+            seenEmails.add(email);
+
+            let name = line
+                .replace(emailMatch[0], '')
+                .replace(/[<>|;,\-]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!name) name = nameFromEmail(email);
+
+            const companyName = companyFromEmail(email);
+            parsed.push({
+                name,
+                email,
+                companyName,
+                companyKey: normalizeCompanyKey(companyName),
+            });
+        }
+
+        return parsed;
+    }
+
+    function annotateParsedRows(rows) {
+        const groupLookup = buildGroupLookup(groups);
+        return rows.map(row => {
+            const matched = groupLookup.get(row.companyKey) || null;
+            return {
+                ...row,
+                targetGroupId: matched?.id || null,
+                targetGroupName: matched?.companyName || row.companyName,
+                targetExists: !!matched,
+            };
+        });
+    }
+
+    function parseGlobalBulkText() {
+        const parsed = parseGlobalInputToRows(globalText);
+        if (!parsed.length) {
+            setGlobalMessage('No valid contacts detected. Please paste name and email pairs.');
+            setGlobalParsed([]);
+            return;
+        }
+        setGlobalMessage('');
+        setGlobalParsed(annotateParsedRows(parsed));
+    }
+
+    function parseCsvTextContent(text) {
+        const rows = parseCsvRows(text).filter(r => r.some(cell => String(cell || '').trim() !== ''));
+        if (rows.length < 2) {
+            throw new Error('This is not a valid data inside file to parse.');
+        }
+
+        const header = rows[0].map(cell => String(cell || '').trim().toLowerCase());
+        if (header.length !== 2 || !header.includes('name') || !header.includes('email')) {
+            throw new Error('This is not a valid data inside file to parse.');
+        }
+
+        const nameIndex = header.indexOf('name');
+        const emailIndex = header.indexOf('email');
+        const seenEmails = new Set();
+        const parsed = [];
+
+        for (let i = 1; i < rows.length; i += 1) {
+            const current = rows[i];
+            if (current.length !== 2) {
+                throw new Error('This is not a valid data inside file to parse.');
+            }
+
+            const rawName = String(current[nameIndex] || '').trim();
+            const rawEmail = String(current[emailIndex] || '').toLowerCase().trim();
+            if (!rawName || !emailRegex.test(rawEmail)) {
+                throw new Error('This is not a valid data inside file to parse.');
+            }
+            if (seenEmails.has(rawEmail)) continue;
+            seenEmails.add(rawEmail);
+
+            const companyName = companyFromEmail(rawEmail);
+            parsed.push({
+                name: rawName,
+                email: rawEmail,
+                companyName,
+                companyKey: normalizeCompanyKey(companyName),
+            });
+        }
+
+        if (!parsed.length) {
+            throw new Error('This is not a valid data inside file to parse.');
+        }
+        return annotateParsedRows(parsed);
+    }
+
+    function onCsvFilePicked(event) {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setGlobalMessage('');
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const content = String(reader.result || '');
+                const parsed = parseCsvTextContent(content);
+                setGlobalFileName(file.name);
+                setGlobalParsed(parsed);
+            } catch (e) {
+                setGlobalParsed(null);
+                setGlobalFileName(file.name);
+                setGlobalMessage(e.message || 'This is not a valid data inside file to parse.');
+            }
+        };
+        reader.onerror = () => {
+            setGlobalParsed(null);
+            setGlobalFileName(file.name);
+            setGlobalMessage('Unable to read CSV file.');
+        };
+        reader.readAsText(file);
+    }
+
+    async function saveGlobalParsedContacts() {
+        if (!globalParsed?.length || globalBusy) return;
+        setGlobalBusy(true);
+        setGlobalMessage('');
+
+        const workingGroups = [...groups];
+        const lookup = buildGroupLookup(workingGroups);
+        const bucketById = new Map();
+        let addedCount = 0;
+        let duplicateCount = 0;
+        let createdGroupCount = 0;
+        let failedCount = 0;
+
+        async function getBucketForCompany(row) {
+            const normalized = row.companyKey;
+            let group = lookup.get(normalized);
+
+            if (!group) {
+                const createResp = await authedFetch(`${API_BASE}/api/groups`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ companyName: row.companyName, logoUrl: '' }),
+                });
+                const createData = await createResp.json();
+                if (!createResp.ok) throw new Error(createData.error || 'Failed to create group');
+                group = createData;
+                workingGroups.push(group);
+                createdGroupCount += 1;
+                const refreshedLookup = buildGroupLookup(workingGroups);
+                refreshedLookup.forEach((value, key) => lookup.set(key, value));
+            }
+
+            if (!bucketById.has(group.id)) {
+                const detailResp = await authedFetch(`${API_BASE}/api/groups/${group.id}`);
+                const detailData = await detailResp.json();
+                if (!detailResp.ok) throw new Error(detailData.error || 'Failed to load group');
+                const emailSet = new Set((detailData.contacts || []).map(c => String(c.email || '').toLowerCase()));
+                bucketById.set(group.id, { group, emails: emailSet, full: false });
+            }
+
+            return bucketById.get(group.id);
+        }
+
+        for (const row of globalParsed) {
+            try {
+                const bucket = await getBucketForCompany(row);
+                if (bucket.full || bucket.emails.has(row.email)) {
+                    duplicateCount += 1;
+                    continue;
+                }
+
+                const addResp = await authedFetch(`${API_BASE}/api/groups/${bucket.group.id}/contacts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: row.name,
+                        email: row.email,
+                        role: '',
+                        connectionStatus: 'not_connected',
+                        linkedin: '',
+                        email_status: 'tentative',
+                    }),
+                });
+                const addData = await addResp.json();
+
+                if (!addResp.ok) {
+                    if (addData?.error === 'Group contact limit reached (300).') {
+                        bucket.full = true;
+                    }
+                    failedCount += 1;
+                    continue;
+                }
+
+                bucket.emails.add(row.email);
+                addedCount += 1;
+            } catch (_) {
+                failedCount += 1;
+            }
+        }
+
+        await loadGroups();
+        setGlobalBusy(false);
+
+        let message = `Added ${addedCount} contact${addedCount !== 1 ? 's' : ''}.`;
+        if (createdGroupCount > 0) message += ` Created ${createdGroupCount} new group${createdGroupCount !== 1 ? 's' : ''}.`;
+        if (duplicateCount > 0) message += ` ${duplicateCount} duplicate${duplicateCount !== 1 ? 's were' : ' was'} skipped.`;
+        if (failedCount > 0) message += ` ${failedCount} row${failedCount !== 1 ? 's' : ''} failed.`;
+        setGlobalMessage(message);
+        setGlobalParsed(null);
+        setGlobalText('');
+        setGlobalFileName('');
+        setTimeout(() => {
+            setGlobalImportOpen(false);
+            setGlobalMessage('');
+        }, 1800);
+    }
+
+    async function exportAllAsCsv() {
+        const totalContacts = groups.reduce((sum, g) => sum + Number(g.contactCount || 0), 0);
+        if (!totalContacts || exportBusy) return;
+        setExportBusy(true);
+        setError('');
+
+        try {
+            const detailResponses = await Promise.all(groups.map(g => authedFetch(`${API_BASE}/api/groups/${g.id}`)));
+            const detailPayloads = await Promise.all(detailResponses.map(async (resp) => {
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load groups for export');
+                return data;
+            }));
+
+            const seen = new Set();
+            const merged = [];
+            for (const group of detailPayloads) {
+                for (const contact of (group.contacts || [])) {
+                    const email = String(contact.email || '').toLowerCase();
+                    if (!email || seen.has(email)) continue;
+                    seen.add(email);
+                    merged.push({
+                        name: String(contact.name || '').trim(),
+                        email,
+                    });
+                }
+            }
+
+            if (!merged.length) {
+                setExportBusy(false);
+                return;
+            }
+
+            const csv = ['name,email', ...merged.map(row => `${csvEscape(row.name)},${csvEscape(row.email)}`)].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            link.download = `all-group-contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            setError(e.message || 'Failed to export contacts');
+        } finally {
+            setExportBusy(false);
+        }
+    }
+
+    function closeGlobalImport() {
+        if (globalBusy) return;
+        setGlobalImportOpen(false);
+        setGlobalText('');
+        setGlobalFileName('');
+        setGlobalParsed(null);
+        setGlobalMessage('');
+        setGlobalImportMode('bulk');
     }
 
     function handleConfirm(choice) {
@@ -468,8 +855,20 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                     <>
                         <div className="gm-topbar">
                             <span className="gm-title">Groups</span>
-                            <div style={{ display: 'flex', gap: 12 }}>
+                            <div className="gm-grid-actions">
                                 <button className="gm-text-btn" onClick={() => setCreating(true)}>Create Group</button>
+                                <span className="gm-dot-sep" aria-hidden="true">•</span>
+                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('bulk'); setGlobalImportOpen(true); }}>Bulk Paste</button>
+                                <span className="gm-dot-sep" aria-hidden="true">•</span>
+                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('csv'); setGlobalImportOpen(true); }}>Import CSV</button>
+                                <span className="gm-dot-sep" aria-hidden="true">•</span>
+                                <button
+                                    className="gm-text-btn"
+                                    onClick={exportAllAsCsv}
+                                    disabled={exportBusy || groups.reduce((sum, g) => sum + Number(g.contactCount || 0), 0) === 0}
+                                >
+                                    {exportBusy ? 'Exporting…' : 'Export All as CSV'}
+                                </button>
                             </div>
                         </div>
 
@@ -642,6 +1041,95 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                                 <div className="gm-bulk-actions">
                                     <button className="gm-text-btn" onClick={() => { setBulkParsed(null); setBulkMessage(''); }}>Back</button>
                                     <button className="btn btn--primary" onClick={doBulkImport} disabled={!bulkParsed.length}>Add to Group</button>
+                                </div>
+                            </>
+                        ) : null}
+                    </div>
+                </>
+            )}
+
+            {/* Global import panel */}
+            {globalImportOpen && (
+                <>
+                    <div className="gm-confirm-overlay" onClick={closeGlobalImport} />
+                    <div className="gm-bulk-panel" onClick={e => e.stopPropagation()}>
+                        <div className="gm-topbar">
+                            <span className="gm-title">Import Contacts Across Groups</span>
+                            <button className="gm-text-btn" onClick={closeGlobalImport} disabled={globalBusy}>Cancel</button>
+                        </div>
+
+                        <div className="gm-import-mode-tabs" role="tablist" aria-label="Import mode">
+                            <button
+                                className={`gm-import-tab ${globalImportMode === 'bulk' ? 'gm-import-tab--active' : ''}`}
+                                onClick={() => { setGlobalImportMode('bulk'); setGlobalMessage(''); setGlobalParsed(null); setGlobalFileName(''); }}
+                                disabled={globalBusy}
+                            >
+                                Bulk Paste
+                            </button>
+                            <button
+                                className={`gm-import-tab ${globalImportMode === 'csv' ? 'gm-import-tab--active' : ''}`}
+                                onClick={() => { setGlobalImportMode('csv'); setGlobalMessage(''); setGlobalParsed(null); setGlobalText(''); }}
+                                disabled={globalBusy}
+                            >
+                                Import CSV
+                            </button>
+                        </div>
+
+                        {globalMessage && (
+                            <div className={globalMessage.startsWith('Added') ? 'gm-bulk-success' : 'gm-bulk-warn'}>{globalMessage}</div>
+                        )}
+
+                        {!globalParsed ? (
+                            globalImportMode === 'bulk' ? (
+                                <>
+                                    <textarea
+                                        className="gm-bulk-textarea"
+                                        rows={8}
+                                        value={globalText}
+                                        onChange={e => setGlobalText(e.target.value)}
+                                        placeholder={'John Doe john@company.com\njane@stripe.com Jane Smith\nJohn Doe <john@company.com>'}
+                                        autoFocus
+                                        disabled={globalBusy}
+                                    />
+                                    <p className="gm-muted">Company is auto-detected from email domain (text between @ and first dot).</p>
+                                    <div className="gm-bulk-actions">
+                                        <button className="btn btn--primary" onClick={parseGlobalBulkText} disabled={!globalText.trim() || globalBusy}>Parse</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <label className="gm-csv-upload">
+                                        <input type="file" accept=".csv,text/csv" onChange={onCsvFilePicked} disabled={globalBusy} />
+                                        <span>{globalFileName || 'Choose CSV file'}</span>
+                                    </label>
+                                    <p className="gm-muted">CSV must have exactly two columns: name and email (any order).</p>
+                                </>
+                            )
+                        ) : globalParsed.length > 0 ? (
+                            <>
+                                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Confirm Import ({globalParsed.length})</p>
+                                <div className="gm-bulk-preview">
+                                    {globalParsed.map((row, i) => (
+                                        <div key={`${row.email}-${i}`} className="gm-bulk-preview-row gm-bulk-preview-row--wide">
+                                            <span className="gm-bulk-preview-name">{row.name}</span>
+                                            <span className="gm-bulk-preview-email">{row.email}</span>
+                                            <span className={`gm-bulk-preview-group ${row.targetExists ? '' : 'gm-bulk-preview-group--new'}`}>
+                                                {row.targetGroupName} {row.targetExists ? '' : '(new)'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="gm-bulk-actions">
+                                    <button
+                                        className="gm-text-btn"
+                                        onClick={() => { setGlobalParsed(null); setGlobalMessage(''); }}
+                                        disabled={globalBusy}
+                                    >
+                                        Back
+                                    </button>
+                                    <button className="btn btn--primary" onClick={saveGlobalParsedContacts} disabled={!globalParsed.length || globalBusy}>
+                                        {globalBusy ? 'Saving…' : 'Confirm and Save'}
+                                    </button>
                                 </div>
                             </>
                         ) : null}
