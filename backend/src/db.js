@@ -1,4 +1,12 @@
 const mongoose = require('mongoose');
+const {
+  encryptJson,
+  isEncryptedEnvelope,
+  normalizeEmail,
+  computeEmailHash,
+  normalizeCompanyKey,
+  deriveCompanyKeyFromEmail,
+} = require('./utils/dataSecurity');
 
 const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/jobhunt';
 
@@ -17,6 +25,8 @@ const userSchema = new mongoose.Schema(
     googleId: { type: String, unique: true, sparse: true },
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
     displayName: { type: String, default: '' },
+    senderDisplayNameEnc: { type: mongoose.Schema.Types.Mixed },
+    gmailEmailEnc: { type: mongoose.Schema.Types.Mixed },
     senderDisplayName: { type: String, default: '', trim: true },
     gmailEmail: { type: String, lowercase: true, trim: true },
     gmailConnected: { type: Boolean, default: false },
@@ -30,6 +40,8 @@ const userSchema = new mongoose.Schema(
 const variableSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    variableNameKey: { type: String, lowercase: true, trim: true, index: true },
+    encryptedPayload: { type: mongoose.Schema.Types.Mixed },
     variableName: { type: String, lowercase: true, trim: true },
     description: { type: String, default: '', trim: true },
     key: { type: String, lowercase: true, trim: true },
@@ -39,11 +51,13 @@ const variableSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
-variableSchema.index({ userId: 1, variableName: 1 }, { unique: true, sparse: true });
+variableSchema.index({ userId: 1, variableNameKey: 1 }, { unique: true, sparse: true });
 
 const recipientSchema = new mongoose.Schema({
-  email: { type: String, required: true, lowercase: true, trim: true },
-  name: { type: String, required: true, trim: true },
+  emailHash: { type: String, trim: true, index: true },
+  encryptedPayload: { type: mongoose.Schema.Types.Mixed },
+  email: { type: String, lowercase: true, trim: true },
+  name: { type: String, trim: true },
   variables: { type: Map, of: String, default: {} },
   status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'pending' },
 });
@@ -68,8 +82,11 @@ const contactHistoryEntrySchema = new mongoose.Schema(
 );
 
 const contactSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  email: { type: String, required: true, lowercase: true, trim: true },
+  emailHash: { type: String, trim: true, index: true },
+  companyKey: { type: String, trim: true, index: true },
+  encryptedPayload: { type: mongoose.Schema.Types.Mixed },
+  name: { type: String, trim: true },
+  email: { type: String, lowercase: true, trim: true },
   role: { type: String, default: '', trim: true },
   linkedin: { type: String, default: '', trim: true },
   connectionStatus: { type: String, enum: ['', 'not_connected', 'request_sent', 'connected'], default: '' },
@@ -83,8 +100,11 @@ const contactSchema = new mongoose.Schema({
 const campaignSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    subject: { type: String, required: true, trim: true },
-    body_html: { type: String, required: true },
+    encryptedPayload: { type: mongoose.Schema.Types.Mixed },
+    recipient_count: { type: Number, default: 0, min: 0 },
+    variable_count: { type: Number, default: 0, min: 0 },
+    subject: { type: String, trim: true },
+    body_html: { type: String },
     sender_name: { type: String, default: '' },
     name_format: { type: String, enum: ['first', 'full'], default: 'first' },
     recipients: { type: [recipientSchema], default: [] },
@@ -113,6 +133,8 @@ const sendLogSchema = new mongoose.Schema(
 const groupSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    companyKey: { type: String, trim: true, index: true },
+    contactCount: { type: Number, default: 0, min: 0 },
     companyName: { type: String, required: true, trim: true },
     logoUrl: { type: String, default: '', trim: true },
     contacts: { type: [contactSchema], default: [] },
@@ -126,9 +148,10 @@ const groupSchema = new mongoose.Schema(
 const templateSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    title: { type: String, required: true, trim: true },
-    subject: { type: String, required: true, trim: true },
-    body_html: { type: String, required: true },
+    encryptedPayload: { type: mongoose.Schema.Types.Mixed },
+    title: { type: String, trim: true },
+    subject: { type: String, trim: true },
+    body_html: { type: String },
   },
   {
     timestamps: true,
@@ -144,149 +167,65 @@ const Group = mongoose.model('Group', groupSchema);
 const Template = mongoose.model('Template', templateSchema);
 
 async function migrateGroupContactFields() {
-  await Group.updateMany(
-    {},
-    [
-      {
-        $set: {
-          contacts: {
-            $map: {
-              input: '$contacts',
-              as: 'contact',
-              in: {
-                $let: {
-                  vars: {
-                    normalizedStatus: {
-                      $switch: {
-                        branches: [
-                          {
-                            case: { $in: ['$$contact.email_status', ['verified', 'tentative', 'not_valid']] },
-                            then: '$$contact.email_status',
-                          },
-                          {
-                            case: { $eq: ['$$contact.email_status', 'flagged'] },
-                            then: 'not_valid',
-                          },
-                        ],
-                        default: 'tentative',
-                      },
-                    },
-                    normalizedConnectionStatus: {
-                      $switch: {
-                        branches: [
-                          {
-                            case: { $in: ['$$contact.connectionStatus', ['not_connected', 'request_sent', 'connected']] },
-                            then: '$$contact.connectionStatus',
-                          },
-                          {
-                            case: { $eq: ['$$contact.connectionStatus', 'pending'] },
-                            then: 'request_sent',
-                          },
-                        ],
-                        default: '',
-                      },
-                    },
-                    baseContactDate: {
-                      $cond: [
-                        { $ifNull: ['$$contact.last_contacted_at', false] },
-                        '$$contact.last_contacted_at',
-                        '$$NOW',
-                      ],
-                    },
-                    legacyContactCount: {
-                      $max: [
-                        0,
-                        {
-                          $convert: {
-                            input: '$$contact.contact_count',
-                            to: 'int',
-                            onError: 0,
-                            onNull: 0,
-                          },
-                        },
-                      ],
-                    },
-                    legacyVia: {
-                      $cond: [
-                        { $eq: ['$$contact.last_contacted_via', 'linkedin'] },
-                        'linkedin',
-                        'email',
-                      ],
-                    },
-                  },
-                  in: {
-                    $mergeObjects: [
-                      '$$contact',
-                      {
-                        email_status: '$$normalizedStatus',
-                        connectionStatus: '$$normalizedConnectionStatus',
-                        contactHistory: {
-                          $cond: [
-                            {
-                              $and: [
-                                { $isArray: '$$contact.contactHistory' },
-                                { $gt: [{ $size: '$$contact.contactHistory' }, 0] },
-                              ],
-                            },
-                            '$$contact.contactHistory',
-                            {
-                              $cond: [
-                                { $gt: ['$$legacyContactCount', 0] },
-                                {
-                                  $map: {
-                                    input: { $range: [0, '$$legacyContactCount'] },
-                                    as: 'i',
-                                    in: {
-                                      type: '$$legacyVia',
-                                      date: '$$baseContactDate',
-                                    },
-                                  },
-                                },
-                                [],
-                              ],
-                            },
-                          ],
-                        },
-                        lastContactedDate: {
-                          $ifNull: ['$$contact.lastContactedDate', '$$baseContactDate'],
-                        },
-                        emailCount: {
-                          $max: [
-                            0,
-                            {
-                              $convert: {
-                                input: '$$contact.emailCount',
-                                to: 'int',
-                                onError: '$$legacyContactCount',
-                                onNull: '$$legacyContactCount',
-                              },
-                            },
-                          ],
-                        },
-                        linkedInCount: {
-                          $max: [
-                            0,
-                            {
-                              $convert: {
-                                input: '$$contact.linkedInCount',
-                                to: 'int',
-                                onError: 0,
-                                onNull: 0,
-                              },
-                            },
-                          ],
-                        },
-                      },
-                    ],
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    ]
-  );
+  const rows = await Group.find({});
+  for (const group of rows) {
+    let changed = false;
+    const companyName = String(group.companyName || '').trim();
+    const normalizedCompany = normalizeCompanyKey(companyName);
+    if ((group.companyKey || '') !== normalizedCompany) {
+      group.companyKey = normalizedCompany;
+      changed = true;
+    }
+
+    const nextContacts = (group.contacts || []).map((contact) => {
+      const plainEmail = normalizeEmail(contact.email || '');
+      const payload = {
+        name: contact.name || '',
+        email: plainEmail,
+        role: contact.role || '',
+        linkedin: contact.linkedin || '',
+        connectionStatus: contact.connectionStatus || '',
+        email_status: contact.email_status || 'tentative',
+        contactHistory: Array.isArray(contact.contactHistory) ? contact.contactHistory : [],
+        lastContactedDate: contact.lastContactedDate || null,
+        emailCount: Number.isFinite(Number(contact.emailCount)) ? Number(contact.emailCount) : 0,
+        linkedInCount: Number.isFinite(Number(contact.linkedInCount)) ? Number(contact.linkedInCount) : 0,
+      };
+
+      const next = contact.toObject ? contact.toObject() : { ...contact };
+      const nextHash = plainEmail ? computeEmailHash(plainEmail) : '';
+      const nextCompanyKey = deriveCompanyKeyFromEmail(plainEmail) || normalizedCompany;
+
+      if (!isEncryptedEnvelope(next.encryptedPayload)) {
+        next.encryptedPayload = encryptJson(payload);
+        changed = true;
+      }
+      if (next.emailHash !== nextHash) {
+        next.emailHash = nextHash;
+        changed = true;
+      }
+      if (next.companyKey !== nextCompanyKey) {
+        next.companyKey = nextCompanyKey;
+        changed = true;
+      }
+
+      next.name = undefined;
+      next.email = undefined;
+      next.linkedin = undefined;
+      next.contactHistory = undefined;
+      next.lastContactedDate = undefined;
+      return next;
+    });
+
+    if ((group.contactCount || 0) !== nextContacts.length) {
+      group.contactCount = nextContacts.length;
+      changed = true;
+    }
+    if (changed) {
+      group.contacts = nextContacts;
+      await group.save();
+    }
+  }
 }
 
 function normalizeVariableName(value) {
@@ -298,32 +237,121 @@ function normalizeVariableName(value) {
 }
 
 async function migrateVariableFields() {
-  const legacyRows = await Variable.find({
-    $or: [
-      { variableName: { $exists: false } },
-      { variableName: null },
-      { variableName: '' },
-    ],
-  }).sort({ createdAt: 1 });
+  try {
+    await Variable.collection.dropIndex('userId_1_variableName_1');
+  } catch (err) {
+    if (!/index not found|ns not found/i.test(err?.message || '')) {
+      throw err;
+    }
+  }
+
+  try {
+    await Variable.collection.dropIndex('userId_1_key_1');
+  } catch (err) {
+    if (!/index not found|ns not found/i.test(err?.message || '')) {
+      throw err;
+    }
+  }
+
+  await Variable.collection.createIndex({ userId: 1, variableNameKey: 1 }, { unique: true, sparse: true });
+
+  const legacyRows = await Variable.find({}).sort({ createdAt: 1 });
 
   for (const row of legacyRows) {
-    const baseFromLegacy = normalizeVariableName(row.variableName || row.key || row.label);
+    const baseFromLegacy = normalizeVariableName(row.variableNameKey || row.variableName || row.key || row.label);
     if (!baseFromLegacy) continue;
 
     const base = baseFromLegacy === 'name' ? 'name_custom' : baseFromLegacy;
     let candidate = base;
     let suffix = 2;
 
-    while (await Variable.exists({ userId: row.userId, variableName: candidate, _id: { $ne: row._id } })) {
+    while (await Variable.exists({ userId: row.userId, variableNameKey: candidate, _id: { $ne: row._id } })) {
       candidate = `${base}${suffix}`;
       suffix += 1;
     }
 
-    row.variableName = candidate;
+    row.variableNameKey = candidate;
     if (!row.description && row.label && row.label !== row.key) {
       row.description = String(row.label || '').trim();
     }
-    await row.save();
+    if (!isEncryptedEnvelope(row.encryptedPayload)) {
+      row.encryptedPayload = encryptJson({
+        variableName: candidate,
+        description: row.description || '',
+      });
+    }
+    row.variableName = undefined;
+    row.description = undefined;
+    row.key = undefined;
+    row.label = undefined;
+    await row.save({ validateBeforeSave: false });
+  }
+}
+
+async function migrateUserSensitiveFields() {
+  const users = await User.find({});
+  for (const user of users) {
+    let changed = false;
+    if (!isEncryptedEnvelope(user.senderDisplayNameEnc) && user.senderDisplayName) {
+      user.senderDisplayNameEnc = encryptJson({ value: String(user.senderDisplayName || '') });
+      user.senderDisplayName = undefined;
+      changed = true;
+    }
+    if (!isEncryptedEnvelope(user.gmailEmailEnc) && user.gmailEmail) {
+      user.gmailEmailEnc = encryptJson({ value: normalizeEmail(user.gmailEmail) });
+      user.gmailEmail = undefined;
+      changed = true;
+    }
+    if (changed) await user.save({ validateBeforeSave: false });
+  }
+}
+
+async function migrateTemplateSensitiveFields() {
+  const templates = await Template.find({});
+  for (const template of templates) {
+    if (isEncryptedEnvelope(template.encryptedPayload)) continue;
+    template.encryptedPayload = encryptJson({
+      title: template.title || '',
+      subject: template.subject || '',
+      body_html: template.body_html || '',
+    });
+    template.title = undefined;
+    template.subject = undefined;
+    template.body_html = undefined;
+    await template.save({ validateBeforeSave: false });
+  }
+}
+
+async function migrateCampaignSensitiveFields() {
+  const campaigns = await Campaign.find({});
+  for (const campaign of campaigns) {
+    if (isEncryptedEnvelope(campaign.encryptedPayload)) continue;
+    const payload = {
+      subject: campaign.subject || '',
+      body_html: campaign.body_html || '',
+      sender_name: campaign.sender_name || '',
+      name_format: campaign.name_format || 'first',
+      recipients: (campaign.recipients || []).map(r => ({
+        _id: r._id,
+        email: normalizeEmail(r.email || ''),
+        name: r.name || '',
+        variables: r.variables || {},
+        status: r.status || 'pending',
+      })),
+      variables: Array.isArray(campaign.variables) ? campaign.variables : [],
+      group_imports: Array.isArray(campaign.group_imports) ? campaign.group_imports : [],
+    };
+    campaign.encryptedPayload = encryptJson(payload);
+    campaign.recipient_count = payload.recipients.length;
+    campaign.variable_count = payload.variables.length;
+    campaign.subject = undefined;
+    campaign.body_html = undefined;
+    campaign.sender_name = undefined;
+    campaign.name_format = undefined;
+    campaign.recipients = undefined;
+    campaign.variables = undefined;
+    campaign.group_imports = undefined;
+    await campaign.save({ validateBeforeSave: false });
   }
 }
 
@@ -335,6 +363,9 @@ module.exports = {
   SendLog,
   Group,
   Template,
+  migrateUserSensitiveFields,
+  migrateTemplateSensitiveFields,
+  migrateCampaignSensitiveFields,
   migrateGroupContactFields,
   migrateVariableFields,
 };

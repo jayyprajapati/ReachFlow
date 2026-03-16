@@ -1,7 +1,24 @@
 const { google } = require('googleapis');
 const { resolveSenderIdentity, resolveDisplayName } = require('./services/senderResolver');
 const { encrypt, decrypt } = require('./utils/crypto');
+const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 require('dotenv').config();
+
+function setEncryptedUserGmailEmail(user, email) {
+  user.gmailEmailEnc = encryptJson({ value: normalizeEmail(email) });
+  user.gmailEmail = undefined;
+}
+
+function getUserGmailEmail(user) {
+  if (isEncryptedEnvelope(user.gmailEmailEnc)) {
+    try {
+      return normalizeEmail(decryptJson(user.gmailEmailEnc)?.value || '');
+    } catch (_err) {
+      return normalizeEmail(user.gmailEmail || user.email || '');
+    }
+  }
+  return normalizeEmail(user.gmailEmail || user.email || '');
+}
 
 function getOAuthClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -114,7 +131,7 @@ async function exchangeCodeForUser(user, code) {
   const encryptedRefreshToken = incomingRefresh ? encrypt(incomingRefresh) : user.encryptedRefreshToken;
 
   user.googleId = profile.sub || profile.email;
-  user.gmailEmail = profile.email.toLowerCase();
+  setEncryptedUserGmailEmail(user, profile.email);
   user.email = user.email || profile.email.toLowerCase();
   user.displayName = user.displayName || profile.name || profile.email;
   user.encryptedRefreshToken = encryptedRefreshToken;
@@ -160,7 +177,7 @@ async function verifyAuth(user) {
     const primaryEmail = identity?.sendAsEmail || user.email;
     return {
       valid: !!primaryEmail,
-      email: primaryEmail,
+      email: primaryEmail || getUserGmailEmail(user),
       displayName: user.displayName,
     };
   } catch (err) {

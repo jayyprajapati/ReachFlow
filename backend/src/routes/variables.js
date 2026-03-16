@@ -1,5 +1,6 @@
 const express = require('express');
 const { Variable } = require('../db');
+const { encryptJson, decryptJson, isEncryptedEnvelope } = require('../utils/dataSecurity');
 
 const router = express.Router();
 const MAX_CUSTOM_VARIABLES = 2;
@@ -13,7 +14,27 @@ function normalizeVariableName(value) {
 }
 
 function getVariableName(variable) {
-  return normalizeVariableName(variable?.variableName || variable?.key || variable?.label);
+  if (isEncryptedEnvelope(variable?.encryptedPayload)) {
+    try {
+      const payload = decryptJson(variable.encryptedPayload);
+      return normalizeVariableName(payload?.variableName || variable.variableNameKey);
+    } catch (_err) {
+      return normalizeVariableName(variable.variableNameKey || '');
+    }
+  }
+  return normalizeVariableName(variable?.variableNameKey || variable?.variableName || variable?.key || variable?.label);
+}
+
+function getVariableDescription(variable) {
+  if (isEncryptedEnvelope(variable?.encryptedPayload)) {
+    try {
+      const payload = decryptJson(variable.encryptedPayload);
+      return String(payload?.description || '');
+    } catch (_err) {
+      return '';
+    }
+  }
+  return String(variable?.description || '');
 }
 
 router.get('/', async (req, res) => {
@@ -23,7 +44,7 @@ router.get('/', async (req, res) => {
       .map(v => ({
         id: v._id.toString(),
         variableName: getVariableName(v),
-        description: v.description || '',
+        description: getVariableDescription(v),
         createdAt: v.createdAt,
       }))
       .filter(v => !!v.variableName && v.variableName !== 'name');
@@ -57,16 +78,24 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Only up to 2 custom variables are allowed' });
     }
 
+    const normalizedDescription = description ? String(description).trim() : '';
     const doc = await Variable.create({
       userId: req.user._id,
-      variableName: normalizedName,
-      description: description ? String(description).trim() : '',
+      variableNameKey: normalizedName,
+      encryptedPayload: encryptJson({
+        variableName: normalizedName,
+        description: normalizedDescription,
+      }),
+      variableName: undefined,
+      description: undefined,
+      key: undefined,
+      label: undefined,
     });
 
     res.json({
       id: doc._id.toString(),
-      variableName: doc.variableName,
-      description: doc.description,
+      variableName: normalizedName,
+      description: normalizedDescription,
     });
   } catch (err) {
     if (err.code === 11000) {

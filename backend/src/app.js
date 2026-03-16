@@ -11,7 +11,16 @@ const { router: campaignRoutes } = require('./routes/campaigns');
 const groupRoutes = require('./routes/groups');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
-const { connectMongo, User, migrateGroupContactFields, migrateVariableFields } = require('./db');
+const {
+  connectMongo,
+  User,
+  migrateGroupContactFields,
+  migrateVariableFields,
+  migrateUserSensitiveFields,
+  migrateTemplateSensitiveFields,
+  migrateCampaignSensitiveFields,
+} = require('./db');
+const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -34,6 +43,19 @@ function initFirebase() {
 }
 
 initFirebase();
+assertDataSecurityConfig();
+
+function getDecryptedUserValue(encryptedValue, fallback = '') {
+  if (isEncryptedEnvelope(encryptedValue)) {
+    try {
+      const payload = decryptJson(encryptedValue);
+      return String(payload?.value || fallback);
+    } catch (_err) {
+      return String(fallback || '');
+    }
+  }
+  return String(fallback || '');
+}
 
 app.set('trust proxy', 1);
 app.use(helmet());
@@ -100,19 +122,20 @@ app.get('/auth/me', requireAuth, async (req, res) => {
       firebaseUid: user.firebaseUid,
       email: user.email,
       displayName: user.displayName,
-      senderDisplayName: user.senderDisplayName || '',
+      senderDisplayName: getDecryptedUserValue(user.senderDisplayNameEnc, user.senderDisplayName || ''),
     },
     gmailConnected: !!user.gmailConnected,
-    gmailEmail: user.gmailEmail || user.email,
+    gmailEmail: getDecryptedUserValue(user.gmailEmailEnc, user.gmailEmail || user.email),
   });
 });
 
 app.patch('/auth/me/preferences', requireAuth, async (req, res) => {
   try {
     const senderDisplayName = String(req.body?.senderDisplayName || '').trim().slice(0, 120);
-    req.user.senderDisplayName = senderDisplayName;
+    req.user.senderDisplayNameEnc = encryptJson({ value: senderDisplayName });
+    req.user.senderDisplayName = undefined;
     await req.user.save();
-    res.json({ ok: true, senderDisplayName: req.user.senderDisplayName || '' });
+    res.json({ ok: true, senderDisplayName });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to save preferences' });
   }
@@ -152,6 +175,7 @@ app.post('/gmail/connect', requireAuth, async (req, res) => {
 app.post('/gmail/disconnect', requireAuth, async (req, res) => {
   try {
     await clearGmailAuthorization(req.user, 'user disconnect');
+    req.user.gmailEmailEnc = encryptJson({ value: normalizeEmail(req.user.email || '') });
     req.user.gmailEmail = undefined;
     await req.user.save();
     res.json({ ok: true });
@@ -222,6 +246,33 @@ app.use('/api/variables', requireAuth, variableRoutes);
 connectMongo()
   .then(() => {
     console.log('Connected to MongoDB');
+    return migrateUserSensitiveFields()
+      .then(() => {
+        console.log('User sensitive fields migration complete');
+      })
+      .catch(err => {
+        console.error('User sensitive fields migration failed', err.message);
+      });
+  })
+  .then(() => {
+    return migrateTemplateSensitiveFields()
+      .then(() => {
+        console.log('Template sensitive fields migration complete');
+      })
+      .catch(err => {
+        console.error('Template sensitive fields migration failed', err.message);
+      });
+  })
+  .then(() => {
+    return migrateCampaignSensitiveFields()
+      .then(() => {
+        console.log('Campaign sensitive fields migration complete');
+      })
+      .catch(err => {
+        console.error('Campaign sensitive fields migration failed', err.message);
+      });
+  })
+  .then(() => {
     return migrateGroupContactFields()
       .then(() => {
         console.log('Group contact fields migration complete');

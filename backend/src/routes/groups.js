@@ -1,12 +1,19 @@
 const express = require('express');
 const { Types } = require('mongoose');
 const { Group } = require('../db');
+const {
+  encryptJson,
+  decryptJson,
+  isEncryptedEnvelope,
+  normalizeEmail,
+  computeEmailHash,
+  normalizeCompanyKey,
+  deriveCompanyKeyFromEmail,
+} = require('../utils/dataSecurity');
 
 const router = express.Router();
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_GROUP_CONTACTS = 300;
-
-/* ── helpers ── */
 
 function sanitizeHistoryEntry(entry) {
   const type = ['email', 'linkedin'].includes(entry?.type) ? entry.type : null;
@@ -35,73 +42,106 @@ function deriveContactMetrics(contactHistory) {
   };
 }
 
-function sanitizeContact(c) {
-  const emailStatus = ['verified', 'tentative', 'not_valid', 'flagged'].includes(c.email_status)
-    ? c.email_status
-    : 'tentative';
-  const contactHistory = sanitizeContactHistory(c.contactHistory || []);
-  const lastContactedDate = c.lastContactedDate ? new Date(c.lastContactedDate) : null;
-  const emailCount = Number.isFinite(Number(c.emailCount)) ? Math.max(0, Math.floor(Number(c.emailCount))) : null;
-  const linkedInCount = Number.isFinite(Number(c.linkedInCount)) ? Math.max(0, Math.floor(Number(c.linkedInCount))) : null;
-
-  const derived = deriveContactMetrics(contactHistory);
-  const normalizedEmailStatus = emailStatus === 'flagged' ? 'not_valid' : emailStatus;
+function decryptContactPayload(contact) {
+  if (isEncryptedEnvelope(contact.encryptedPayload)) {
+    return decryptJson(contact.encryptedPayload);
+  }
   return {
-    name: (c.name || '').trim(),
-    email: (c.email || '').toLowerCase().trim(),
-    role: (c.role || '').trim(),
-    linkedin: (c.linkedin || '').trim(),
-    connectionStatus: ['', 'not_connected', 'request_sent', 'connected', 'pending'].includes(c.connectionStatus)
-      ? (c.connectionStatus === 'pending' ? 'request_sent' : c.connectionStatus)
-      : '',
-    email_status: normalizedEmailStatus,
-    contactHistory,
-    lastContactedDate: lastContactedDate && !Number.isNaN(lastContactedDate.getTime())
-      ? lastContactedDate
-      : (derived.lastContacted?.date || null),
-    emailCount: emailCount === null ? derived.emailCount : emailCount,
-    linkedInCount: linkedInCount === null ? derived.linkedinCount : linkedInCount,
-  };
-}
-
-function toContactPayload(contact) {
-  const history = sanitizeContactHistory(contact.contactHistory || []);
-  const metrics = deriveContactMetrics(history);
-  const manualLastContacted = contact.lastContactedDate ? new Date(contact.lastContactedDate) : null;
-  const safeManualLast = manualLastContacted && !Number.isNaN(manualLastContacted.getTime()) ? manualLastContacted : null;
-  const manualEmailCount = Number.isFinite(Number(contact.emailCount)) ? Math.max(0, Math.floor(Number(contact.emailCount))) : null;
-  const manualLinkedInCount = Number.isFinite(Number(contact.linkedInCount)) ? Math.max(0, Math.floor(Number(contact.linkedInCount))) : null;
-  const effectiveLastContacted = safeManualLast
-    ? { type: metrics.lastContacted?.type || 'email', date: safeManualLast }
-    : metrics.lastContacted;
-  const effectiveEmailCount = manualEmailCount === null ? metrics.emailCount : manualEmailCount;
-  const effectiveLinkedInCount = manualLinkedInCount === null ? metrics.linkedinCount : manualLinkedInCount;
-  const normalizedEmailStatus = contact.email_status === 'flagged' ? 'not_valid' : (contact.email_status || 'tentative');
-  return {
-    id: contact._id.toString(),
-    name: contact.name,
-    email: contact.email,
-    role: contact.role || '',
+    name: contact.name || '',
+    email: normalizeEmail(contact.email || ''),
     linkedin: contact.linkedin || '',
-    connectionStatus: contact.connectionStatus === 'pending' ? 'request_sent' : (contact.connectionStatus || ''),
-    email_status: normalizedEmailStatus,
-    contactHistory: history.map(h => ({ type: h.type, date: h.date })),
-    lastContacted: effectiveLastContacted,
-    lastContactedDate: effectiveLastContacted?.date || null,
-    emailCount: effectiveEmailCount,
-    linkedInCount: effectiveLinkedInCount,
+    contactHistory: sanitizeContactHistory(contact.contactHistory || []),
   };
 }
 
-function validateContact(c) {
-  if (!c.name) return 'Name is required';
-  if (!emailRegex.test(c.email)) return 'Invalid email';
+function sanitizeContactInput(raw) {
+  const emailStatus = ['verified', 'tentative', 'not_valid', 'flagged'].includes(raw.email_status)
+    ? raw.email_status
+    : 'tentative';
+  const normalizedEmailStatus = emailStatus === 'flagged' ? 'not_valid' : emailStatus;
+  const normalizedConnectionStatus = ['', 'not_connected', 'request_sent', 'connected', 'pending'].includes(raw.connectionStatus)
+    ? (raw.connectionStatus === 'pending' ? 'request_sent' : raw.connectionStatus)
+    : '';
+
+  const history = sanitizeContactHistory(raw.contactHistory || []);
+  const lastDate = raw.lastContactedDate ? new Date(raw.lastContactedDate) : null;
+  const metrics = deriveContactMetrics(history);
+
+  return {
+    name: String(raw.name || '').trim(),
+    email: normalizeEmail(raw.email || ''),
+    role: String(raw.role || '').trim(),
+    linkedin: String(raw.linkedin || '').trim(),
+    connectionStatus: normalizedConnectionStatus,
+    email_status: normalizedEmailStatus,
+    contactHistory: history,
+    lastContactedDate: lastDate && !Number.isNaN(lastDate.getTime()) ? lastDate : (metrics.lastContacted?.date || null),
+    emailCount: Number.isFinite(Number(raw.emailCount)) ? Math.max(0, Number(raw.emailCount)) : metrics.emailCount,
+    linkedInCount: Number.isFinite(Number(raw.linkedInCount)) ? Math.max(0, Number(raw.linkedInCount)) : metrics.linkedinCount,
+  };
+}
+
+function validateContact(contact) {
+  if (!contact.name) return 'Name is required';
+  if (!emailRegex.test(contact.email)) return 'Invalid email';
   return null;
 }
 
-/* ── group CRUD ── */
+function toContactPayload(contact) {
+  const decrypted = decryptContactPayload(contact);
+  const history = sanitizeContactHistory(decrypted.contactHistory || []);
+  const metrics = deriveContactMetrics(history);
 
-// List all groups
+  const manualDate = contact.lastContactedDate ? new Date(contact.lastContactedDate) : null;
+  const safeManualDate = manualDate && !Number.isNaN(manualDate.getTime()) ? manualDate : null;
+  const lastContacted = safeManualDate
+    ? { type: metrics.lastContacted?.type || 'email', date: safeManualDate }
+    : metrics.lastContacted;
+
+  const normalizedEmailStatus = contact.email_status === 'flagged' ? 'not_valid' : (contact.email_status || 'tentative');
+
+  return {
+    id: contact._id.toString(),
+    name: decrypted.name || '',
+    email: normalizeEmail(decrypted.email || ''),
+    role: contact.role || '',
+    linkedin: decrypted.linkedin || '',
+    connectionStatus: contact.connectionStatus === 'pending' ? 'request_sent' : (contact.connectionStatus || ''),
+    email_status: normalizedEmailStatus,
+    contactHistory: history.map(h => ({ type: h.type, date: h.date })),
+    lastContacted,
+    lastContactedDate: lastContacted?.date || null,
+    emailCount: Number.isFinite(Number(contact.emailCount)) ? Number(contact.emailCount) : metrics.emailCount,
+    linkedInCount: Number.isFinite(Number(contact.linkedInCount)) ? Number(contact.linkedInCount) : metrics.linkedinCount,
+  };
+}
+
+function toEncryptedContact(input) {
+  const clean = sanitizeContactInput(input);
+  const companyKey = deriveCompanyKeyFromEmail(clean.email);
+
+  return {
+    emailHash: computeEmailHash(clean.email),
+    companyKey,
+    encryptedPayload: encryptJson({
+      name: clean.name,
+      email: clean.email,
+      linkedin: clean.linkedin,
+      contactHistory: clean.contactHistory,
+    }),
+    role: clean.role,
+    connectionStatus: clean.connectionStatus,
+    email_status: clean.email_status,
+    lastContactedDate: clean.lastContactedDate,
+    emailCount: clean.emailCount,
+    linkedInCount: clean.linkedInCount,
+    name: undefined,
+    email: undefined,
+    linkedin: undefined,
+    contactHistory: undefined,
+  };
+}
+
 router.get('/', async (req, res) => {
   try {
     const groups = await Group.find({ userId: req.user._id }).sort({ updatedAt: -1 });
@@ -109,7 +149,7 @@ router.get('/', async (req, res) => {
       id: g._id.toString(),
       companyName: g.companyName,
       logoUrl: g.logoUrl || '',
-      contactCount: g.contacts.length,
+      contactCount: Number.isFinite(Number(g.contactCount)) ? Number(g.contactCount) : (g.contacts || []).length,
       createdAt: g.createdAt,
       updatedAt: g.updatedAt,
     }));
@@ -119,7 +159,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get group detail
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -130,7 +169,7 @@ router.get('/:id', async (req, res) => {
       id: group._id.toString(),
       companyName: group.companyName,
       logoUrl: group.logoUrl || '',
-      contacts: group.contacts.map(toContactPayload),
+      contacts: (group.contacts || []).map(toContactPayload),
       createdAt: group.createdAt,
       updatedAt: group.updatedAt,
     });
@@ -139,18 +178,20 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create group
 router.post('/', async (req, res) => {
   const { companyName, logoUrl } = req.body || {};
   if (!companyName || !companyName.trim()) {
     return res.status(400).json({ error: 'Company name is required' });
   }
   try {
+    const normalizedCompany = normalizeCompanyKey(companyName);
     const doc = await Group.create({
       userId: req.user._id,
       companyName: companyName.trim(),
+      companyKey: normalizedCompany,
       logoUrl: (logoUrl || '').trim(),
       contacts: [],
+      contactCount: 0,
     });
     res.json({ id: doc._id.toString(), companyName: doc.companyName, logoUrl: doc.logoUrl || '' });
   } catch (err) {
@@ -158,7 +199,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update group info (companyName, logoUrl)
 router.patch('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -169,6 +209,7 @@ router.patch('/:id', async (req, res) => {
     if (companyName !== undefined) {
       if (!companyName.trim()) return res.status(400).json({ error: 'Company name is required' });
       group.companyName = companyName.trim();
+      group.companyKey = normalizeCompanyKey(companyName);
     }
     if (logoUrl !== undefined) group.logoUrl = (logoUrl || '').trim();
     await group.save();
@@ -178,7 +219,6 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// Delete group
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -191,23 +231,32 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-/* ── contact CRUD (within a group) ── */
-
-// Add contact
 router.post('/:id/contacts', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid group id' });
-  const clean = sanitizeContact(req.body || {});
+
+  const clean = sanitizeContactInput(req.body || {});
   const err = validateContact(clean);
   if (err) return res.status(400).json({ error: err });
+
   try {
     const group = await Group.findOne({ _id: id, userId: req.user._id });
     if (!group) return res.status(404).json({ error: 'Group not found' });
-    if (group.contacts.length >= MAX_GROUP_CONTACTS) {
+
+    if ((group.contacts || []).length >= MAX_GROUP_CONTACTS) {
       return res.status(400).json({ error: 'Group contact limit reached (300).' });
     }
-    group.contacts.push(clean);
+
+    const incomingHash = computeEmailHash(clean.email);
+    if ((group.contacts || []).some(c => c.emailHash === incomingHash)) {
+      return res.status(409).json({ error: 'Duplicate contact in group' });
+    }
+
+    const contact = toEncryptedContact(clean);
+    group.contacts.push(contact);
+    group.contactCount = group.contacts.length;
     await group.save();
+
     const added = group.contacts[group.contacts.length - 1];
     res.json(toContactPayload(added));
   } catch (e) {
@@ -215,40 +264,54 @@ router.post('/:id/contacts', async (req, res) => {
   }
 });
 
-// Update contact
 router.patch('/:id/contacts/:contactId', async (req, res) => {
   const { id, contactId } = req.params;
   if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(contactId)) {
     return res.status(400).json({ error: 'Invalid id' });
   }
+
   try {
     const group = await Group.findOne({ _id: id, userId: req.user._id });
     if (!group) return res.status(404).json({ error: 'Group not found' });
+
     const contact = group.contacts.id(contactId);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
-    const updates = sanitizeContact({ ...contact.toObject(), ...req.body });
-    const err = validateContact(updates);
+
+    const current = toContactPayload(contact);
+    const merged = sanitizeContactInput({ ...current, ...req.body });
+    const err = validateContact(merged);
     if (err) return res.status(400).json({ error: err });
-    Object.assign(contact, updates);
+
+    const incomingHash = computeEmailHash(merged.email);
+    const hasDuplicate = (group.contacts || []).some(c => String(c._id) !== String(contactId) && c.emailHash === incomingHash);
+    if (hasDuplicate) return res.status(409).json({ error: 'Duplicate contact in group' });
+
+    const next = toEncryptedContact(merged);
+    Object.assign(contact, next);
+    group.contactCount = group.contacts.length;
     await group.save();
+
     res.json(toContactPayload(contact));
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to update contact' });
   }
 });
 
-// Delete contact
 router.delete('/:id/contacts/:contactId', async (req, res) => {
   const { id, contactId } = req.params;
   if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(contactId)) {
     return res.status(400).json({ error: 'Invalid id' });
   }
+
   try {
     const group = await Group.findOne({ _id: id, userId: req.user._id });
     if (!group) return res.status(404).json({ error: 'Group not found' });
+
     const contact = group.contacts.id(contactId);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
     contact.deleteOne();
+    group.contactCount = group.contacts.length;
     await group.save();
     res.json({ ok: true });
   } catch (e) {

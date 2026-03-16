@@ -4,6 +4,7 @@ const sanitizeHtml = require('sanitize-html');
 const { Campaign, Group, SendLog, Variable } = require('../db');
 const { renderTemplate, validateVariables } = require('../services/templateService');
 const { sendMimeEmail } = require('../gmail');
+const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail, computeEmailHash } = require('../utils/dataSecurity');
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ function normalizeVariableKey(value) {
 }
 
 function getVariableKey(variable) {
-  return normalizeVariableKey(variable?.variableName || variable?.key || variable?.label);
+  return normalizeVariableKey(variable?.variableNameKey || variable?.variableName || variable?.key || variable?.label);
 }
 
 function normalizeNameFormat(value) {
@@ -49,41 +50,6 @@ function sanitizeBody(html) {
     },
     allowedSchemes: ['http', 'https', 'mailto'],
   });
-}
-
-async function getAllowedVariables(userId) {
-  const vars = await Variable.find({ userId });
-  return ['name', ...vars.map(getVariableKey).filter(Boolean)];
-}
-
-function normalizeRecipients(raw, allowedVars) {
-  if (!Array.isArray(raw)) return [];
-  const allowed = new Set(allowedVars.map(v => v.toLowerCase()));
-  return raw.map(r => {
-    const variables = {};
-    Object.entries(r.variables || {}).forEach(([k, v]) => {
-      const key = String(k).toLowerCase();
-      if (allowed.has(key)) variables[key] = String(v || '').trim();
-    });
-    return {
-      _id: r._id || new Types.ObjectId(),
-      email: (r.email || '').toLowerCase().trim(),
-      name: (r.name || '').trim() || 'There',
-      variables,
-      status: r.status || 'pending',
-    };
-  });
-}
-
-function validateRecipients(list) {
-  const errors = [];
-  if (!Array.isArray(list) || !list.length) return ['At least one recipient is required'];
-  if (list.length > MAX_RECIPIENTS) return [`Max ${MAX_RECIPIENTS} recipients per campaign`];
-  list.forEach(r => {
-    if (!emailRegex.test(r.email || '')) errors.push(`Invalid email: ${r.email || ''}`);
-    if (!r.name) errors.push(`Name missing for ${r.email}`);
-  });
-  return errors;
 }
 
 function normalizeVariablesUsed(raw) {
@@ -121,6 +87,91 @@ function normalizeGroupImports(raw) {
   });
 }
 
+function normalizeRecipients(raw, allowedVars) {
+  if (!Array.isArray(raw)) return [];
+  const allowed = new Set(allowedVars.map(v => v.toLowerCase()));
+  return raw.map(r => {
+    const variables = {};
+    Object.entries(r.variables || {}).forEach(([k, v]) => {
+      const key = String(k).toLowerCase();
+      if (allowed.has(key)) variables[key] = String(v || '').trim();
+    });
+
+    const email = normalizeEmail(r.email || '');
+    return {
+      _id: r._id || new Types.ObjectId().toString(),
+      email,
+      emailHash: computeEmailHash(email),
+      name: (r.name || '').trim() || 'There',
+      variables,
+      status: r.status || 'pending',
+    };
+  });
+}
+
+function validateRecipients(list) {
+  if (!Array.isArray(list) || !list.length) return ['At least one recipient is required'];
+  if (list.length > MAX_RECIPIENTS) return [`Max ${MAX_RECIPIENTS} recipients per campaign`];
+  for (const r of list) {
+    if (!emailRegex.test(r.email || '')) return ['Invalid recipient data'];
+    if (!r.name) return ['Invalid recipient data'];
+  }
+  return [];
+}
+
+function buildCampaignPayload(input) {
+  return {
+    subject: String(input.subject || ''),
+    body_html: sanitizeBody(input.body_html || ''),
+    sender_name: String(input.sender_name || ''),
+    name_format: normalizeNameFormat(input.name_format),
+    recipients: Array.isArray(input.recipients) ? input.recipients : [],
+    variables: Array.isArray(input.variables) ? input.variables : [],
+    group_imports: Array.isArray(input.group_imports) ? input.group_imports : [],
+  };
+}
+
+function decryptCampaignPayload(doc) {
+  if (isEncryptedEnvelope(doc.encryptedPayload)) {
+    return decryptJson(doc.encryptedPayload);
+  }
+  return buildCampaignPayload({
+    subject: doc.subject,
+    body_html: doc.body_html,
+    sender_name: doc.sender_name,
+    name_format: doc.name_format,
+    recipients: (doc.recipients || []).map(r => ({
+      _id: r._id?.toString?.() || String(r._id || ''),
+      email: normalizeEmail(r.email || ''),
+      emailHash: r.emailHash || computeEmailHash(r.email || ''),
+      name: r.name || '',
+      variables: r.variables || {},
+      status: r.status || 'pending',
+    })),
+    variables: doc.variables || [],
+    group_imports: doc.group_imports || [],
+  });
+}
+
+async function persistCampaignPayload(doc, payload) {
+  doc.encryptedPayload = encryptJson(payload);
+  doc.recipient_count = payload.recipients.length;
+  doc.variable_count = payload.variables.length;
+  doc.subject = undefined;
+  doc.body_html = undefined;
+  doc.sender_name = undefined;
+  doc.name_format = undefined;
+  doc.recipients = undefined;
+  doc.variables = undefined;
+  doc.group_imports = undefined;
+  await doc.save();
+}
+
+async function getAllowedVariables(userId) {
+  const vars = await Variable.find({ userId });
+  return ['name', ...vars.map(getVariableKey).filter(Boolean)];
+}
+
 async function ensureSendAllowance(userId, requested) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -132,28 +183,20 @@ async function ensureSendAllowance(userId, requested) {
   }
 }
 
-async function bumpContactTracking(userId, emailToCount) {
-  const updates = Object.entries(emailToCount || {}).filter(([email, count]) => !!email && Number(count) > 0);
+async function bumpContactTracking(userId, emailHashToCount) {
+  const updates = Object.entries(emailHashToCount || {}).filter(([hash, count]) => !!hash && Number(count) > 0);
   if (!updates.length) return;
 
   const touchedAt = new Date();
-  await Promise.all(updates.map(([email, count]) => (
+  await Promise.all(updates.map(([emailHash, count]) => (
     Group.updateMany(
-      { userId, 'contacts.email': email },
+      { userId, 'contacts.emailHash': emailHash },
       {
-        $push: {
-          'contacts.$[contact].contactHistory': {
-            $each: Array.from({ length: Number(count) }, () => ({ type: 'email', date: touchedAt })),
-          },
-        },
         $inc: {
           'contacts.$[contact].emailCount': Number(count),
         },
-        $set: {
-          'contacts.$[contact].lastContactedDate': touchedAt,
-        },
       },
-      { arrayFilters: [{ 'contact.email': email }] }
+      { arrayFilters: [{ 'contact.emailHash': emailHash }] }
     )
   )));
 }
@@ -168,7 +211,8 @@ async function sendCampaign(campaignId, user) {
     throw err;
   }
 
-  const pending = campaign.recipients.filter(r => r.status === 'pending');
+  const payload = decryptCampaignPayload(campaign);
+  const pending = (payload.recipients || []).filter(r => r.status === 'pending');
   if (!pending.length) {
     return { status: campaign.status, sentCount: 0, failedCount: 0 };
   }
@@ -179,44 +223,43 @@ async function sendCampaign(campaignId, user) {
   let failedCount = 0;
   let lastError = null;
   const logs = [];
-  const sentEmailCounts = {};
+  const sentByHash = {};
 
   if (campaign.send_mode !== 'individual') {
     campaign.send_mode = 'individual';
   }
 
   for (const recipient of pending) {
-    const html = renderTemplate(campaign.body_html, {
-      name: resolveNameValue(recipient.name, campaign.name_format),
+    const html = renderTemplate(payload.body_html, {
+      name: resolveNameValue(recipient.name, payload.name_format),
       ...(recipient.variables || {}),
     });
     try {
-      await sendMimeEmail({ user, to: recipient.email, subject: campaign.subject, html, senderName: campaign.sender_name });
-      const subdoc = campaign.recipients.id(recipient._id);
-      if (subdoc) subdoc.status = 'sent';
+      await sendMimeEmail({ user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name });
+      const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
+      if (target) target.status = 'sent';
       logs.push({ userId: user._id, sentAt: new Date() });
-      sentEmailCounts[recipient.email] = (sentEmailCounts[recipient.email] || 0) + 1;
-      sentCount++;
+      sentByHash[recipient.emailHash] = (sentByHash[recipient.emailHash] || 0) + 1;
+      sentCount += 1;
     } catch (err) {
-      console.warn('[send] Email failed', { campaignId: campaign._id.toString(), userId: user._id.toString() });
-      const subdoc = campaign.recipients.id(recipient._id);
-      if (subdoc) subdoc.status = 'failed';
-      failedCount++;
+      const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
+      if (target) target.status = 'failed';
+      failedCount += 1;
       lastError = err;
     }
   }
 
   if (logs.length) await SendLog.insertMany(logs);
-  await bumpContactTracking(user._id, sentEmailCounts);
+  await bumpContactTracking(user._id, sentByHash);
 
   if (sentCount === 0 && lastError) {
     campaign.status = 'draft';
-    await campaign.save();
+    await persistCampaignPayload(campaign, payload);
     throw new Error(`All emails failed: ${lastError.message}`);
   }
 
   campaign.status = 'sent';
-  await campaign.save();
+  await persistCampaignPayload(campaign, payload);
   return { status: 'sent', sentCount, failedCount };
 }
 
@@ -240,16 +283,22 @@ router.post('/', async (req, res) => {
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
     if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
 
-    const doc = await Campaign.create({
-      userId: req.user._id,
+    const payload = buildCampaignPayload({
       subject,
-      body_html: sanitizeBody(body_html),
+      body_html,
       sender_name: sender_name || '',
-      name_format: normalizeNameFormat(name_format),
+      name_format,
       recipients: normalizedRecipients,
-      send_mode: 'individual',
       variables: snapshotVariables,
       group_imports: normalizeGroupImports(group_imports),
+    });
+
+    const doc = await Campaign.create({
+      userId: req.user._id,
+      encryptedPayload: encryptJson(payload),
+      recipient_count: payload.recipients.length,
+      variable_count: payload.variables.length,
+      send_mode: 'individual',
       status: 'draft',
     });
 
@@ -263,31 +312,32 @@ router.patch('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
-    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
     const existingCampaign = await Campaign.findOne({ _id: id, userId: req.user._id });
     if (!existingCampaign) return res.status(404).json({ error: 'Not found' });
 
-    const update = {};
-    if (subject !== undefined) update.subject = subject;
-    if (body_html !== undefined) update.body_html = sanitizeBody(body_html);
-    if (sender_name !== undefined) update.sender_name = sender_name;
-    if (name_format !== undefined) update.name_format = normalizeNameFormat(name_format);
-    const snapshotVariables = variables !== undefined
-      ? normalizeVariablesUsed(variables)
-      : normalizeVariablesUsed(existingCampaign.variables || []);
-    if (variables !== undefined) update.variables = snapshotVariables;
-    if (group_imports !== undefined) update.group_imports = normalizeGroupImports(group_imports);
+    const incoming = req.body || {};
+    const payload = decryptCampaignPayload(existingCampaign);
+    const snapshotVariables = incoming.variables !== undefined
+      ? normalizeVariablesUsed(incoming.variables)
+      : normalizeVariablesUsed(payload.variables || []);
 
-    if (Array.isArray(recipients)) {
+    if (incoming.subject !== undefined) payload.subject = String(incoming.subject || '');
+    if (incoming.body_html !== undefined) payload.body_html = sanitizeBody(incoming.body_html || '');
+    if (incoming.sender_name !== undefined) payload.sender_name = String(incoming.sender_name || '');
+    if (incoming.name_format !== undefined) payload.name_format = normalizeNameFormat(incoming.name_format);
+    if (incoming.variables !== undefined) payload.variables = snapshotVariables;
+    if (incoming.group_imports !== undefined) payload.group_imports = normalizeGroupImports(incoming.group_imports);
+
+    if (Array.isArray(incoming.recipients)) {
       const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), snapshotVariables);
-      const normalizedRecipients = normalizeRecipients(recipients, allowedVars);
+      const normalizedRecipients = normalizeRecipients(incoming.recipients, allowedVars);
       const recErrors = validateRecipients(normalizedRecipients);
       if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
-      update.recipients = normalizedRecipients;
+      payload.recipients = normalizedRecipients;
     }
 
-    const doc = await Campaign.findOneAndUpdate({ _id: id, userId: req.user._id }, update, { new: true });
-    return res.json({ id: doc._id.toString(), status: doc.status });
+    await persistCampaignPayload(existingCampaign, payload);
+    return res.json({ id: existingCampaign._id.toString(), status: existingCampaign.status });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to update campaign' });
   }
@@ -300,32 +350,21 @@ router.get('/', async (req, res) => {
     if (view === 'history') match.status = 'sent';
     if (view === 'drafts') match.status = 'draft';
 
-    const rows = await Campaign.aggregate([
-      { $match: match },
-      {
-        $project: {
-          subject: 1,
-          status: 1,
-          body_html: 1,
-          variables: 1,
-          created_at: 1,
-          updated_at: 1,
-          recipient_count: { $size: '$recipients' },
-          variable_count: { $size: { $ifNull: ['$variables', []] } },
-        },
-      },
-      { $sort: { updated_at: -1 } },
-    ]);
-    res.json(rows.map(r => ({
-      id: r._id.toString(),
-      subject: r.subject,
-      status: r.status === 'sent' ? 'sent' : 'draft',
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-      recipient_count: r.recipient_count || 0,
-      variable_count: r.variable_count || 0,
-      body_preview: String(r.body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
-    })));
+    const rows = await Campaign.find(match).sort({ updated_at: -1 });
+    const payload = rows.map((row) => {
+      const decrypted = decryptCampaignPayload(row);
+      return {
+        id: row._id.toString(),
+        subject: decrypted.subject,
+        status: row.status === 'sent' ? 'sent' : 'draft',
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        recipient_count: row.recipient_count || decrypted.recipients.length || 0,
+        variable_count: row.variable_count || decrypted.variables.length || 0,
+        body_preview: String(decrypted.body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
+      };
+    });
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load campaigns' });
   }
@@ -337,10 +376,21 @@ router.get('/:id', async (req, res) => {
   try {
     const doc = await Campaign.findOne({ _id: id, userId: req.user._id });
     if (!doc) return res.status(404).json({ error: 'Not found' });
-    const payload = doc.toObject({ versionKey: false });
-    payload.id = payload._id.toString();
-    delete payload._id;
-    res.json(payload);
+    const decrypted = decryptCampaignPayload(doc);
+    res.json({
+      id: doc._id.toString(),
+      subject: decrypted.subject,
+      body_html: decrypted.body_html,
+      sender_name: decrypted.sender_name,
+      name_format: decrypted.name_format,
+      recipients: decrypted.recipients,
+      send_mode: doc.send_mode || 'individual',
+      variables: decrypted.variables,
+      group_imports: decrypted.group_imports,
+      status: doc.status,
+      created_at: doc.created_at,
+      updated_at: doc.updated_at,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load campaign' });
   }
@@ -357,17 +407,19 @@ router.post('/:id/preview', async (req, res) => {
     if (!req.user.gmailConnected || !req.user.encryptedRefreshToken) {
       return res.status(401).json({ error: 'Connect Gmail to send', authError: true });
     }
+
+    const payload = decryptCampaignPayload(campaign);
     const target = recipient_id
-      ? campaign.recipients.id(recipient_id)
-      : campaign.recipients[0];
+      ? payload.recipients.find(r => String(r._id) === String(recipient_id))
+      : payload.recipients[0];
     if (!target) return res.status(404).json({ error: 'No recipients' });
 
-    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), campaign.variables || []);
-    const validation = validateVariables(campaign.body_html, allowedVars);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), payload.variables || []);
+    const validation = validateVariables(payload.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
 
-    const html = renderTemplate(campaign.body_html, {
-      name: resolveNameValue(target.name, campaign.name_format),
+    const html = renderTemplate(payload.body_html, {
+      name: resolveNameValue(target.name, payload.name_format),
       ...(target.variables || {}),
     });
     res.json({ html, warnings: validation.unknown.length ? validation.unknown.map(k => `Unknown variable {{${k}}} found.`) : [] });
@@ -385,7 +437,8 @@ router.post('/:id/send', async (req, res) => {
     const campaign = await Campaign.findOne({ _id: id, userId: req.user._id });
     if (!campaign) return res.status(404).json({ error: 'Not found' });
 
-    const recipientCount = campaign.recipients.length;
+    const payload = decryptCampaignPayload(campaign);
+    const recipientCount = payload.recipients.length;
     if (recipientCount > 5 && !confirm_bulk_send) {
       return res.status(400).json({ error: 'Bulk send confirmation required' });
     }
@@ -393,8 +446,8 @@ router.post('/:id/send', async (req, res) => {
       return res.status(400).json({ error: `Max ${MAX_RECIPIENTS} recipients per campaign` });
     }
 
-    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), campaign.variables || []);
-    const validation = validateVariables(campaign.body_html, allowedVars);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), payload.variables || []);
+    const validation = validateVariables(payload.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
     if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
 
