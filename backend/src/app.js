@@ -13,6 +13,7 @@ const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
 const {
   connectMongo,
+  migrateCollectionNames,
   User,
   migrateGroupContactFields,
   migrateVariableFields,
@@ -246,6 +247,15 @@ app.use('/api/variables', requireAuth, variableRoutes);
 connectMongo()
   .then(() => {
     console.log('Connected to MongoDB');
+    return migrateCollectionNames()
+      .then(() => {
+        console.log('Collection naming migration complete');
+      })
+      .catch(err => {
+        console.error('Collection naming migration failed', err.message);
+      });
+  })
+  .then(() => {
     return migrateUserSensitiveFields()
       .then(() => {
         console.log('User sensitive fields migration complete');

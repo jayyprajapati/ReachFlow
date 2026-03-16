@@ -159,12 +159,67 @@ const templateSchema = new mongoose.Schema(
   }
 );
 
-const User = mongoose.model('User', userSchema);
-const Variable = mongoose.model('Variable', variableSchema);
-const Campaign = mongoose.model('Campaign', campaignSchema);
-const SendLog = mongoose.model('SendLog', sendLogSchema);
-const Group = mongoose.model('Group', groupSchema);
-const Template = mongoose.model('Template', templateSchema);
+const User = mongoose.model('User', userSchema, 'reachflow_users');
+const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');
+const Campaign = mongoose.model('Campaign', campaignSchema, 'reachflow_outreach_items');
+const SendLog = mongoose.model('SendLog', sendLogSchema, 'reachflow_send_logs');
+const Group = mongoose.model('Group', groupSchema, 'reachflow_groups');
+const Template = mongoose.model('Template', templateSchema, 'reachflow_templates');
+const UserScopedModelNames = {
+  users: 'reachflow_users',
+  variables: 'reachflow_variables',
+  groups: 'reachflow_groups',
+  templates: 'reachflow_templates',
+  campaigns: 'reachflow_outreach_items',
+  sendlogs: 'reachflow_send_logs',
+};
+
+async function migrateCollectionNames() {
+  const db = mongoose.connection.db;
+  const names = await db.listCollections({}, { nameOnly: true }).toArray();
+  const existing = new Set(names.map(c => c.name));
+
+  async function mergeCollection(fromName, toName) {
+    const from = db.collection(fromName);
+    const to = db.collection(toName);
+    const cursor = from.find({});
+    const ops = [];
+    while (await cursor.hasNext()) {
+      const doc = await cursor.next();
+      ops.push({ replaceOne: { filter: { _id: doc._id }, replacement: doc, upsert: true } });
+      if (ops.length >= 500) {
+        await to.bulkWrite(ops, { ordered: false });
+        ops.length = 0;
+      }
+    }
+    if (ops.length) {
+      await to.bulkWrite(ops, { ordered: false });
+    }
+    await from.drop();
+  }
+
+  for (const [legacyName, targetName] of Object.entries(UserScopedModelNames)) {
+    const hasLegacy = existing.has(legacyName);
+    const hasTarget = existing.has(targetName);
+    if (!hasLegacy) continue;
+
+    if (!hasTarget) {
+      try {
+        await db.renameCollection(legacyName, targetName);
+        existing.delete(legacyName);
+        existing.add(targetName);
+        continue;
+      } catch (err) {
+        if (err?.code !== 48 && !/target namespace exists/i.test(err?.message || '')) {
+          throw err;
+        }
+      }
+    }
+
+    await mergeCollection(legacyName, targetName);
+    existing.delete(legacyName);
+  }
+}
 
 async function migrateGroupContactFields() {
   const rows = await Group.find({});
@@ -357,6 +412,7 @@ async function migrateCampaignSensitiveFields() {
 
 module.exports = {
   connectMongo,
+  migrateCollectionNames,
   User,
   Variable,
   Campaign,
