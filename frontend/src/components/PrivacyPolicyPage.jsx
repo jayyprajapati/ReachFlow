@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Database, KeyRound, Mail, Lock, EyeOff, ExternalLink } from 'lucide-react';
+import { Shield, Database, KeyRound, Mail, Lock, ExternalLink } from 'lucide-react';
 
 function PrivacyCard({ icon, title, text }) {
   return (
@@ -22,95 +22,92 @@ export default function PrivacyPolicyPage({ onBack }) {
         <button className="link" onClick={onBack}>← Back to app</button>
         <h1>Privacy Policy</h1>
         <p>
-          Last updated: March 2026. This policy explains what ReachFlow stores, how Gmail/Firebase are used,
-          and how your outreach data is handled.
+          Last updated: March 2026. This policy explains how ReachFlow protects outreach data, what is encrypted,
+          and how account-scoped access is enforced.
         </p>
       </div>
 
       <section className="info-grid">
         <PrivacyCard
           icon={<Shield size={18} />}
-          title="Data protection principles"
-          text="ReachFlow keeps data handling focused on campaign workflows and avoids unnecessary inbox-access permissions."
+          title="Server-side encryption"
+          text="Sensitive content is encrypted at rest using authenticated encryption with versioned envelopes and managed key identifiers."
         />
         <PrivacyCard
           icon={<Database size={18} />}
-          title="What we store"
-          text="Account basics, contacts/groups, templates, draft snapshots, and campaign metadata are stored so work can be resumed reliably."
+          title="Hybrid storage model"
+          text="Only minimal operational metadata remains queryable in plaintext; personal content is encrypted before MongoDB persistence."
         />
         <PrivacyCard
           icon={<KeyRound size={18} />}
-          title="Auth and identity"
-          text="Firebase authentication is used for sign-in, and backend APIs verify Firebase ID tokens for each protected request."
+          title="Derived lookup protection"
+          text="Exact-match dedupe and grouping logic use normalized helper values like email hashes and company keys instead of plaintext lookup."
         />
         <PrivacyCard
           icon={<Mail size={18} />}
-          title="Gmail usage"
-          text="Gmail OAuth is used for sending workflows and sender identity checks; emails send only after explicit user action."
-        />
-        <PrivacyCard
-          icon={<EyeOff size={18} />}
-          title="Inbox access"
-          text="ReachFlow does not request Gmail read-only inbox scope and does not read mailbox content for campaign operation."
+          title="Strict user ownership scope"
+          text="User-owned records are read, updated, and deleted only through ownership-scoped queries tied to authenticated identity."
         />
         <PrivacyCard
           icon={<Lock size={18} />}
-          title="Token security"
-          text="Refresh tokens used to keep Gmail connected are stored encrypted in backend storage."
+          title="OAuth token security"
+          text="Refresh tokens used to keep Gmail connected are stored encrypted, and Gmail sends occur only on explicit user action."
         />
       </section>
 
       <section className="info-section">
         <h2>Overview</h2>
         <p>
-          ReachFlow is designed to help users compose and send personalized outreach emails through their own Gmail account.
-          This policy explains what data is processed and how it is used.
+          ReachFlow helps users compose and send personalized outreach through their own Gmail account while minimizing privacy risk.
+          The backend decrypts only for authorized app operations and never requires client-side encryption.
         </p>
       </section>
 
       <section className="info-section">
-        <h2>What data is collected</h2>
+        <h2>What is encrypted</h2>
         <p>
-          ReachFlow collects account identity information from Firebase authentication (such as Firebase UID, email, and display name),
-          compose content you create, recipients you add, groups/contacts, templates, drafts, and campaign send history metadata.
+          Encrypted fields include sensitive compose content, recipient payloads, template content, variable definitions,
+          and group contact personal fields such as names, emails, LinkedIn URLs, and related personal contact payloads.
         </p>
       </section>
 
       <section className="info-section">
-        <h2>What is stored</h2>
+        <h2>What remains plaintext and why</h2>
         <p>
-          Stored data can include contacts, group records, recipient variables and values, templates, draft snapshots, campaign records,
-          and Gmail connection state used to keep your account connected between sessions.
+          Non-sensitive operational metadata can remain plaintext for reliability and app behavior: ownership references,
+          timestamps, status flags, counts, and limited grouping keys required for dedupe and filtering.
         </p>
       </section>
 
       <section className="info-section">
-        <h2>Firebase authentication usage</h2>
+        <h2>Authentication and access control</h2>
         <p>
-          Firebase is used for sign-in and identity verification. ReachFlow backend verifies Firebase ID tokens to authenticate API requests.
+          Firebase is used for sign-in and identity verification. Backend APIs verify Firebase ID tokens and enforce ownership-scoped
+          queries for user data access.
         </p>
       </section>
 
       <section className="info-section">
         <h2>Gmail authorization usage</h2>
         <p>
-          ReachFlow requests OAuth scopes for OpenID profile information and Gmail sending. It uses Gmail APIs to send messages and resolve sender identities.
-          Emails are sent only when you explicitly trigger send actions.
+          ReachFlow requests OAuth scopes for OpenID profile information and Gmail sending. It uses Gmail APIs to send messages and
+          resolve sender identities, and sends only when explicitly triggered by a user.
         </p>
       </section>
 
       <section className="info-section">
-        <h2>Inbox access</h2>
+        <h2>Collection and migration governance</h2>
         <p>
-          ReachFlow does not request Gmail read-only inbox access and does not read your inbox contents for campaign operation.
+          ReachFlow data collections use the reachflow_ prefix. Schema or encryption migrations are executed via an explicit migration
+          command and are not part of normal application startup.
         </p>
       </section>
 
       <section className="info-section">
-        <h2>OAuth tokens and security</h2>
+        <h2>Logging and operational safety</h2>
         <p>
-          OAuth refresh tokens may be stored to keep Gmail connected between sessions. Refresh tokens are stored in encrypted form in the backend.
-          Access tokens are used transiently for authorized API calls.
+          Operational logs should avoid plaintext personal content and should focus on non-sensitive metadata such as IDs, counts,
+          and status outcomes.
         </p>
       </section>
 
