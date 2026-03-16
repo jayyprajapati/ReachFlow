@@ -37,6 +37,8 @@ const userSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
+userSchema.index({ gmailState: 1 }, { sparse: true });
+
 const variableSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -52,6 +54,7 @@ const variableSchema = new mongoose.Schema(
 );
 
 variableSchema.index({ userId: 1, variableNameKey: 1 }, { unique: true, sparse: true });
+variableSchema.index({ userId: 1, createdAt: 1 });
 
 const recipientSchema = new mongoose.Schema({
   emailHash: { type: String, trim: true, index: true },
@@ -130,6 +133,8 @@ const sendLogSchema = new mongoose.Schema(
   { versionKey: false }
 );
 
+sendLogSchema.index({ userId: 1, sentAt: -1 });
+
 const groupSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -145,6 +150,8 @@ const groupSchema = new mongoose.Schema(
   }
 );
 
+groupSchema.index({ userId: 1, updatedAt: -1 });
+
 const templateSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -158,6 +165,8 @@ const templateSchema = new mongoose.Schema(
     versionKey: false,
   }
 );
+
+templateSchema.index({ userId: 1, updatedAt: -1 });
 
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');

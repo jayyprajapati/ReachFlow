@@ -421,6 +421,29 @@ export default function App() {
     setDraftId(null);
     setSubject('');
     setBody('');
+    navigateTo('/');
+  }
+
+  async function deleteMyAccount() {
+    setWarningDialog({
+      title: 'Delete account?',
+      message: 'This permanently deletes your ReachFlow account and all associated data, including drafts, templates, groups, contacts, variables, history, and stored Gmail authorization. This action cannot be undone.',
+      confirmText: 'Delete account',
+      intent: 'danger',
+      onConfirm: async () => {
+        try {
+          const res = await apiFetch(`${API_BASE}/auth/me`, { method: 'DELETE', headers: hdrs });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to delete account');
+          await logout();
+          setUtilityDrawerOpen(false);
+          setUserMenuOpen(false);
+          setNotice({ type: 'success', message: 'Your account and app data were deleted.' });
+        } catch (err) {
+          setNotice({ type: 'error', message: err.message || 'Failed to delete account' });
+        }
+      },
+    });
   }
 
   const authedFetch = async (url, options = {}, tokenOverride) => {
@@ -631,7 +654,12 @@ export default function App() {
           await hydrateProfile();
           return;
         }
-        throw new Error(d.error || 'Send failed');
+        const rateLimitedMessage = d.code === 'RATE_LIMIT_DAILY'
+          ? 'Daily sending limit reached. Try again tomorrow.'
+          : d.code === 'RATE_LIMIT_MINUTE'
+            ? 'Too many emails sent in a short period. Please wait a minute and try again.'
+            : null;
+        throw new Error(rateLimitedMessage || d.error || 'Send failed');
       }
       setNotice({ type: 'success', message: `Sent to ${recipients.length} recipients` });
       setErrors({ recipients: {} }); setPreviewOpen(false); await loadHistory(); await loadDrafts();
@@ -871,6 +899,7 @@ export default function App() {
               </div>
 
               <button className="btn btn--primary landing-cta" onClick={login}>Login with Google</button>
+              <p className="landing-trust-copy">We never read your email inbox. ReachFlow only sends emails you approve.</p>
             </div>
 
             <div className="landing-demo" aria-hidden="true">
@@ -965,6 +994,10 @@ export default function App() {
           </div>
         </div>
         <div className="hdr__right">
+          <span className={`hdr__gmail-chip ${gmailConnected ? 'hdr__gmail-chip--ok' : 'hdr__gmail-chip--err'}`}>
+            {gmailConnected ? 'Connected with Gmail' : 'Not connected with Gmail'}
+          </span>
+
           <button
             className="hdr__utility-btn"
             onClick={() => {
@@ -996,24 +1029,6 @@ export default function App() {
 
             {userMenuOpen && (
               <div className="hdr__dropdown" role="menu">
-                <div className="hdr__dropdown-item hdr__dropdown-item--status">
-                  Gmail Status
-                  <span className={`hdr__status ${gmailConnected ? 'hdr__status--ok' : 'hdr__status--err'}`}>
-                    {gmailConnected ? 'Connected' : 'Not Connected'}
-                  </span>
-                </div>
-                {gmailConnected ? (
-                  <button className="hdr__dropdown-item" onClick={() => { disconnectGmail(); setUserMenuOpen(false); }}>
-                    Disconnect Gmail
-                  </button>
-                ) : (
-                  <button className="hdr__dropdown-item" onClick={() => { connectGmail(); setUserMenuOpen(false); }}>
-                    Connect Gmail
-                  </button>
-                )}
-                <button className="hdr__dropdown-item" onClick={() => { reconnectGmail(); setUserMenuOpen(false); }}>
-                  Reconnect Gmail
-                </button>
                 <button
                   className="hdr__dropdown-item"
                   onClick={() => {
@@ -1291,34 +1306,48 @@ export default function App() {
 
         {utilityTab === 'settings' && (
           <div className="utility-panel utility-panel--stack">
-            <div className="utility-settings-row">
-              <div className="utility-settings-status">
-                <span className="muted">Gmail Status</span>
-                <span className={`hdr__status ${gmailConnected ? 'hdr__status--ok' : 'hdr__status--err'}`}>
-                  {gmailConnected ? 'Connected' : 'Not Connected'}
-                </span>
+            <div className="settings-section">
+              <div className="settings-section__head">Gmail connection</div>
+              <div className="utility-settings-row">
+                <div className="utility-settings-status">
+                  <span className="muted">Status</span>
+                  <span className={`hdr__status ${gmailConnected ? 'hdr__status--ok' : 'hdr__status--err'}`}>
+                    {gmailConnected ? 'Connected with Gmail' : 'Not connected with Gmail'}
+                  </span>
+                </div>
+                {gmailConnected ? (
+                  <button className="settings-disconnect" onClick={disconnectGmail}>Disconnect</button>
+                ) : (
+                  <button className="link" onClick={connectGmail}>Connect</button>
+                )}
               </div>
-              {gmailConnected ? (
-                <button className="settings-disconnect" onClick={disconnectGmail}>Disconnect</button>
-              ) : (
-                <button className="link" onClick={connectGmail}>Connect</button>
-              )}
+              <button className="link" onClick={reconnectGmail} style={{ alignSelf: 'flex-start' }}>
+                Reconnect Gmail (fresh OAuth)
+              </button>
             </div>
-            <button className="link" onClick={reconnectGmail} style={{ alignSelf: 'flex-start' }}>
-              Reconnect Gmail (fresh OAuth)
-            </button>
-            <div className="field" style={{ marginTop: 8 }}>
-              <label className="lbl">Sender display name</label>
-              <div className="settings-sender-row">
-                <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
-                <button className="link settings-save-link" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName}>
-                  <Save size={14} />
-                  {savingSenderName ? 'Saving…' : 'Save'}
-                </button>
+
+            <div className="settings-section">
+              <div className="settings-section__head">Account</div>
+              <div className="field" style={{ marginTop: 2 }}>
+                <label className="lbl">Sender display name</label>
+                <div className="settings-sender-row">
+                  <input className="inp" value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="Display name (optional)" />
+                  <button className="link settings-save-link" onClick={saveSenderPreference} disabled={savingSenderName || senderName.trim() === savedSenderName}>
+                    <Save size={14} />
+                    {savingSenderName ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+                <small className="muted settings-help-text">
+                  Sender name controls the display name shown in outgoing emails. If left empty, your default sender is your email address, and recipients will see your email as the sender instead of your name.
+                </small>
               </div>
-              <small className="muted settings-help-text">
-                Sender name controls the display name shown in outgoing emails. If left empty, your default sender is your email address, and recipients will see your email as the sender instead of your name.
-              </small>
+              <button className="link" onClick={logout} style={{ alignSelf: 'flex-start' }}>Log out</button>
+            </div>
+
+            <div className="settings-section settings-section--danger">
+              <div className="settings-section__head">Danger zone</div>
+              <p className="muted">Permanently remove your account and all associated app data.</p>
+              <button className="settings-danger-link" onClick={deleteMyAccount}>Delete My Account</button>
             </div>
           </div>
         )}

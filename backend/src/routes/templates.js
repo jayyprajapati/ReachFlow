@@ -2,6 +2,7 @@ const express = require('express');
 const { Types } = require('mongoose');
 const { Template } = require('../db');
 const { encryptJson, decryptJson, isEncryptedEnvelope } = require('../utils/dataSecurity');
+const { sanitizeEmailHtml } = require('../utils/sanitizeEmailHtml');
 
 const router = express.Router();
 
@@ -11,13 +12,13 @@ function decryptTemplateDoc(template) {
     return {
       title: String(payload.title || ''),
       subject: String(payload.subject || ''),
-      body_html: String(payload.body_html || ''),
+      body_html: sanitizeEmailHtml(String(payload.body_html || '')),
     };
   }
   return {
     title: String(template.title || ''),
     subject: String(template.subject || ''),
-    body_html: String(template.body_html || ''),
+    body_html: sanitizeEmailHtml(String(template.body_html || '')),
   };
 }
 
@@ -61,10 +62,11 @@ router.post('/', async (req, res) => {
   if (!subject || !subject.trim()) return res.status(400).json({ error: 'Subject is required' });
   if (!body_html || !body_html.trim()) return res.status(400).json({ error: 'Body is required' });
   try {
+    const safeBody = sanitizeEmailHtml(String(body_html || ''));
     const payload = {
       title: String(title || ''),
       subject: String(subject || ''),
-      body_html: String(body_html || ''),
+      body_html: safeBody,
     };
     const doc = await Template.create({
       userId: req.user._id,

@@ -52,7 +52,7 @@ function validateVariables(html, allowedKeys) {
 
 function renderTemplate(html, data) {
   const normalized = normalizeVariables(html || '');
-  const template = Handlebars.compile(normalized, { noEscape: true });
+  const template = Handlebars.compile(normalized);
   return template(toLowerData(data));
 }
 

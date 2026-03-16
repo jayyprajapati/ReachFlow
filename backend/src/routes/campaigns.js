@@ -1,15 +1,18 @@
 const express = require('express');
 const { Types } = require('mongoose');
-const sanitizeHtml = require('sanitize-html');
 const { Campaign, Group, SendLog, Variable } = require('../db');
 const { renderTemplate, validateVariables } = require('../services/templateService');
 const { sendMimeEmail } = require('../gmail');
 const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail, computeEmailHash } = require('../utils/dataSecurity');
+const { sanitizeEmailHtml } = require('../utils/sanitizeEmailHtml');
 
 const router = express.Router();
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DAILY_LIMIT = 350;
+const PER_MINUTE_LIMIT = 15;
+const PER_DAY_LIMIT = 100;
+const ROLLING_MINUTE_MS = 60 * 1000;
+const ROLLING_DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_RECIPIENTS = 50;
 
 function firstNameFromFullName(fullName) {
@@ -41,15 +44,38 @@ function resolveNameValue(fullName, nameFormat) {
 }
 
 function sanitizeBody(html) {
-  return sanitizeHtml(html || '', {
-    allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'span', 'br']),
-    allowedAttributes: {
-      ...sanitizeHtml.defaults.allowedAttributes,
-      img: ['src', 'alt', 'width', 'height', 'style'],
-      span: ['style'],
-    },
-    allowedSchemes: ['http', 'https', 'mailto'],
-  });
+  return sanitizeEmailHtml(html || '');
+}
+
+function parseBypassEmailAllowlist() {
+  return new Set(
+    String(process.env.RATE_LIMIT_BYPASS_EMAILS || '')
+      .split(',')
+      .map(value => normalizeEmail(value))
+      .filter(Boolean)
+  );
+}
+
+function getConnectedGmailEmail(user) {
+  if (!user) return '';
+  if (isEncryptedEnvelope(user.gmailEmailEnc)) {
+    try {
+      return normalizeEmail(decryptJson(user.gmailEmailEnc)?.value || '');
+    } catch (_err) {
+      return normalizeEmail(user.gmailEmail || user.email || '');
+    }
+  }
+  return normalizeEmail(user.gmailEmail || user.email || '');
+}
+
+function isRateLimitBypassed(user) {
+  const allowlist = parseBypassEmailAllowlist();
+  if (!allowlist.size) return false;
+  const candidates = [
+    normalizeEmail(user?.email || ''),
+    getConnectedGmailEmail(user),
+  ].filter(Boolean);
+  return candidates.some(email => allowlist.has(email));
 }
 
 function normalizeVariablesUsed(raw) {
@@ -133,7 +159,11 @@ function buildCampaignPayload(input) {
 
 function decryptCampaignPayload(doc) {
   if (isEncryptedEnvelope(doc.encryptedPayload)) {
-    return decryptJson(doc.encryptedPayload);
+    const payload = decryptJson(doc.encryptedPayload);
+    return {
+      ...payload,
+      body_html: sanitizeBody(payload.body_html || ''),
+    };
   }
   return buildCampaignPayload({
     subject: doc.subject,
@@ -172,12 +202,31 @@ async function getAllowedVariables(userId) {
   return ['name', ...vars.map(getVariableKey).filter(Boolean)];
 }
 
-async function ensureSendAllowance(userId, requested) {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const sentToday = await SendLog.countDocuments({ userId, sentAt: { $gte: startOfDay } });
-  if (sentToday + requested > DAILY_LIMIT) {
-    const err = new Error('Daily send limit reached. Try again tomorrow.');
+// Uses rolling windows based on persisted send logs:
+// - rolling 60 seconds for burst control
+// - rolling 24 hours for daily control
+async function ensureSendAllowance(user, requested) {
+  if (isRateLimitBypassed(user)) return;
+
+  const userId = user._id;
+  const now = Date.now();
+  const minuteWindowStart = new Date(now - ROLLING_MINUTE_MS);
+  const dayWindowStart = new Date(now - ROLLING_DAY_MS);
+
+  const [sentLastMinute, sentLast24h] = await Promise.all([
+    SendLog.countDocuments({ userId, sentAt: { $gte: minuteWindowStart } }),
+    SendLog.countDocuments({ userId, sentAt: { $gte: dayWindowStart } }),
+  ]);
+
+  if (sentLastMinute + requested > PER_MINUTE_LIMIT) {
+    const err = new Error('Too many emails sent in a short period. Please wait a minute and try again.');
+    err.code = 'MINUTE_LIMIT';
+    err.retryAfterSeconds = 60;
+    throw err;
+  }
+
+  if (sentLast24h + requested > PER_DAY_LIMIT) {
+    const err = new Error('Daily sending limit reached. Try again tomorrow.');
     err.code = 'DAILY_LIMIT';
     throw err;
   }
@@ -217,23 +266,25 @@ async function sendCampaign(campaignId, user) {
     return { status: campaign.status, sentCount: 0, failedCount: 0 };
   }
 
-  await ensureSendAllowance(user._id, pending.length);
+  await ensureSendAllowance(user, pending.length);
 
   let sentCount = 0;
   let failedCount = 0;
   let lastError = null;
   const logs = [];
   const sentByHash = {};
+  const safeTemplateHtml = sanitizeBody(payload.body_html);
 
   if (campaign.send_mode !== 'individual') {
     campaign.send_mode = 'individual';
   }
 
   for (const recipient of pending) {
-    const html = renderTemplate(payload.body_html, {
+    const renderedHtml = renderTemplate(safeTemplateHtml, {
       name: resolveNameValue(recipient.name, payload.name_format),
       ...(recipient.variables || {}),
     });
+    const html = sanitizeBody(renderedHtml);
     try {
       await sendMimeEmail({ user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name });
       const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
@@ -418,10 +469,12 @@ router.post('/:id/preview', async (req, res) => {
     const validation = validateVariables(payload.body_html, allowedVars);
     if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
 
-    const html = renderTemplate(payload.body_html, {
+    const safeTemplateHtml = sanitizeBody(payload.body_html);
+    const renderedHtml = renderTemplate(safeTemplateHtml, {
       name: resolveNameValue(target.name, payload.name_format),
       ...(target.variables || {}),
     });
+    const html = sanitizeBody(renderedHtml);
     res.json({ html, warnings: validation.unknown.length ? validation.unknown.map(k => `Unknown variable {{${k}}} found.`) : [] });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to render preview' });
@@ -456,8 +509,18 @@ router.post('/:id/send', async (req, res) => {
   } catch (err) {
     const isAuthErr = err.code === 'AUTH_REQUIRED' || err.code === 'AUTH_EXPIRED'
       || /invalid_grant|Token has been expired|revoked|reconnect/i.test(err.message || '');
+    if (err.code === 'MINUTE_LIMIT') {
+      return res.status(429).json({
+        error: 'Too many emails sent in a short period. Please wait a minute and try again.',
+        code: 'RATE_LIMIT_MINUTE',
+        retryAfterSeconds: err.retryAfterSeconds || 60,
+      });
+    }
     if (err.code === 'DAILY_LIMIT') {
-      return res.status(429).json({ error: 'Daily send limit reached. Try again tomorrow.' });
+      return res.status(429).json({
+        error: 'Daily sending limit reached. Try again tomorrow.',
+        code: 'RATE_LIMIT_DAILY',
+      });
     }
     const status = isAuthErr ? 401 : 500;
     return res.status(status).json({ error: err.message || 'Failed to send', authError: isAuthErr });

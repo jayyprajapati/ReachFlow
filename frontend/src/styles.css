@@ -141,6 +141,14 @@ body {
   margin-top: 6px;
 }
 
+.landing-trust-copy {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 520px;
+}
+
 .landing-demo {
   display: flex;
   justify-content: flex-end;
@@ -448,6 +456,27 @@ body {
   gap: 12px;
 }
 
+.hdr__gmail-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hdr__gmail-chip--ok {
+  color: #065f46;
+  background: #ecfdf3;
+  border-color: #a7f3d0;
+}
+
+.hdr__gmail-chip--err {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
 .hdr__utility-btn {
   border: 1px solid var(--border);
   background: #fff;
@@ -752,6 +781,44 @@ body {
   display: block;
   margin-top: 6px;
   line-height: 1.5;
+}
+
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-section__head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-section--danger {
+  border-color: #fecaca;
+  background: #fffafa;
+}
+
+.settings-danger-link {
+  border: none;
+  background: none;
+  color: #b91c1c;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.settings-danger-link:hover {
+  text-decoration: underline;
 }
 
 .utility-panel .group-chips {

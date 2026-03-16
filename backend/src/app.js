@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { getAuthUrl, exchangeCodeForUser, verifyAuth, clearGmailAuthorization, getAuthorizedClient } = require('./gmail');
@@ -14,6 +15,11 @@ const variableRoutes = require('./routes/variables');
 const {
   connectMongo,
   User,
+  Variable,
+  Group,
+  Template,
+  Campaign,
+  SendLog,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -50,6 +56,70 @@ function getDecryptedUserValue(encryptedValue, fallback = '') {
     }
   }
   return String(fallback || '');
+}
+
+async function deleteCurrentUserAppData(user) {
+  const userId = user?._id;
+  if (!userId) {
+    throw new Error('Missing authenticated user id');
+  }
+
+  const runDeletion = async (session) => {
+    const opts = session ? { session } : {};
+
+    await User.updateOne(
+      { _id: userId },
+      {
+        $set: {
+          gmailConnected: false,
+        },
+        $unset: {
+          encryptedRefreshToken: 1,
+          gmailState: 1,
+          gmailStateExpiresAt: 1,
+          gmailEmailEnc: 1,
+          gmailEmail: 1,
+          senderDisplayNameEnc: 1,
+        },
+      },
+      opts
+    );
+
+    const [templates, campaigns, groups, variables, sendLogs] = await Promise.all([
+      Template.deleteMany({ userId }, opts),
+      Campaign.deleteMany({ userId }, opts),
+      Group.deleteMany({ userId }, opts),
+      Variable.deleteMany({ userId }, opts),
+      SendLog.deleteMany({ userId }, opts),
+    ]);
+
+    const userDeletion = await User.deleteOne({ _id: userId }, opts);
+
+    return {
+      users: userDeletion.deletedCount || 0,
+      templates: templates.deletedCount || 0,
+      campaigns: campaigns.deletedCount || 0,
+      groups: groups.deletedCount || 0,
+      variables: variables.deletedCount || 0,
+      sendLogs: sendLogs.deletedCount || 0,
+    };
+  };
+
+  let session;
+  try {
+    session = await mongoose.startSession();
+    let summary;
+    await session.withTransaction(async () => {
+      summary = await runDeletion(session);
+    });
+    return summary;
+  } catch (err) {
+    const txUnsupported = /Transaction numbers are only allowed|replica set|transactions are not supported/i.test(err?.message || '');
+    if (!txUnsupported) throw err;
+    return runDeletion(null);
+  } finally {
+    if (session) await session.endSession();
+  }
 }
 
 app.set('trust proxy', 1);
@@ -133,6 +203,20 @@ app.patch('/auth/me/preferences', requireAuth, async (req, res) => {
     res.json({ ok: true, senderDisplayName });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to save preferences' });
+  }
+});
+
+app.delete('/auth/me', requireAuth, async (req, res) => {
+  try {
+    const deleted = await deleteCurrentUserAppData(req.user);
+    res.json({
+      ok: true,
+      scope: 'app-data-only',
+      firebaseIdentityDeleted: false,
+      deleted,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to delete account data' });
   }
 });
 
