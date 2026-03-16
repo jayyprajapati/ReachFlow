@@ -13,13 +13,7 @@ const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
 const {
   connectMongo,
-  migrateCollectionNames,
   User,
-  migrateGroupContactFields,
-  migrateVariableFields,
-  migrateUserSensitiveFields,
-  migrateTemplateSensitiveFields,
-  migrateCampaignSensitiveFields,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -247,60 +241,6 @@ app.use('/api/variables', requireAuth, variableRoutes);
 connectMongo()
   .then(() => {
     console.log('Connected to MongoDB');
-    return migrateCollectionNames()
-      .then(() => {
-        console.log('Collection naming migration complete');
-      })
-      .catch(err => {
-        console.error('Collection naming migration failed', err.message);
-      });
-  })
-  .then(() => {
-    return migrateUserSensitiveFields()
-      .then(() => {
-        console.log('User sensitive fields migration complete');
-      })
-      .catch(err => {
-        console.error('User sensitive fields migration failed', err.message);
-      });
-  })
-  .then(() => {
-    return migrateTemplateSensitiveFields()
-      .then(() => {
-        console.log('Template sensitive fields migration complete');
-      })
-      .catch(err => {
-        console.error('Template sensitive fields migration failed', err.message);
-      });
-  })
-  .then(() => {
-    return migrateCampaignSensitiveFields()
-      .then(() => {
-        console.log('Campaign sensitive fields migration complete');
-      })
-      .catch(err => {
-        console.error('Campaign sensitive fields migration failed', err.message);
-      });
-  })
-  .then(() => {
-    return migrateGroupContactFields()
-      .then(() => {
-        console.log('Group contact fields migration complete');
-      })
-      .catch(err => {
-        console.error('Group contact fields migration failed', err.message);
-      });
-  })
-  .then(() => {
-    return migrateVariableFields()
-      .then(() => {
-        console.log('Variable fields migration complete');
-      })
-      .catch(err => {
-        console.error('Variable fields migration failed', err.message);
-      });
-  })
-  .then(() => {
     app.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`);
     });
