@@ -703,8 +703,13 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     }
 
     async function saveContact() {
-        if (!contactForm.name.trim() || !emailRegex.test(contactForm.email)) {
-            setError('Name and valid email are required');
+        const normalizedEmail = String(contactForm.email || '').trim();
+        if (!contactForm.name.trim()) {
+            setError('Name is required');
+            return;
+        }
+        if (normalizedEmail && !emailRegex.test(normalizedEmail)) {
+            setError('Email must be valid when provided');
             return;
         }
         setError('');

@@ -83,7 +83,7 @@ function sanitizeContactInput(raw) {
 
 function validateContact(contact) {
   if (!contact.name) return 'Name is required';
-  if (!emailRegex.test(contact.email)) return 'Invalid email';
+  if (contact.email && !emailRegex.test(contact.email)) return 'Invalid email';
   return null;
 }
 
@@ -119,9 +119,10 @@ function toContactPayload(contact) {
 function toEncryptedContact(input) {
   const clean = sanitizeContactInput(input);
   const companyKey = deriveCompanyKeyFromEmail(clean.email);
+  const emailHash = clean.email ? computeEmailHash(clean.email) : undefined;
 
   return {
-    emailHash: computeEmailHash(clean.email),
+    emailHash,
     companyKey,
     encryptedPayload: encryptJson({
       name: clean.name,
@@ -247,8 +248,8 @@ router.post('/:id/contacts', async (req, res) => {
       return res.status(400).json({ error: 'Group contact limit reached (300).' });
     }
 
-    const incomingHash = computeEmailHash(clean.email);
-    if ((group.contacts || []).some(c => c.emailHash === incomingHash)) {
+    const incomingHash = clean.email ? computeEmailHash(clean.email) : null;
+    if (incomingHash && (group.contacts || []).some(c => c.emailHash === incomingHash)) {
       return res.status(409).json({ error: 'Duplicate contact in group' });
     }
 
@@ -282,8 +283,10 @@ router.patch('/:id/contacts/:contactId', async (req, res) => {
     const err = validateContact(merged);
     if (err) return res.status(400).json({ error: err });
 
-    const incomingHash = computeEmailHash(merged.email);
-    const hasDuplicate = (group.contacts || []).some(c => String(c._id) !== String(contactId) && c.emailHash === incomingHash);
+    const incomingHash = merged.email ? computeEmailHash(merged.email) : null;
+    const hasDuplicate = incomingHash
+      ? (group.contacts || []).some(c => String(c._id) !== String(contactId) && c.emailHash === incomingHash)
+      : false;
     if (hasDuplicate) return res.status(409).json({ error: 'Duplicate contact in group' });
 
     const next = toEncryptedContact(merged);
