@@ -251,10 +251,15 @@ async function bumpContactTracking(userId, emailHashToCount) {
 }
 
 async function sendCampaign(campaignId, user) {
+  console.log(`[campaign] sendCampaign — campaignId: ${campaignId}, userId: ${user._id}`);
   const campaign = await Campaign.findOne({ _id: campaignId, userId: user._id });
-  if (!campaign) throw new Error('Campaign not found');
+  if (!campaign) {
+    console.error(`[campaign] Campaign not found — campaignId: ${campaignId}`);
+    throw new Error('Campaign not found');
+  }
 
   if (!user.gmailConnected || !user.encryptedRefreshToken) {
+    console.error(`[campaign] Gmail not connected — gmailConnected: ${user.gmailConnected}, hasRefreshToken: ${!!user.encryptedRefreshToken}`);
     const err = new Error('Gmail not connected. Please connect your Gmail account.');
     err.code = 'AUTH_REQUIRED';
     throw err;
@@ -262,11 +267,16 @@ async function sendCampaign(campaignId, user) {
 
   const payload = decryptCampaignPayload(campaign);
   const pending = (payload.recipients || []).filter(r => r.status === 'pending');
+  console.log(`[campaign] Campaign decrypted — subject: "${payload.subject}", totalRecipients: ${payload.recipients.length}, pendingRecipients: ${pending.length}`);
+
   if (!pending.length) {
+    console.log('[campaign] No pending recipients — nothing to send');
     return { status: campaign.status, sentCount: 0, failedCount: 0 };
   }
 
+  console.log(`[campaign] Checking rate limits for ${pending.length} recipients…`);
   await ensureSendAllowance(user, pending.length);
+  console.log('[campaign] Rate limit check passed');
 
   let sentCount = 0;
   let failedCount = 0;
@@ -279,7 +289,9 @@ async function sendCampaign(campaignId, user) {
     campaign.send_mode = 'individual';
   }
 
-  for (const recipient of pending) {
+  for (let i = 0; i < pending.length; i++) {
+    const recipient = pending[i];
+    console.log(`[campaign] Sending ${i + 1}/${pending.length} — to: ${recipient.email}, name: "${recipient.name}"`);
     const renderedHtml = renderTemplate(safeTemplateHtml, {
       name: resolveNameValue(recipient.name, payload.name_format),
       ...(recipient.variables || {}),
@@ -292,18 +304,26 @@ async function sendCampaign(campaignId, user) {
       logs.push({ userId: user._id, sentAt: new Date() });
       sentByHash[recipient.emailHash] = (sentByHash[recipient.emailHash] || 0) + 1;
       sentCount += 1;
+      console.log(`[campaign] ✓ Sent successfully — to: ${recipient.email}`);
     } catch (err) {
       const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
       if (target) target.status = 'failed';
       failedCount += 1;
       lastError = err;
+      console.error(`[campaign] ✗ Send FAILED — to: ${recipient.email}, error: ${err.message}, code: ${err.code || '(none)'}`);
+      if (err?.response?.data) {
+        console.error('[campaign] Google API error payload:', JSON.stringify(err.response.data, null, 2));
+      }
     }
   }
+
+  console.log(`[campaign] Send loop complete — sent: ${sentCount}, failed: ${failedCount}`);
 
   if (logs.length) await SendLog.insertMany(logs);
   await bumpContactTracking(user._id, sentByHash);
 
   if (sentCount === 0 && lastError) {
+    console.error(`[campaign] ALL emails failed — reverting campaign to draft. Last error: ${lastError.message}`);
     campaign.status = 'draft';
     await persistCampaignPayload(campaign, payload);
     throw new Error(`All emails failed: ${lastError.message}`);
@@ -311,6 +331,7 @@ async function sendCampaign(campaignId, user) {
 
   campaign.status = 'sent';
   await persistCampaignPayload(campaign, payload);
+  console.log(`[campaign] Campaign marked as sent — campaignId: ${campaignId}, sent: ${sentCount}, failed: ${failedCount}`);
   return { status: 'sent', sentCount, failedCount };
 }
 
@@ -450,12 +471,14 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/preview', async (req, res) => {
   const { id } = req.params;
   const { recipient_id } = req.body || {};
+  console.log(`[campaign] POST /:id/preview — campaignId: ${id}, recipientId: ${recipient_id || '(first)'}`);
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
     const campaign = await Campaign.findOne({ _id: id, userId: req.user._id });
     if (!campaign) return res.status(404).json({ error: 'Not found' });
 
     if (!req.user.gmailConnected || !req.user.encryptedRefreshToken) {
+      console.warn('[campaign] Preview blocked — Gmail not connected');
       return res.status(401).json({ error: 'Connect Gmail to send', authError: true });
     }
 
@@ -464,6 +487,8 @@ router.post('/:id/preview', async (req, res) => {
       ? payload.recipients.find(r => String(r._id) === String(recipient_id))
       : payload.recipients[0];
     if (!target) return res.status(404).json({ error: 'No recipients' });
+
+    console.log(`[campaign] Preview target — email: ${target.email}, name: "${target.name}"`);
 
     const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), payload.variables || []);
     const validation = validateVariables(payload.body_html, allowedVars);
@@ -475,8 +500,10 @@ router.post('/:id/preview', async (req, res) => {
       ...(target.variables || {}),
     });
     const html = sanitizeBody(renderedHtml);
+    console.log(`[campaign] Preview rendered successfully for ${target.email}`);
     res.json({ html, warnings: validation.unknown.length ? validation.unknown.map(k => `Unknown variable {{${k}}} found.`) : [] });
   } catch (err) {
+    console.error('[campaign] Preview error:', err.message);
     res.status(500).json({ error: err.message || 'Failed to render preview' });
   }
 });
@@ -484,18 +511,26 @@ router.post('/:id/preview', async (req, res) => {
 router.post('/:id/send', async (req, res) => {
   const { id } = req.params;
   const { confirm_bulk_send } = req.body || {};
+  console.log(`[campaign] POST /:id/send — campaignId: ${id}, userId: ${req.user._id}, confirm_bulk_send: ${!!confirm_bulk_send}`);
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
 
   try {
     const campaign = await Campaign.findOne({ _id: id, userId: req.user._id });
-    if (!campaign) return res.status(404).json({ error: 'Not found' });
+    if (!campaign) {
+      console.warn(`[campaign] Campaign not found for send — id: ${id}`);
+      return res.status(404).json({ error: 'Not found' });
+    }
 
     const payload = decryptCampaignPayload(campaign);
     const recipientCount = payload.recipients.length;
+    console.log(`[campaign] Send request — recipientCount: ${recipientCount}, subject: "${payload.subject}"`);
+
     if (recipientCount > 5 && !confirm_bulk_send) {
+      console.log('[campaign] Bulk send confirmation required but not provided');
       return res.status(400).json({ error: 'Bulk send confirmation required' });
     }
     if (recipientCount > MAX_RECIPIENTS) {
+      console.warn(`[campaign] Recipient count ${recipientCount} exceeds max ${MAX_RECIPIENTS}`);
       return res.status(400).json({ error: `Max ${MAX_RECIPIENTS} recipients per campaign` });
     }
 
@@ -505,11 +540,17 @@ router.post('/:id/send', async (req, res) => {
     if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
 
     const result = await sendCampaign(id, req.user);
+    console.log(`[campaign] Send complete — result:`, JSON.stringify(result));
     return res.json(result);
   } catch (err) {
+    console.error(`[campaign] Send route error — campaignId: ${id}, error: ${err.message}, code: ${err.code || '(none)'}`);
+    if (err?.response?.data) {
+      console.error('[campaign] Google API error payload:', JSON.stringify(err.response.data, null, 2));
+    }
     const isAuthErr = err.code === 'AUTH_REQUIRED' || err.code === 'AUTH_EXPIRED'
       || /invalid_grant|Token has been expired|revoked|reconnect/i.test(err.message || '');
     if (err.code === 'MINUTE_LIMIT') {
+      console.warn('[campaign] Rate limit hit — MINUTE_LIMIT');
       return res.status(429).json({
         error: 'Too many emails sent in a short period. Please wait a minute and try again.',
         code: 'RATE_LIMIT_MINUTE',
@@ -517,10 +558,14 @@ router.post('/:id/send', async (req, res) => {
       });
     }
     if (err.code === 'DAILY_LIMIT') {
+      console.warn('[campaign] Rate limit hit — DAILY_LIMIT');
       return res.status(429).json({
         error: 'Daily sending limit reached. Try again tomorrow.',
         code: 'RATE_LIMIT_DAILY',
       });
+    }
+    if (isAuthErr) {
+      console.error('[campaign] Auth error during send — returning 401');
     }
     const status = isAuthErr ? 401 : 500;
     return res.status(status).json({ error: err.message || 'Failed to send', authError: isAuthErr });

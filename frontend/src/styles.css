@@ -805,6 +805,59 @@ body {
   background: #fffafa;
 }
 
+/* ── Scope list ── */
+
+.scope-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scope-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+
+.scope-item--granted {
+  color: #065f46;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.scope-item--granted svg {
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+.scope-item--missing {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.scope-item--missing svg {
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.scope-item__name {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.scope-item__status {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .settings-danger-link {
   border: none;
   background: none;

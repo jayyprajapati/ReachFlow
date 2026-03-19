@@ -6,7 +6,7 @@ import ImportGroupModal from './components/ImportGroupModal.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import AppFooter from './components/AppFooter.jsx';
-import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2 } from 'lucide-react';
+import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2, CheckCircle2, XCircle } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -138,6 +138,8 @@ export default function App() {
   const [savedSenderName, setSavedSenderName] = useState('');
   const [savingSenderName, setSavingSenderName] = useState(false);
   const [warningDialog, setWarningDialog] = useState(null);
+  const [grantedScopes, setGrantedScopes] = useState([]);
+  const [requiredScopes, setRequiredScopes] = useState([]);
 
   const quillRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -323,6 +325,8 @@ export default function App() {
       setGmailConnected(!!d.gmailConnected);
       setSenderName(d.user?.senderDisplayName || '');
       setSavedSenderName(d.user?.senderDisplayName || '');
+      setGrantedScopes(Array.isArray(d.grantedScopes) ? d.grantedScopes : []);
+      setRequiredScopes(Array.isArray(d.requiredScopes) ? d.requiredScopes : []);
       setAppUser(prev => ({
         email: d.user?.email || prev?.email || '',
         displayName: d.user?.displayName || prev?.displayName || '',
@@ -1342,6 +1346,28 @@ export default function App() {
                 </small>
               </div>
               <button className="link" onClick={logout} style={{ alignSelf: 'flex-start' }}>Log out</button>
+            </div>
+
+            <div className="settings-section">
+              <div className="settings-section__head">Google Scopes</div>
+              {gmailConnected && grantedScopes.length > 0 ? (
+                <div className="scope-list">
+                  {requiredScopes.filter(s => s !== 'openid').map(scope => {
+                    const shortName = scope.startsWith('https://') ? scope.split('/').pop() : scope;
+                    const isGranted = grantedScopes.includes(scope);
+                    return (
+                      <div key={scope} className={`scope-item ${isGranted ? 'scope-item--granted' : 'scope-item--missing'}`}>
+                        {isGranted ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                        <span className="scope-item__name">{shortName}</span>
+                        <span className="scope-item__status">{isGranted ? 'Granted' : 'Not granted'}</span>
+                      </div>
+                    );
+                  })}
+                  <small className="muted" style={{ marginTop: 4 }}>If any scope is missing, use "Reconnect Gmail" above to re-authorize.</small>
+                </div>
+              ) : (
+                <p className="muted">{gmailConnected ? 'Scope info loading…' : 'Connect Gmail to see granted scopes.'}</p>
+              )}
             </div>
 
             <div className="settings-section settings-section--danger">
