@@ -6,7 +6,7 @@ import ImportGroupModal from './components/ImportGroupModal.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import AppFooter from './components/AppFooter.jsx';
-import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2, CheckCircle2, XCircle } from 'lucide-react';
+import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2, CheckCircle2, XCircle, LogOut } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
@@ -428,6 +428,46 @@ export default function App() {
     navigateTo('/');
   }
 
+  function confirmDisconnectGmail(options = {}) {
+    const { closeMenu = false } = options;
+    setWarningDialog({
+      title: 'Disconnect Gmail?',
+      message: 'This will disconnect your Gmail account from ReachFlow. You can reconnect any time.',
+      confirmText: 'Disconnect Gmail',
+      intent: 'danger',
+      onConfirm: async () => {
+        await disconnectGmail();
+        if (closeMenu) setUserMenuOpen(false);
+      },
+    });
+  }
+
+  function confirmReconnectGmail() {
+    setWarningDialog({
+      title: 'Reconnect Gmail OAuth?',
+      message: 'You will be redirected to Google to re-authorize Gmail access with a fresh OAuth flow.',
+      confirmText: 'Continue',
+      intent: 'primary',
+      onConfirm: async () => {
+        await reconnectGmail();
+      },
+    });
+  }
+
+  function confirmLogout(options = {}) {
+    const { closeMenu = false } = options;
+    setWarningDialog({
+      title: 'Log out?',
+      message: 'You will be signed out of ReachFlow on this device.',
+      confirmText: 'Log out',
+      intent: 'danger',
+      onConfirm: async () => {
+        await logout();
+        if (closeMenu) setUserMenuOpen(false);
+      },
+    });
+  }
+
   async function deleteMyAccount() {
     setWarningDialog({
       title: 'Delete account?',
@@ -608,6 +648,18 @@ export default function App() {
     };
   }
 
+  async function requestPreview(recipientId) {
+    const payload = buildPayload();
+    const res = await apiFetch(`${API_BASE}/api/campaigns/preview`, {
+      method: 'POST',
+      headers: hdrs,
+      body: JSON.stringify({ ...payload, recipient_id: recipientId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Preview failed');
+    return data;
+  }
+
   async function saveDraft(toast = false) {
     const p = buildPayload();
     if (!p.subject || !p.body_html || !p.recipients.length) { if (toast) setNotice({ type: 'error', message: 'Need subject, body & recipients' }); return; }
@@ -631,11 +683,10 @@ export default function App() {
     const ve = validate(); setErrors(ve); if (hasErr(ve)) return;
     setIsPreviewing(true);
     try {
-      const id = (await saveDraft()) || draftId; if (!id) throw new Error('Save draft first');
       const tgt = recipients[Math.floor(Math.random() * recipients.length)];
+      if (!tgt) throw new Error('No recipients available for preview');
       setPreviewRecipientId(tgt?._id);
-      const res = await apiFetch(`${API_BASE}/api/campaigns/${id}/preview`, { method: 'POST', headers: hdrs, body: JSON.stringify({ recipient_id: tgt?._id }) });
-      const d = await res.json(); if (!res.ok) throw new Error(d.error || 'Preview failed');
+      const d = await requestPreview(tgt._id);
       if (d.warnings?.length) setNotice({ type: 'info', message: d.warnings[0] });
       setPreviewRecipientMeta(tgt); setPreviewHtml(d.html || ''); setPreviewOpen(true);
     } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsPreviewing(false); }
@@ -645,10 +696,17 @@ export default function App() {
     if (hasUnmatched(body) || hasUnmatched(subject)) { setNotice({ type: 'error', message: 'Invalid variable syntax detected.' }); return; }
     const unknownVars = [...findVars(subject), ...findVars(body)].filter(k => !variableKeys.includes(k));
     if (unknownVars.length) { setNotice({ type: 'error', message: `Unknown variable {{${unknownVars[0]}}} found.` }); return; }
+    const ve = validate();
+    setErrors(ve);
+    if (hasErr(ve)) return;
     setIsSending(true); setNotice(null);
     try {
-      const id = (await saveDraft()) || draftId; if (!id) throw new Error('Save draft first');
-      const res = await apiFetch(`${API_BASE}/api/campaigns/${id}/send`, { method: 'POST', headers: hdrs, body: JSON.stringify({ confirm_bulk_send: recipients.length > 5 }) });
+      const payload = buildPayload();
+      const res = await apiFetch(`${API_BASE}/api/campaigns/send-now`, {
+        method: 'POST',
+        headers: hdrs,
+        body: JSON.stringify({ ...payload, confirm_bulk_send: recipients.length > 5 }),
+      });
       const d = await res.json();
       if (!res.ok) {
         // If it's an auth error, refresh auth state so UI reflects reality
@@ -1033,18 +1091,37 @@ export default function App() {
 
             {userMenuOpen && (
               <div className="hdr__dropdown" role="menu">
-                <button
-                  className="hdr__dropdown-item"
-                  onClick={() => {
-                    setUtilityDrawerOpen(true);
-                    setUtilityTab('settings');
-                    setUserMenuOpen(false);
-                  }}
-                >
-                  Settings
-                </button>
+                {gmailConnected ? (
+                  <button
+                    className="hdr__dropdown-item"
+                    onClick={() => confirmDisconnectGmail({ closeMenu: true })}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <XCircle size={14} />
+                      Disconnect Gmail
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    className="hdr__dropdown-item"
+                    onClick={async () => {
+                      setUserMenuOpen(false);
+                      await connectGmail();
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <CheckCircle2 size={14} />
+                      Connect Gmail
+                    </span>
+                  </button>
+                )}
                 <div className="hdr__dropdown-divider" />
-                <button className="hdr__dropdown-item hdr__dropdown-item--danger" onClick={logout}>Logout</button>
+                <button className="hdr__dropdown-item hdr__dropdown-item--danger" onClick={() => confirmLogout({ closeMenu: true })}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <LogOut size={14} />
+                    Logout
+                  </span>
+                </button>
               </div>
             )}
           </div>
@@ -1214,7 +1291,24 @@ export default function App() {
           <div className="pv-meta">
             <div><b>{previewRecipientMeta.name}</b> <span className="muted">({previewRecipientMeta.email})</span></div>
             <div className="pv-meta__acts">
-              <button className="link" onClick={() => { const r = recipients[Math.floor(Math.random() * recipients.length)]; if (r) { setIsPreviewing(true); apiFetch(`${API_BASE}/api/campaigns/${draftId}/preview`, { method: 'POST', headers: hdrs, body: JSON.stringify({ recipient_id: r._id }) }).then(x => x.json()).then(d => { if (d.warnings?.length) setNotice({ type: 'info', message: d.warnings[0] }); setPreviewRecipientMeta(r); setPreviewHtml(d.html || ''); }).catch(e => setNotice({ type: 'error', message: e.message })).finally(() => setIsPreviewing(false)); } }}>Shuffle</button>
+              <button
+                className="link"
+                onClick={() => {
+                  const r = recipients[Math.floor(Math.random() * recipients.length)];
+                  if (!r) return;
+                  setIsPreviewing(true);
+                  requestPreview(r._id)
+                    .then(d => {
+                      if (d.warnings?.length) setNotice({ type: 'info', message: d.warnings[0] });
+                      setPreviewRecipientMeta(r);
+                      setPreviewHtml(d.html || '');
+                    })
+                    .catch(e => setNotice({ type: 'error', message: e.message }))
+                    .finally(() => setIsPreviewing(false));
+                }}
+              >
+                Shuffle
+              </button>
               <span className="muted" style={{ fontSize: 12 }}>(Random preview)</span>
             </div>
           </div>
@@ -1320,12 +1414,12 @@ export default function App() {
                   </span>
                 </div>
                 {gmailConnected ? (
-                  <button className="settings-disconnect" onClick={disconnectGmail}>Disconnect</button>
+                  <button className="settings-disconnect" onClick={() => confirmDisconnectGmail()}>Disconnect Gmail</button>
                 ) : (
                   <button className="link" onClick={connectGmail}>Connect</button>
                 )}
               </div>
-              <button className="link" onClick={reconnectGmail} style={{ alignSelf: 'flex-start' }}>
+              <button className="link" onClick={confirmReconnectGmail} style={{ alignSelf: 'flex-start' }}>
                 Reconnect Gmail (fresh OAuth)
               </button>
             </div>
@@ -1345,7 +1439,7 @@ export default function App() {
                   Sender name controls the display name shown in outgoing emails. If left empty, your default sender is your email address, and recipients will see your email as the sender instead of your name.
                 </small>
               </div>
-              <button className="link" onClick={logout} style={{ alignSelf: 'flex-start' }}>Log out</button>
+              <button className="link" onClick={() => confirmLogout()} style={{ alignSelf: 'flex-start' }}>Log out</button>
             </div>
 
             <div className="settings-section">

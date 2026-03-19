@@ -468,6 +468,172 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+router.post('/preview', async (req, res) => {
+  const { recipient_id } = req.body || {};
+  try {
+    if (!req.user.gmailConnected || !req.user.encryptedRefreshToken) {
+      return res.status(401).json({ error: 'Connect Gmail to send', authError: true });
+    }
+
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
+    if (!subject || !String(subject).trim()) return res.status(400).json({ error: 'Subject is required' });
+    if (!body_html || !String(body_html).trim()) return res.status(400).json({ error: 'Body is required' });
+
+    const snapshotVariables = normalizeVariablesUsed(variables);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), snapshotVariables);
+    const normalizedRecipients = normalizeRecipients(recipients, allowedVars);
+    const recErrors = validateRecipients(normalizedRecipients);
+    if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
+
+    const payload = buildCampaignPayload({
+      subject,
+      body_html,
+      sender_name: sender_name || '',
+      name_format,
+      recipients: normalizedRecipients,
+      variables: snapshotVariables,
+      group_imports: normalizeGroupImports(group_imports),
+    });
+
+    const validation = validateVariables(payload.body_html, allowedVars);
+    if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
+
+    const target = recipient_id
+      ? payload.recipients.find(r => String(r._id) === String(recipient_id))
+      : payload.recipients[0];
+    if (!target) return res.status(404).json({ error: 'No recipients' });
+
+    const safeTemplateHtml = sanitizeBody(payload.body_html);
+    const renderedHtml = renderTemplate(safeTemplateHtml, {
+      name: resolveNameValue(target.name, payload.name_format),
+      ...(target.variables || {}),
+    });
+    const html = sanitizeBody(renderedHtml);
+
+    return res.json({ html, warnings: validation.unknown.length ? validation.unknown.map(k => `Unknown variable {{${k}}} found.`) : [] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to render preview' });
+  }
+});
+
+router.post('/send-now', async (req, res) => {
+  const { confirm_bulk_send } = req.body || {};
+
+  try {
+    if (!req.user.gmailConnected || !req.user.encryptedRefreshToken) {
+      const authErr = new Error('Gmail not connected. Please connect your Gmail account.');
+      authErr.code = 'AUTH_REQUIRED';
+      throw authErr;
+    }
+
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
+    if (!subject || !String(subject).trim()) return res.status(400).json({ error: 'Subject is required' });
+    if (!body_html || !String(body_html).trim()) return res.status(400).json({ error: 'Body is required' });
+
+    const snapshotVariables = normalizeVariablesUsed(variables);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), snapshotVariables);
+    const normalizedRecipients = normalizeRecipients(recipients, allowedVars);
+    const recErrors = validateRecipients(normalizedRecipients);
+    if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
+
+    const payload = buildCampaignPayload({
+      subject,
+      body_html,
+      sender_name: sender_name || '',
+      name_format,
+      recipients: normalizedRecipients,
+      variables: snapshotVariables,
+      group_imports: normalizeGroupImports(group_imports),
+    });
+
+    const recipientCount = payload.recipients.length;
+    if (recipientCount > 5 && !confirm_bulk_send) {
+      return res.status(400).json({ error: 'Bulk send confirmation required' });
+    }
+    if (recipientCount > MAX_RECIPIENTS) {
+      return res.status(400).json({ error: `Max ${MAX_RECIPIENTS} recipients per campaign` });
+    }
+
+    const validation = validateVariables(payload.body_html, allowedVars);
+    if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
+    if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
+
+    const pending = (payload.recipients || []).filter(r => r.status === 'pending');
+    if (!pending.length) {
+      return res.json({ status: 'sent', sentCount: 0, failedCount: 0 });
+    }
+
+    await ensureSendAllowance(req.user, pending.length);
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let lastError = null;
+    const logs = [];
+    const sentByHash = {};
+    const safeTemplateHtml = sanitizeBody(payload.body_html);
+
+    for (let i = 0; i < pending.length; i++) {
+      const recipient = pending[i];
+      const renderedHtml = renderTemplate(safeTemplateHtml, {
+        name: resolveNameValue(recipient.name, payload.name_format),
+        ...(recipient.variables || {}),
+      });
+      const html = sanitizeBody(renderedHtml);
+      try {
+        await sendMimeEmail({ user: req.user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name });
+        const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
+        if (target) target.status = 'sent';
+        logs.push({ userId: req.user._id, sentAt: new Date() });
+        sentByHash[recipient.emailHash] = (sentByHash[recipient.emailHash] || 0) + 1;
+        sentCount += 1;
+      } catch (err) {
+        const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
+        if (target) target.status = 'failed';
+        failedCount += 1;
+        lastError = err;
+      }
+    }
+
+    if (logs.length) await SendLog.insertMany(logs);
+    await bumpContactTracking(req.user._id, sentByHash);
+
+    if (sentCount === 0 && lastError) {
+      throw new Error(`All emails failed: ${lastError.message}`);
+    }
+
+    const doc = await Campaign.create({
+      userId: req.user._id,
+      encryptedPayload: encryptJson(payload),
+      recipient_count: payload.recipients.length,
+      variable_count: payload.variables.length,
+      send_mode: 'individual',
+      status: 'sent',
+    });
+
+    return res.json({ status: 'sent', sentCount, failedCount, id: doc._id.toString() });
+  } catch (err) {
+    const isAuthErr = err.code === 'AUTH_REQUIRED' || err.code === 'AUTH_EXPIRED'
+      || /invalid_grant|Token has been expired|revoked|reconnect/i.test(err.message || '');
+
+    if (err.code === 'MINUTE_LIMIT') {
+      return res.status(429).json({
+        error: 'Too many emails sent in a short period. Please wait a minute and try again.',
+        code: 'RATE_LIMIT_MINUTE',
+        retryAfterSeconds: err.retryAfterSeconds || 60,
+      });
+    }
+    if (err.code === 'DAILY_LIMIT') {
+      return res.status(429).json({
+        error: 'Daily sending limit reached. Try again tomorrow.',
+        code: 'RATE_LIMIT_DAILY',
+      });
+    }
+
+    const status = isAuthErr ? 401 : 500;
+    return res.status(status).json({ error: err.message || 'Failed to send', authError: isAuthErr });
+  }
+});
+
 router.post('/:id/preview', async (req, res) => {
   const { id } = req.params;
   const { recipient_id } = req.body || {};
