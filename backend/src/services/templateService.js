@@ -11,11 +11,6 @@ function toLowerData(data) {
   const result = {};
   Object.entries(data || {}).forEach(([key, value]) => {
     const normalizedKey = String(key).toLowerCase();
-    if (normalizedKey === 'name') {
-      const firstName = String(value || '').trim().split(' ')[0] || 'There';
-      result[normalizedKey] = firstName;
-      return;
-    }
     result[normalizedKey] = value;
   });
   return result;
