@@ -5,6 +5,7 @@ import GroupManager from './components/GroupManager.jsx';
 import ImportGroupModal from './components/ImportGroupModal.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
+import TermsOfUsePage from './components/TermsOfUsePage.jsx';
 import AppFooter from './components/AppFooter.jsx';
 import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2, CheckCircle2, XCircle, LogOut } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -904,7 +905,7 @@ export default function App() {
 
   /* ── render ── */
 
-  if (pagePath === '/about' || pagePath === '/privacy-policy') {
+  if (pagePath === '/about' || pagePath === '/privacy-policy' || pagePath === '/terms-of-use') {
     return (
       <div className="landing-shell docs-shell">
         <header className="hdr hdr--landing">
@@ -919,9 +920,9 @@ export default function App() {
         </header>
 
         <main className="docs-main">
-          {pagePath === '/about'
-            ? <AboutPage onBack={() => navigateTo('/')} />
-            : <PrivacyPolicyPage onBack={() => navigateTo('/')} />}
+          {pagePath === '/about' && <AboutPage onBack={() => navigateTo('/')} />}
+          {pagePath === '/privacy-policy' && <PrivacyPolicyPage onBack={() => navigateTo('/')} />}
+          {pagePath === '/terms-of-use' && <TermsOfUsePage onBack={() => navigateTo('/')} />}
         </main>
 
         <AppFooter onNavigate={navigateTo} />

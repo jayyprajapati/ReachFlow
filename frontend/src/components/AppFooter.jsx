@@ -12,6 +12,8 @@ export default function AppFooter({ onNavigate }) {
         <span>•</span>
         <button className="ftr__link" onClick={() => onNavigate('/privacy-policy')}>Privacy Policy</button>
         <span>•</span>
+        <button className="ftr__link" onClick={() => onNavigate('/terms-of-use')}>Terms of Use</button>
+        <span>•</span>
         <a className="ftr__link ftr__link--ext" href={PERSONAL_SITE_URL} target="_blank" rel="noreferrer noopener">
           Personal site <ExternalLink size={12} />
         </a>

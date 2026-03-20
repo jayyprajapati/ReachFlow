@@ -1702,10 +1702,30 @@ body {
   color: var(--text);
 }
 
+.info-section h3 {
+  font-size: 16px;
+  color: var(--text);
+  margin-top: 4px;
+}
+
 .info-section p {
   color: var(--sub);
   line-height: 1.8;
   max-width: 860px;
+}
+
+.info-section ul {
+  margin-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--sub);
+  line-height: 1.7;
+  max-width: 860px;
+}
+
+.info-section li {
+  padding-left: 2px;
 }
 
 .info-grid {
