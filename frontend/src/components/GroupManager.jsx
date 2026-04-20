@@ -8,9 +8,53 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE_OPTIONS = ['', 'Recruiter', 'Hiring Manager', 'HR', 'Engineer', 'Designer', 'PM', 'Founder', 'Other'];
 const CONNECTION_OPTIONS = [
     { value: 'not_connected', label: 'Not Connected' },
-    { value: 'request_sent', label: 'Request Sent' },
+    { value: 'request_sent', label: 'Pending' },
     { value: 'connected', label: 'Connected' },
 ];
+
+function buildContactFormDefaults({ fastEntry = false } = {}) {
+    return {
+        name: '',
+        email: '',
+        role: fastEntry ? 'Recruiter' : '',
+        linkedin: '',
+        connectionStatus: 'not_connected',
+        email_status: fastEntry ? 'verified' : 'tentative',
+        lastContactedDate: '',
+        emailCount: 0,
+        linkedInCount: 0,
+    };
+}
+
+function normalizeLinkedinUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const cleaned = withScheme.replace(/[),.;\]]+$/, '');
+    return /linkedin\.com\//i.test(cleaned) ? cleaned : '';
+}
+
+function nameFromLinkedin(linkedinUrl) {
+    const match = String(linkedinUrl || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+    if (!match?.[1]) return '';
+    return match[1]
+        .split(/[-_]+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+
+function extractLinkedinUrlsFromHtml(html) {
+    if (!html || typeof window === 'undefined' || !window.DOMParser) return [];
+    try {
+        const doc = new window.DOMParser().parseFromString(String(html), 'text/html');
+        return Array.from(doc.querySelectorAll('a[href]'))
+            .map(a => normalizeLinkedinUrl(a.getAttribute('href')))
+            .filter(Boolean);
+    } catch (_err) {
+        return [];
+    }
+}
 
 function normalizeCompanyKey(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -86,12 +130,15 @@ function csvEscape(value) {
     return text;
 }
 
-export default function GroupManager({ open, onClose, authedFetch }) {
+export default function GroupManager({ open = false, onClose, authedFetch, standalone = false }) {
+    const isVisible = standalone || open;
+
     /* ── state ── */
     const [groups, setGroups] = useState([]);
     const [view, setView] = useState('grid');           // 'grid' | 'detail'
     const [activeGroup, setActiveGroup] = useState(null); // full group object with contacts
-    const [loading, setLoading] = useState(false);
+    const [groupsLoading, setGroupsLoading] = useState(false);
+    const [detailLoading, setDetailLoading] = useState(false);
     const [error, setError] = useState('');
 
     // Create group
@@ -106,29 +153,27 @@ export default function GroupManager({ open, onClose, authedFetch }) {
 
     // Contact editing
     const [editingContactId, setEditingContactId] = useState(null); // contact id or '__new__'
-    const [contactForm, setContactForm] = useState({
-        name: '',
-        email: '',
-        role: '',
-        linkedin: '',
-        connectionStatus: 'not_connected',
-        email_status: 'tentative',
-        lastContactedDate: '',
-        emailCount: 0,
-        linkedInCount: 0,
-    });
+    const [contactForm, setContactForm] = useState(buildContactFormDefaults());
+    const [newContactForm, setNewContactForm] = useState(buildContactFormDefaults({ fastEntry: true }));
+    const [savingContactId, setSavingContactId] = useState(null);
+    const [savingNewEntry, setSavingNewEntry] = useState(false);
+    const [deletingContactId, setDeletingContactId] = useState('');
 
     // Unsaved changes tracking
     const [dirty, setDirty] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState(null); // null | { action: fn }
     const [deleteGroupDialogOpen, setDeleteGroupDialogOpen] = useState(false);
+    const [deleteContactDialog, setDeleteContactDialog] = useState(null); // null | { id, name }
 
     // Bulk paste
     const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
     const [bulkText, setBulkText] = useState('');
     const [bulkRole, setBulkRole] = useState('');
+    const [bulkHtml, setBulkHtml] = useState('');
     const [bulkParsed, setBulkParsed] = useState(null); // null | array
     const [bulkMessage, setBulkMessage] = useState('');
+    const [bulkParseBusy, setBulkParseBusy] = useState(false);
+    const [bulkSaveBusy, setBulkSaveBusy] = useState(false);
     const [copiedField, setCopiedField] = useState('');
 
     // Global import/export (groups page)
@@ -140,10 +185,14 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     const [globalMessage, setGlobalMessage] = useState('');
     const [globalBusy, setGlobalBusy] = useState(false);
     const [exportBusy, setExportBusy] = useState(false);
+    const [createGroupBusy, setCreateGroupBusy] = useState(false);
+    const [saveInfoBusy, setSaveInfoBusy] = useState(false);
+    const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
 
     /* ── load groups ── */
 
     const loadGroups = useCallback(async () => {
+        setGroupsLoading(true);
         try {
             const r = await authedFetch(`${API_BASE}/api/groups`);
             const d = await r.json();
@@ -151,11 +200,13 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             setGroups(d);
         } catch (e) {
             setError(e.message);
+        } finally {
+            setGroupsLoading(false);
         }
     }, [authedFetch]);
 
     const loadGroupDetail = useCallback(async (id) => {
-        setLoading(true);
+        setDetailLoading(true);
         try {
             const r = await authedFetch(`${API_BASE}/api/groups/${id}`);
             const d = await r.json();
@@ -164,21 +215,24 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         } catch (e) {
             setError(e.message);
         } finally {
-            setLoading(false);
+            setDetailLoading(false);
         }
     }, [authedFetch]);
 
     useEffect(() => {
-        if (open) {
+        if (isVisible) {
             loadGroups();
             setView('grid');
             setActiveGroup(null);
             setCreating(false);
             setEditingInfo(false);
             setEditingContactId(null);
+            setContactForm(buildContactFormDefaults());
+            setNewContactForm(buildContactFormDefaults({ fastEntry: true }));
             setDirty(false);
             setError('');
             setDeleteGroupDialogOpen(false);
+            setDeleteContactDialog(null);
             setGlobalImportOpen(false);
             setGlobalImportMode('bulk');
             setGlobalText('');
@@ -187,8 +241,13 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             setGlobalMessage('');
             setGlobalBusy(false);
             setExportBusy(false);
+            setBulkParseBusy(false);
+            setBulkSaveBusy(false);
+            setCreateGroupBusy(false);
+            setSaveInfoBusy(false);
+            setDeleteGroupBusy(false);
         }
-    }, [open, loadGroups]);
+    }, [isVisible]);
 
     useEffect(() => {
         if (!copiedField) return;
@@ -572,19 +631,22 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             setDirty(false);
             setEditingInfo(false);
             setEditingContactId(null);
+            setNewContactForm(buildContactFormDefaults({ fastEntry: true }));
             await loadGroupDetail(groupId);
             setView('detail');
         });
     }
 
     function handleClose() {
-        guardNav(() => onClose());
+        if (standalone) return;
+        guardNav(() => onClose?.());
     }
 
     /* ── group CRUD ── */
 
     async function createGroup() {
-        if (!newName.trim()) return;
+        if (!newName.trim() || createGroupBusy) return;
+        setCreateGroupBusy(true);
         try {
             const r = await authedFetch(`${API_BASE}/api/groups`, {
                 method: 'POST',
@@ -599,11 +661,14 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             await loadGroups();
         } catch (e) {
             setError(e.message);
+        } finally {
+            setCreateGroupBusy(false);
         }
     }
 
     async function performDeleteGroup() {
-        if (!activeGroup) return;
+        if (!activeGroup || deleteGroupBusy) return;
+        setDeleteGroupBusy(true);
         try {
             const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}`, { method: 'DELETE' });
             const d = await r.json();
@@ -614,6 +679,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         } catch (e) {
             setError(e.message);
         } finally {
+            setDeleteGroupBusy(false);
             setDeleteGroupDialogOpen(false);
         }
     }
@@ -633,7 +699,8 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     }
 
     async function saveInfo() {
-        if (!editName.trim()) return;
+        if (!editName.trim() || saveInfoBusy) return;
+        setSaveInfoBusy(true);
         try {
             const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}`, {
                 method: 'PATCH',
@@ -648,6 +715,8 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             loadGroups();
         } catch (e) {
             setError(e.message);
+        } finally {
+            setSaveInfoBusy(false);
         }
     }
 
@@ -659,17 +728,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     /* ── contact CRUD ── */
 
     function startAddContact() {
-        setContactForm({
-            name: '',
-            email: '',
-            role: '',
-            linkedin: '',
-            connectionStatus: 'not_connected',
-            email_status: 'tentative',
-            lastContactedDate: '',
-            emailCount: 0,
-            linkedInCount: 0,
-        });
+        setContactForm(buildContactFormDefaults());
         setEditingContactId('__new__');
         setDirty(true);
     }
@@ -702,7 +761,25 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         setDirty(false);
     }
 
+    function resetNewEntryRow() {
+        setNewContactForm(buildContactFormDefaults({ fastEntry: true }));
+    }
+
+    function toContactPayload(form, { isFastEntry = false } = {}) {
+        const defaultEmailStatus = isFastEntry ? 'verified' : 'tentative';
+        return {
+            ...form,
+            role: String(form.role || '').trim() || (isFastEntry ? 'Recruiter' : ''),
+            connectionStatus: form.connectionStatus || 'not_connected',
+            email_status: form.email_status || defaultEmailStatus,
+            lastContactedDate: form.lastContactedDate ? new Date(form.lastContactedDate).toISOString() : null,
+            emailCount: Math.max(0, Number(form.emailCount) || 0),
+            linkedInCount: Math.max(0, Number(form.linkedInCount) || 0),
+        };
+    }
+
     async function saveContact() {
+        if (!activeGroup || savingContactId) return;
         const normalizedEmail = String(contactForm.email || '').trim();
         if (!contactForm.name.trim()) {
             setError('Name is required');
@@ -713,15 +790,9 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             return;
         }
         setError('');
+        setSavingContactId(editingContactId || '__new__');
         try {
-            const payload = {
-                ...contactForm,
-                connectionStatus: contactForm.connectionStatus || 'not_connected',
-                email_status: contactForm.email_status || 'tentative',
-                lastContactedDate: contactForm.lastContactedDate ? new Date(contactForm.lastContactedDate).toISOString() : null,
-                emailCount: Math.max(0, Number(contactForm.emailCount) || 0),
-                linkedInCount: Math.max(0, Number(contactForm.linkedInCount) || 0),
-            };
+            const payload = toContactPayload(contactForm, { isFastEntry: false });
             if (editingContactId === '__new__') {
                 const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}/contacts`, {
                     method: 'POST',
@@ -746,22 +817,72 @@ export default function GroupManager({ open, onClose, authedFetch }) {
             }
             setEditingContactId(null);
             setDirty(false);
+            await loadGroups();
         } catch (e) {
             setError(e.message);
+        } finally {
+            setSavingContactId(null);
         }
     }
 
-    async function deleteContact(contactId) {
+    async function saveNewEntryContact() {
+        if (!activeGroup || savingNewEntry) return;
+        const normalizedEmail = String(newContactForm.email || '').trim();
+        if (!newContactForm.name.trim()) {
+            setError('Name is required');
+            return;
+        }
+        if (normalizedEmail && !emailRegex.test(normalizedEmail)) {
+            setError('Email must be valid when provided');
+            return;
+        }
+
+        setError('');
+        setSavingNewEntry(true);
+        try {
+            const payload = toContactPayload(newContactForm, { isFastEntry: true });
+            const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}/contacts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'Failed');
+
+            setActiveGroup(prev => ({ ...prev, contacts: [d, ...(prev?.contacts || [])] }));
+            resetNewEntryRow();
+            await loadGroups();
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setSavingNewEntry(false);
+        }
+    }
+
+    function requestDeleteContact(contactId) {
+        const target = (activeGroup?.contacts || []).find(c => c.id === contactId);
+        if (!target) return;
+        setDeleteContactDialog({ id: contactId, name: target.name || 'this contact' });
+    }
+
+    async function performDeleteContact() {
+        const contactId = deleteContactDialog?.id;
+        if (!contactId || !activeGroup || deletingContactId) return;
+        setDeletingContactId(contactId);
         try {
             const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}/contacts/${contactId}`, { method: 'DELETE' });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || 'Failed');
             setActiveGroup(prev => ({
                 ...prev,
-                contacts: prev.contacts.filter(c => c.id !== contactId),
+                contacts: (prev?.contacts || []).filter(c => c.id !== contactId),
             }));
+            await loadGroups();
         } catch (e) {
             setError(e.message);
+        } finally {
+            setDeletingContactId('');
+            setDeleteContactDialog(null);
         }
     }
 
@@ -772,36 +893,90 @@ export default function GroupManager({ open, onClose, authedFetch }) {
         return local.length ? local.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'Unknown';
     }
 
+    function parseContactLine(line, fallbackLinkedin = '') {
+        const rawLine = String(line || '').trim();
+        if (!rawLine) return null;
+
+        const emailMatch = rawLine.match(/([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})/);
+        const email = emailMatch ? String(emailMatch[1]).toLowerCase().trim() : '';
+        if (email && !emailRegex.test(email)) return null;
+
+        const linkedinInLine = normalizeLinkedinUrl((rawLine.match(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/[\w\-./?=&%#]+/i) || [])[0]);
+        const linkedin = normalizeLinkedinUrl(linkedinInLine || fallbackLinkedin);
+
+        let cleaned = rawLine
+            .replace(emailMatch?.[0] || '', ' ')
+            .replace(linkedinInLine || '', ' ')
+            .replace(/\bLinkedIn\b/gi, ' ')
+            .replace(/[<>]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const segments = cleaned
+            .split(/\s+[|\-]\s+|\s*,\s*/)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        let name = segments[0] || '';
+        let role = segments[1] || '';
+
+        if (!name && email) name = nameFromEmail(email);
+        if (!name && linkedin) name = nameFromLinkedin(linkedin);
+        if (!name) return null;
+        if (!role) role = String(bulkRole || 'Recruiter').trim() || 'Recruiter';
+
+        return { name, email, role, linkedin };
+    }
+
     function parseBulkText() {
-        if (!bulkText.trim()) {
-            setBulkMessage('No valid contacts detected. Please paste name and email pairs.');
+        if ((!bulkText || !bulkText.trim()) && (!bulkHtml || !bulkHtml.trim())) {
+            setBulkMessage('No valid contacts detected. Paste one contact per line with name and optional email, role, or LinkedIn URL.');
             setBulkParsed([]);
             return;
         }
-        const lines = bulkText.split('\n').map(l => l.trim()).filter(Boolean);
-        const results = [];
-        for (const line of lines) {
-            // extract email
-            const emailMatch = line.match(/([^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+)/);
-            if (!emailMatch) continue;
-            const email = emailMatch[1].toLowerCase();
-            if (!emailRegex.test(email)) continue;
-            // extract name = everything that's not the email, stripped of delimiters
-            let name = line
-                .replace(emailMatch[0], '')
-                .replace(/[<>\-,;|]/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-            if (!name) name = nameFromEmail(email);
-            results.push({ name, email });
+
+        setBulkParseBusy(true);
+        try {
+            const htmlLinkedin = extractLinkedinUrlsFromHtml(bulkHtml);
+            const lines = String(bulkText || '').split('\n').map(l => l.trim()).filter(Boolean);
+            const results = [];
+            const dedupe = new Set();
+
+            lines.forEach((line, idx) => {
+                const parsed = parseContactLine(line, htmlLinkedin[idx] || '');
+                if (!parsed) return;
+                const dedupeKey = parsed.email
+                    ? `email:${parsed.email}`
+                    : parsed.linkedin
+                        ? `linkedin:${parsed.linkedin.toLowerCase()}`
+                        : `name:${parsed.name.toLowerCase()}`;
+                if (dedupe.has(dedupeKey)) return;
+                dedupe.add(dedupeKey);
+                results.push(parsed);
+            });
+
+            if (!results.length && htmlLinkedin.length) {
+                htmlLinkedin.forEach((linkedin, idx) => {
+                    const parsed = parseContactLine(`LinkedIn ${idx + 1}`, linkedin);
+                    if (!parsed) return;
+                    const key = `linkedin:${parsed.linkedin.toLowerCase()}`;
+                    if (dedupe.has(key)) return;
+                    dedupe.add(key);
+                    results.push(parsed);
+                });
+            }
+
+            if (!results.length) {
+                setBulkMessage('No valid contacts detected. Paste one contact per line with name and optional email, role, or LinkedIn URL.');
+                setBulkParsed([]);
+                return;
+            }
+
+            setBulkMessage('');
+            setBulkParsed(results);
+        } finally {
+            setBulkParseBusy(false);
         }
-        if (!results.length) {
-            setBulkMessage('No valid contacts detected. Please paste name and email pairs.');
-            setBulkParsed([]);
-            return;
-        }
-        setBulkMessage('');
-        setBulkParsed(results);
     }
 
     function removeBulkRow(idx) {
@@ -809,69 +984,87 @@ export default function GroupManager({ open, onClose, authedFetch }) {
     }
 
     async function doBulkImport() {
-        if (!bulkParsed || !bulkParsed.length) return;
-        const existingEmails = new Set((activeGroup?.contacts || []).map(c => c.email.toLowerCase()));
-        const unique = bulkParsed.filter(c => !existingEmails.has(c.email.toLowerCase()));
-        const dupeCount = bulkParsed.length - unique.length;
+        if (!bulkParsed || !bulkParsed.length || bulkSaveBusy) return;
+        setBulkSaveBusy(true);
+        try {
+            const existingEmails = new Set((activeGroup?.contacts || []).map(c => String(c.email || '').toLowerCase()).filter(Boolean));
+            const existingLinkedin = new Set((activeGroup?.contacts || []).map(c => String(c.linkedin || '').toLowerCase()).filter(Boolean));
+            const unique = bulkParsed.filter(c => {
+                const normalizedEmail = String(c.email || '').toLowerCase();
+                const normalizedLinkedin = String(c.linkedin || '').toLowerCase();
+                if (normalizedEmail && existingEmails.has(normalizedEmail)) return false;
+                if (!normalizedEmail && normalizedLinkedin && existingLinkedin.has(normalizedLinkedin)) return false;
+                return true;
+            });
+            const dupeCount = bulkParsed.length - unique.length;
 
-        if (!unique.length) {
-            setBulkMessage(`All ${bulkParsed.length} contacts are duplicates.`);
-            return;
-        }
+            if (!unique.length) {
+                setBulkMessage(`All ${bulkParsed.length} contacts are duplicates.`);
+                return;
+            }
 
-        let addedCount = 0;
-        let limitReached = false;
-        const newContacts = [];
-        for (const c of unique) {
-            try {
-                const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}/contacts`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: c.name,
-                        email: c.email,
-                        role: bulkRole,
-                        connectionStatus: 'not_connected',
-                        leftCompany: false,
-                        linkedin: '',
-                    }),
-                });
-                const d = await r.json();
-                if (!r.ok) {
-                    if (d?.error === 'Group contact limit reached (300).') {
-                        limitReached = true;
-                        setBulkMessage('Group contact limit reached (300).');
-                        break;
+            let addedCount = 0;
+            let limitReached = false;
+            const newContacts = [];
+            for (const c of unique) {
+                try {
+                    const r = await authedFetch(`${API_BASE}/api/groups/${activeGroup.id}/contacts`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: c.name,
+                            email: c.email,
+                            role: String(c.role || bulkRole || 'Recruiter').trim() || 'Recruiter',
+                            connectionStatus: 'not_connected',
+                            linkedin: c.linkedin || '',
+                            email_status: 'verified',
+                        }),
+                    });
+                    const d = await r.json();
+                    if (!r.ok) {
+                        if (d?.error === 'Group contact limit reached (300).') {
+                            limitReached = true;
+                            setBulkMessage('Group contact limit reached (300).');
+                            break;
+                        }
+                        continue;
                     }
-                    continue;
-                }
-                newContacts.push(d);
-                addedCount++;
-            } catch (_) { /* skip failures */ }
-        }
+                    newContacts.push(d);
+                    if (d?.email) existingEmails.add(String(d.email).toLowerCase());
+                    if (d?.linkedin) existingLinkedin.add(String(d.linkedin).toLowerCase());
+                    addedCount++;
+                } catch (_) { /* skip failures */ }
+            }
 
-        if (newContacts.length) {
-            setActiveGroup(prev => ({ ...prev, contacts: [...newContacts, ...prev.contacts] }));
-        }
+            if (newContacts.length) {
+                setActiveGroup(prev => ({ ...prev, contacts: [...newContacts, ...prev.contacts] }));
+            }
 
-        if (!limitReached) {
-            let msg = `Added ${addedCount} contact${addedCount !== 1 ? 's' : ''}.`;
-            if (dupeCount > 0) msg += ` ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped.`;
-            setBulkMessage(msg);
+            if (!limitReached) {
+                let msg = `Added ${addedCount} contact${addedCount !== 1 ? 's' : ''}.`;
+                if (dupeCount > 0) msg += ` ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped.`;
+                setBulkMessage(msg);
+            }
+            setBulkParsed(null);
+            setBulkText('');
+            setBulkHtml('');
+            setBulkRole('');
+            // Close panel after small delay so user sees the message
+            setTimeout(() => { setBulkPasteOpen(false); setBulkMessage(''); }, 1800);
+        } finally {
+            setBulkSaveBusy(false);
         }
-        setBulkParsed(null);
-        setBulkText('');
-        setBulkRole('');
-        // Close panel after small delay so user sees the message
-        setTimeout(() => { setBulkPasteOpen(false); setBulkMessage(''); }, 1800);
     }
 
     function closeBulkPaste() {
+        if (bulkSaveBusy) return;
         setBulkPasteOpen(false);
         setBulkText('');
+        setBulkHtml('');
         setBulkRole('');
         setBulkParsed(null);
         setBulkMessage('');
+        setBulkParseBusy(false);
     }
 
 
@@ -888,14 +1081,14 @@ export default function GroupManager({ open, onClose, authedFetch }) {
 
     /* ── render guard ── */
 
-    if (!open) return null;
+    if (!isVisible) return null;
 
     /* ── main popup ── */
 
     return (
         <>
-            <div className="gm-overlay" onClick={handleClose} />
-            <div className="gm-popup" onClick={e => e.stopPropagation()}>
+            {!standalone && <div className="gm-overlay" onClick={handleClose} />}
+            <div className={standalone ? 'gm-page' : 'gm-popup'} onClick={e => e.stopPropagation()}>
 
                 {error && <div className="gm-error">{error} <button className="gm-text-btn" onClick={() => setError('')}>✕</button></div>}
 
@@ -903,18 +1096,18 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                 {view === 'grid' && (
                     <>
                         <div className="gm-topbar">
-                            <span className="gm-title">Groups</span>
+                            <span className="gm-title">{standalone ? 'Contacts' : 'Groups'}</span>
                             <div className="gm-grid-actions">
-                                <button className="gm-text-btn" onClick={() => setCreating(true)}><Plus size={14} /> Create Group</button>
-                                <span className="gm-dot-sep" aria-hidden="true">•</span>
-                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('bulk'); setGlobalImportOpen(true); }}><ClipboardPaste size={14} /> Bulk Paste</button>
-                                <span className="gm-dot-sep" aria-hidden="true">•</span>
-                                <button className="gm-text-btn" onClick={() => { setGlobalImportMode('csv'); setGlobalImportOpen(true); }}><FileUp size={14} /> Import CSV</button>
-                                <span className="gm-dot-sep" aria-hidden="true">•</span>
+                                <button className="gm-text-btn" onClick={() => setCreating(true)} disabled={createGroupBusy}><Plus size={14} /> Create Group</button>
+                                {!standalone && <span className="gm-dot-sep" aria-hidden="true">•</span>}
+                                {!standalone && <button className="gm-text-btn" onClick={() => { setGlobalImportMode('bulk'); setGlobalImportOpen(true); }} disabled={globalBusy}><ClipboardPaste size={14} /> Bulk Paste</button>}
+                                {!standalone && <span className="gm-dot-sep" aria-hidden="true">•</span>}
+                                {!standalone && <button className="gm-text-btn" onClick={() => { setGlobalImportMode('csv'); setGlobalImportOpen(true); }} disabled={globalBusy}><FileUp size={14} /> Import CSV</button>}
+                                {!standalone && <span className="gm-dot-sep" aria-hidden="true">•</span>}
                                 <button
                                     className="gm-text-btn"
                                     onClick={exportAllAsCsv}
-                                    disabled={exportBusy || groups.reduce((sum, g) => sum + Number(g.contactCount || 0), 0) === 0}
+                                    disabled={exportBusy || groupsLoading || groups.reduce((sum, g) => sum + Number(g.contactCount || 0), 0) === 0}
                                 >
                                     <FileDown size={14} /> {exportBusy ? 'Exporting…' : 'Export All as CSV'}
                                 </button>
@@ -923,21 +1116,26 @@ export default function GroupManager({ open, onClose, authedFetch }) {
 
                         {creating && (
                             <div className="gm-create-row">
-                                <input className="gm-inp" placeholder="Company name" value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
-                                <input className="gm-inp" placeholder="Logo URL (optional)" value={newLogo} onChange={e => setNewLogo(e.target.value)} />
-                                <button className="gm-icon-btn gm-icon-btn--save" onClick={createGroup} title="Create"><Check size={16} /></button>
-                                <button className="gm-icon-btn" onClick={() => { setCreating(false); setNewName(''); setNewLogo(''); }} title="Cancel"><X size={16} /></button>
+                                <input className="gm-inp" placeholder="Company name" value={newName} onChange={e => setNewName(e.target.value)} autoFocus disabled={createGroupBusy} />
+                                <input className="gm-inp" placeholder="Logo URL (optional)" value={newLogo} onChange={e => setNewLogo(e.target.value)} disabled={createGroupBusy} />
+                                <button className="gm-icon-btn gm-icon-btn--save" onClick={createGroup} title="Create" disabled={createGroupBusy}><Check size={16} /></button>
+                                <button className="gm-icon-btn" onClick={() => { setCreating(false); setNewName(''); setNewLogo(''); }} title="Cancel" disabled={createGroupBusy}><X size={16} /></button>
                             </div>
                         )}
 
-                        <div className="gm-grid">
+                        <div className={`gm-grid ${standalone ? 'gm-grid--cards' : ''}`}>
                             {groups.length ? groups.map(g => (
-                                <button key={g.id} className="gm-tile" onClick={() => openGroup(g.id)}>
+                                <button key={g.id} className={`gm-tile ${standalone ? 'gm-tile--card' : ''}`} onClick={() => openGroup(g.id)} disabled={groupsLoading || detailLoading}>
                                     {g.logoUrl ? <img src={g.logoUrl} className="gm-tile-logo" alt="" /> : <span className="gm-tile-logo-placeholder" />}
-                                    <span className="gm-tile-name">{g.companyName}</span>
+                                    <div className="gm-tile-copy">
+                                        <span className="gm-tile-name">{g.companyName}</span>
+                                        {standalone && <span className="gm-tile-count">{Number(g.contactCount || 0)} contacts</span>}
+                                    </div>
                                 </button>
-                            )) : !creating && <p className="gm-muted">No groups yet. Create one to get started.</p>}
+                            )) : !creating && !groupsLoading && <p className="gm-muted">No groups yet. Create one to get started.</p>}
                         </div>
+
+                        {groupsLoading && <div className="gm-muted" style={{ textAlign: 'center', padding: standalone ? 36 : 16 }}>Loading contacts…</div>}
                     </>
                 )}
 
@@ -947,11 +1145,11 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                         {/* Breadcrumb row */}
                         <div className="gm-topbar">
                             <div className="gm-breadcrumb">
-                                <button className="gm-text-btn" onClick={goGrid}>Groups</button>
+                                <button className="gm-text-btn" onClick={goGrid}>{standalone ? 'Contacts' : 'Groups'}</button>
                                 <ChevronRight size={14} />
                                 <span>{activeGroup.companyName}</span>
                             </div>
-                            <button className="gm-text-btn gm-text-btn--danger" onClick={deleteGroup}>
+                            <button className="gm-text-btn gm-text-btn--danger" onClick={deleteGroup} disabled={deleteGroupBusy}>
                                 <Trash2 size={14} /> Delete Group
                             </button>
                         </div>
@@ -962,19 +1160,19 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                                 <>
                                     <div className="gm-info-col">
                                         <label className="gm-label">Company Name</label>
-                                        <input className="gm-inp" value={editName} onChange={e => setEditName(e.target.value)} />
+                                        <input className="gm-inp" value={editName} onChange={e => setEditName(e.target.value)} disabled={saveInfoBusy} />
                                     </div>
                                     <div className="gm-info-col">
                                         <label className="gm-label">Logo URL</label>
-                                        <input className="gm-inp" value={editLogo} onChange={e => setEditLogo(e.target.value)} />
+                                        <input className="gm-inp" value={editLogo} onChange={e => setEditLogo(e.target.value)} disabled={saveInfoBusy} />
                                     </div>
                                     <div className="gm-info-col gm-info-col--preview">
                                         <label className="gm-label">Preview</label>
                                         <div className="gm-info-preview-wrap">
                                             {editLogo ? <img src={editLogo} className="gm-info-preview" alt="" /> : <span className="gm-muted">—</span>}
                                             <div className="gm-info-actions">
-                                                <button className="gm-icon-btn gm-icon-btn--save" onClick={saveInfo} title="Save"><Check size={16} /></button>
-                                                <button className="gm-icon-btn" onClick={cancelEditInfo} title="Cancel"><X size={16} /></button>
+                                                <button className="gm-icon-btn gm-icon-btn--save" onClick={saveInfo} title="Save" disabled={saveInfoBusy}><Check size={16} /></button>
+                                                <button className="gm-icon-btn" onClick={cancelEditInfo} title="Cancel" disabled={saveInfoBusy}><X size={16} /></button>
                                             </div>
                                         </div>
                                     </div>
@@ -1004,13 +1202,13 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                         <div className="gm-contacts-head">
                             <span className="gm-subtitle">People from {activeGroup.companyName} ({activeGroup.contacts.length})</span>
                             <div className="gm-action-group">
-                                <button className="gm-text-btn" onClick={startAddContact}><Plus size={14} /> Add Person</button>
-                                <span className="gm-dot-sep" aria-hidden="true">•</span>
-                                <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)}><ClipboardPaste size={14} /> Bulk Paste</button>
+                                {!standalone && <button className="gm-text-btn" onClick={startAddContact}><Plus size={14} /> Add Person</button>}
+                                {!standalone && <span className="gm-dot-sep" aria-hidden="true">•</span>}
+                                <button className="gm-text-btn" onClick={() => setBulkPasteOpen(true)} disabled={bulkParseBusy || bulkSaveBusy}><ClipboardPaste size={14} /> Bulk Paste</button>
                             </div>
                         </div>
 
-                        <div className="gm-table-wrap">
+                        <div className={`gm-table-wrap ${standalone ? 'gm-table-wrap--standalone' : ''}`}>
                             <ContactsTable
                                 contacts={activeGroup.contacts}
                                 editingContactId={editingContactId}
@@ -1019,11 +1217,22 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                                 copiedField={copiedField}
                                 onCopyClick={onCopyClick}
                                 onStartEdit={startEditContact}
-                                onDelete={deleteContact}
+                                onDelete={requestDeleteContact}
                                 onSave={saveContact}
                                 onCancel={cancelContactEdit}
                                 roleOptions={ROLE_OPTIONS}
                                 connectionOptions={CONNECTION_OPTIONS}
+                                alwaysShowNewRow={standalone}
+                                newContactForm={newContactForm}
+                                setNewContactForm={setNewContactForm}
+                                onSaveNewEntry={saveNewEntryContact}
+                                onResetNewEntry={resetNewEntryRow}
+                                busyState={{
+                                    tableBusy: !!savingContactId || savingNewEntry || !!deletingContactId,
+                                    savingContactId,
+                                    savingNewEntry,
+                                    deletingContactId,
+                                }}
                             />
                         </div>
 
@@ -1040,7 +1249,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                     </>
                 )}
 
-                {loading && <div className="gm-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</div>}
+                {detailLoading && <div className="gm-muted" style={{ textAlign: 'center', padding: 32 }}>Loading…</div>}
             </div>
 
             {/* Bulk Paste panel */}
@@ -1050,7 +1259,7 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                     <div className="gm-bulk-panel" onClick={e => e.stopPropagation()}>
                         <div className="gm-topbar">
                             <span className="gm-title">Bulk Paste Contacts</span>
-                            <button className="gm-text-btn" onClick={closeBulkPaste}>Cancel</button>
+                            <button className="gm-text-btn" onClick={closeBulkPaste} disabled={bulkSaveBusy}>Cancel</button>
                         </div>
 
                         {bulkMessage && <div className={bulkMessage.startsWith('Added') ? 'gm-bulk-success' : 'gm-bulk-warn'}>{bulkMessage}</div>}
@@ -1062,17 +1271,19 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                                     rows={8}
                                     value={bulkText}
                                     onChange={e => setBulkText(e.target.value)}
-                                    placeholder={'John Doe john@company.com\nJane Smith jane@company.com\nJohn Doe <john@company.com>\nJohn Doe - john@company.com'}
+                                    placeholder={'John Doe john@company.com\nJane Smith | Recruiter | https://linkedin.com/in/jane-smith\nJohn Doe - Senior Recruiter - LinkedIn'}
+                                    onPaste={e => setBulkHtml(e.clipboardData?.getData('text/html') || '')}
                                     autoFocus
+                                    disabled={bulkSaveBusy}
                                 />
                                 <div className="gm-bulk-role-row">
-                                    <label className="gm-label">Role for imported contacts</label>
-                                    <select className="gm-select" value={bulkRole} onChange={e => setBulkRole(e.target.value)}>
+                                    <label className="gm-label">Default role (when missing)</label>
+                                    <select className="gm-select" value={bulkRole} onChange={e => setBulkRole(e.target.value)} disabled={bulkSaveBusy}>
                                         {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '— None —'}</option>)}
                                     </select>
                                 </div>
                                 <div className="gm-bulk-actions">
-                                    <button className="btn btn--primary" onClick={parseBulkText} disabled={!bulkText.trim()}>Parse</button>
+                                    <button className="btn btn--primary" onClick={parseBulkText} disabled={(!bulkText.trim() && !bulkHtml.trim()) || bulkParseBusy || bulkSaveBusy}>{bulkParseBusy ? 'Parsing…' : 'Parse'}</button>
                                 </div>
                             </>
                         ) : bulkParsed.length > 0 ? (
@@ -1082,14 +1293,14 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                                     {bulkParsed.map((c, i) => (
                                         <div key={i} className="gm-bulk-preview-row">
                                             <span className="gm-bulk-preview-name">{c.name}</span>
-                                            <span className="gm-bulk-preview-email">{c.email}</span>
-                                            <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => removeBulkRow(i)} title="Remove"><X size={14} /></button>
+                                            <span className="gm-bulk-preview-email">{c.email || 'No email'}</span>
+                                            <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => removeBulkRow(i)} title="Remove" disabled={bulkSaveBusy}><X size={14} /></button>
                                         </div>
                                     ))}
                                 </div>
                                 <div className="gm-bulk-actions">
-                                    <button className="gm-text-btn" onClick={() => { setBulkParsed(null); setBulkMessage(''); }}>Back</button>
-                                    <button className="btn btn--primary" onClick={doBulkImport} disabled={!bulkParsed.length}>Add to Group</button>
+                                    <button className="gm-text-btn" onClick={() => { setBulkParsed(null); setBulkMessage(''); }} disabled={bulkSaveBusy}>Back</button>
+                                    <button className="btn btn--primary" onClick={doBulkImport} disabled={!bulkParsed.length || bulkSaveBusy}>{bulkSaveBusy ? 'Saving…' : 'Add to Group'}</button>
                                 </div>
                             </>
                         ) : null}
@@ -1215,8 +1426,20 @@ export default function GroupManager({ open, onClose, authedFetch }) {
                     <div className="gm-confirm" onClick={e => e.stopPropagation()}>
                         <p>Delete “{activeGroup.companyName}” and all its contacts?</p>
                         <div className="gm-confirm-actions">
-                            <button className="gm-text-btn" onClick={() => setDeleteGroupDialogOpen(false)}>Cancel</button>
-                            <button className="gm-text-btn gm-text-btn--danger" onClick={performDeleteGroup}>Delete group</button>
+                            <button className="gm-text-btn" onClick={() => setDeleteGroupDialogOpen(false)} disabled={deleteGroupBusy}>Cancel</button>
+                            <button className="gm-text-btn gm-text-btn--danger" onClick={performDeleteGroup} disabled={deleteGroupBusy}>{deleteGroupBusy ? 'Deleting…' : 'Delete group'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {deleteContactDialog && (
+                <div className="gm-confirm-overlay" onClick={() => setDeleteContactDialog(null)}>
+                    <div className="gm-confirm" onClick={e => e.stopPropagation()}>
+                        <p>Delete contact “{deleteContactDialog.name}”?</p>
+                        <div className="gm-confirm-actions">
+                            <button className="gm-text-btn" onClick={() => setDeleteContactDialog(null)} disabled={!!deletingContactId}>Cancel</button>
+                            <button className="gm-text-btn gm-text-btn--danger" onClick={performDeleteContact} disabled={!!deletingContactId}>{deletingContactId ? 'Deleting…' : 'Delete contact'}</button>
                         </div>
                     </div>
                 </div>

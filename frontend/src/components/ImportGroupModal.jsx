@@ -8,6 +8,7 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
   const [categories, setCategories] = useState([]);
   const [groupDetail, setGroupDetail] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
 
   // Reset state whenever the modal closes
@@ -17,6 +18,7 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
       setSelectedCategory('');
       setCategories([]);
       setGroupDetail(null);
+      setImporting(false);
       setError('');
     }
   }, [open]);
@@ -49,7 +51,8 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
     return () => { cancelled = true; };
   }, [open, selectedGroupId, authedFetch]);
 
-  function handleImport() {
+  async function handleImport() {
+    if (importing) return;
     if (!groupDetail || !selectedGroupId) {
       setError('Select a group to import');
       return;
@@ -69,8 +72,13 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
       return;
     }
 
-    onImport?.(contacts, groupDetail, selectedCategory);
-    onClose();
+    setImporting(true);
+    try {
+      await Promise.resolve(onImport?.(contacts, groupDetail, selectedCategory));
+      onClose();
+    } finally {
+      setImporting(false);
+    }
   }
 
   if (!open) return null;
@@ -101,6 +109,7 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
               setCategories([]);
               setError('');
             }}
+            disabled={importing}
           >
             <option value="" disabled>Select a group</option>
             {groups.map(g => (
@@ -115,7 +124,7 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
             className="inp"
             value={selectedCategory}
             onChange={e => { setSelectedCategory(e.target.value); setError(''); }}
-            disabled={!selectedGroupId || loading || !categories.length}
+            disabled={!selectedGroupId || loading || importing || !categories.length}
           >
             <option value="" disabled>{loading ? 'Loading…' : 'Select a category'}</option>
             {categories.map(cat => (
@@ -126,7 +135,7 @@ export default function ImportGroupModal({ open, onClose, authedFetch, groups = 
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-          <button className="btn btn--primary" onClick={handleImport} disabled={loading}>Import Contacts</button>
+          <button className="btn btn--primary" onClick={handleImport} disabled={loading || importing}>{importing ? 'Importing…' : 'Import Contacts'}</button>
         </div>
       </div>
     </div>

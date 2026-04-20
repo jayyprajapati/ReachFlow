@@ -9,9 +9,10 @@ import TermsOfUsePage from './components/TermsOfUsePage.jsx';
 import AppFooter from './components/AppFooter.jsx';
 import { Mail, Users, Send, Clock, ChevronDown, LayoutGrid, Shield, Code, FileText, Eye, Download, History, Bookmark, RotateCcw, Settings, Trash2, Save, Plus, ClipboardPaste, FileUp, Building2, CheckCircle2, XCircle, LogOut } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, onIdTokenChanged, signInWithPopup, signOut } from 'firebase/auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+const LINKEDIN_EXTENSION_ID = import.meta.env.VITE_LINKEDIN_EXTENSION_ID || '';
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const firebaseConfig = {
@@ -23,6 +24,35 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseAuth = getAuth(firebaseApp);
 const provider = new GoogleAuthProvider();
+
+function postToLinkedinExtension(message) {
+  if (!LINKEDIN_EXTENSION_ID) return Promise.resolve(false);
+  if (typeof window === 'undefined' || !window.chrome?.runtime?.sendMessage) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    window.chrome.runtime.sendMessage(LINKEDIN_EXTENSION_ID, message, () => {
+      if (window.chrome.runtime.lastError) {
+        resolve(false);
+        return;
+      }
+      resolve(true);
+    });
+  });
+}
+
+function syncExtensionAuthToken(token) {
+  return postToLinkedinExtension({
+    type: 'RF_SET_AUTH_TOKEN',
+    token,
+    apiBaseUrl: API_BASE,
+  });
+}
+
+function clearExtensionAuthToken() {
+  return postToLinkedinExtension({
+    type: 'RF_CLEAR_AUTH_TOKEN',
+  });
+}
 
 const QUILL_MODULES = {
   toolbar: [
@@ -122,20 +152,25 @@ export default function App() {
   const [idToken, setIdToken] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailActionLoading, setGmailActionLoading] = useState(false);
   const [senderName, setSenderName] = useState('');
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
   const [errors, setErrors] = useState({ recipients: {} });
   const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
   const [utilityDrawerOpen, setUtilityDrawerOpen] = useState(false);
   const [utilityTab, setUtilityTab] = useState('history');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftId, setDraftId] = useState(null);
   const [groupImports, setGroupImports] = useState([]);
+  const [importingGroups, setImportingGroups] = useState(false);
   const [nameFormat, setNameFormat] = useState('first');
   const [pagePath, setPagePath] = useState(window.location.pathname || '/');
+  const [contactsPageLoading, setContactsPageLoading] = useState(false);
   const [savedSenderName, setSavedSenderName] = useState('');
   const [savingSenderName, setSavingSenderName] = useState(false);
   const [warningDialog, setWarningDialog] = useState(null);
@@ -158,6 +193,7 @@ export default function App() {
   const [importModalOpen, setImportModalOpen] = useState(false);
 
   const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateDrawer, setTemplateDrawer] = useState(null); // null | 'create' | tpl object
   const [templateTitle, setTemplateTitle] = useState('');
 
@@ -169,6 +205,7 @@ export default function App() {
       if (user) {
         const token = await user.getIdToken();
         setIdToken(token);
+        syncExtensionAuthToken(token);
         setAppUser({ email: user.email, displayName: user.displayName, firebaseUid: user.uid });
         setUserMenuOpen(false);
         await hydrateProfile(token);
@@ -178,17 +215,25 @@ export default function App() {
         loadGroups(token);
         loadTemplates(token);
       } else {
+        clearExtensionAuthToken();
         setAppUser(null);
         setIdToken('');
         setGmailConnected(false);
+        setGmailActionLoading(false);
         setSenderName('');
         setSavedSenderName('');
         setUtilityDrawerOpen(false);
         setUserMenuOpen(false);
         setRecipients([]);
+        setHistory([]);
+        setTemplates([]);
         setGroupImports([]);
         setNameFormat('first');
         setDrafts([]);
+        setHistoryLoading(false);
+        setDraftsLoading(false);
+        setTemplatesLoading(false);
+        setContactsPageLoading(false);
         setDraftId(null);
         setSubject('');
         setBody('');
@@ -198,13 +243,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const unsub = onIdTokenChanged(firebaseAuth, async user => {
+      if (!user) {
+        clearExtensionAuthToken();
+        return;
+      }
+      const token = await user.getIdToken();
+      setIdToken(token);
+      syncExtensionAuthToken(token);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gmail = params.get('gmail');
     if (gmail === 'success') {
+      setGmailActionLoading(false);
       setNotice({ type: 'success', message: 'Gmail connected!' });
       hydrateProfile();
       window.history.replaceState({}, '', window.location.pathname);
     } else if (gmail === 'error') {
+      setGmailActionLoading(false);
       const reason = params.get('message') || params.get('reason') || 'Authorization failed';
       setNotice({ type: 'error', message: `Gmail auth failed: ${reason}` });
       hydrateProfile();
@@ -307,11 +367,40 @@ export default function App() {
     closeSlashMenu();
   }
 
+  async function resolveAuthToken(tokenOverride = '', forceRefresh = false) {
+    if (tokenOverride) return tokenOverride;
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      if (!idToken) throw new Error('Not authenticated');
+      return idToken;
+    }
+    const token = await user.getIdToken(forceRefresh);
+    if (token && token !== idToken) {
+      setIdToken(token);
+      syncExtensionAuthToken(token);
+    }
+    return token;
+  }
+
+  async function authedRequest(url, options = {}, tokenOverride = '') {
+    const requestHeaders = { ...hdrs, ...(options.headers || {}) };
+    const requestOptions = { ...options, headers: requestHeaders };
+
+    let token = await resolveAuthToken(tokenOverride, false);
+    requestHeaders.Authorization = `Bearer ${token}`;
+    let response = await fetch(url, requestOptions);
+
+    if (!tokenOverride && response.status === 401) {
+      token = await resolveAuthToken('', true);
+      requestHeaders.Authorization = `Bearer ${token}`;
+      response = await fetch(url, requestOptions);
+    }
+
+    return response;
+  }
+
   async function apiFetch(url, options = {}) {
-    const headers = { ...hdrs, ...(options.headers || {}) };
-    if (!idToken) throw new Error('Not authenticated');
-    headers.Authorization = `Bearer ${idToken}`;
-    return fetch(url, { ...options, headers });
+    return authedRequest(url, options);
   }
 
   /* ── api helpers ── */
@@ -320,7 +409,7 @@ export default function App() {
     const tok = tokenOverride || idToken;
     if (!tok) return;
     try {
-      const r = await fetch(`${API_BASE}/auth/me`, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` } });
+      const r = await authedRequest(`${API_BASE}/auth/me`, {}, tok);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Failed to load profile');
       setGmailConnected(!!d.gmailConnected);
@@ -340,6 +429,8 @@ export default function App() {
   };
 
   async function disconnectGmail() {
+    if (gmailActionLoading) return;
+    setGmailActionLoading(true);
     try {
       const res = await authedFetch(`${API_BASE}/gmail/disconnect`, { method: 'POST' });
       const d = await res.json();
@@ -349,10 +440,14 @@ export default function App() {
       hydrateProfile();
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Failed to disconnect' });
+    } finally {
+      setGmailActionLoading(false);
     }
   }
 
   async function connectGmail() {
+    if (gmailActionLoading) return;
+    setGmailActionLoading(true);
     try {
       const res = await authedFetch(`${API_BASE}/gmail/connect`, { method: 'POST' });
       const d = await res.json();
@@ -360,16 +455,20 @@ export default function App() {
         setGmailConnected(true);
         setNotice({ type: 'success', message: 'Gmail already connected.' });
         hydrateProfile();
+        setGmailActionLoading(false);
         return;
       }
       if (!res.ok || !d.url) throw new Error(d.error || 'Failed to start Gmail connect');
       window.location.href = d.url;
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Failed to start Gmail connect' });
+      setGmailActionLoading(false);
     }
   }
 
   async function reconnectGmail() {
+    if (gmailActionLoading) return;
+    setGmailActionLoading(true);
     try {
       const res = await authedFetch(`${API_BASE}/gmail/reconnect`, { method: 'POST' });
       const d = await res.json();
@@ -377,6 +476,7 @@ export default function App() {
       window.location.href = d.url;
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Failed to restart Gmail connect' });
+      setGmailActionLoading(false);
     }
   }
 
@@ -389,7 +489,7 @@ export default function App() {
   }
 
   async function saveSenderPreference() {
-    if (!idToken) return;
+    if (!firebaseAuth.currentUser && !idToken) return;
     const nextName = (senderName || '').trim();
     if (nextName === savedSenderName) return;
     setSavingSenderName(true);
@@ -412,6 +512,7 @@ export default function App() {
   }
 
   async function logout() {
+    clearExtensionAuthToken();
     await signOut(firebaseAuth);
     setAppUser(null);
     setIdToken('');
@@ -421,11 +522,17 @@ export default function App() {
     setRecipients([]);
     setHistory([]);
     setDrafts([]);
+    setTemplates([]);
     setGroupImports([]);
     setNameFormat('first');
     setDraftId(null);
     setSubject('');
     setBody('');
+    setHistoryLoading(false);
+    setDraftsLoading(false);
+    setTemplatesLoading(false);
+    setContactsPageLoading(false);
+    setGmailActionLoading(false);
     navigateTo('/');
   }
 
@@ -492,16 +599,85 @@ export default function App() {
   }
 
   const authedFetch = async (url, options = {}, tokenOverride) => {
-    const tok = tokenOverride || idToken;
-    if (!tok) throw new Error('Not authenticated');
-    return fetch(url, { ...options, headers: { ...hdrs, ...(options.headers || {}), Authorization: `Bearer ${tok}` } });
+    return authedRequest(url, options, tokenOverride);
   };
 
-  const loadHistory = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/campaigns?view=history`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); setHistory(d); } catch (e) { setNotice({ type: 'error', message: e.message || 'Failed to load history' }); } };
-  const loadDrafts = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/campaigns?view=drafts`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed'); setDrafts(d); } catch (e) { setNotice({ type: 'error', message: e.message || 'Failed to load drafts' }); } };
-  const loadGroups = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/groups`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setGroups(d); } catch (e) { /* ignore silently — GroupManager handles its own loading */ } };
-  const loadTemplates = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/templates`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setTemplates(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
-  const loadVariables = async (tok) => { try { const r = await authedFetch(`${API_BASE}/api/variables`, {}, tok); const d = await r.json(); if (!r.ok) throw new Error(d.error); setVariables(d); } catch (e) { setNotice({ type: 'error', message: e.message }); } };
+  const loadHistory = async (tok) => {
+    setHistoryLoading(true);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/campaigns?view=history`, {}, tok);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setHistory(d);
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Failed to load history' });
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const loadDrafts = async (tok) => {
+    setDraftsLoading(true);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/campaigns?view=drafts`, {}, tok);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setDrafts(d);
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Failed to load drafts' });
+    } finally {
+      setDraftsLoading(false);
+    }
+  };
+
+  const loadGroups = async (tok) => {
+    try {
+      const r = await authedFetch(`${API_BASE}/api/groups`, {}, tok);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setGroups(d);
+    } catch (e) {
+      // ignore silently — GroupManager handles its own loading
+    }
+  };
+
+  const loadTemplates = async (tok) => {
+    setTemplatesLoading(true);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/templates`, {}, tok);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setTemplates(d);
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  const loadVariables = async (tok) => {
+    try {
+      const r = await authedFetch(`${API_BASE}/api/variables`, {}, tok);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setVariables(d);
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    }
+  };
+
+  useEffect(() => {
+    if (!appUser || pagePath !== '/contacts') return;
+    let mounted = true;
+    setContactsPageLoading(true);
+    loadGroups()
+      .finally(() => {
+        if (mounted) setContactsPageLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [appUser, pagePath]);
 
   /* ── helpers ── */
 
@@ -754,10 +930,13 @@ export default function App() {
 
   /* ── group actions ── */
 
-  function handleGroupImport(contacts, groupData, category) {
+  async function handleGroupImport(contacts, groupData, category) {
+    if (importingGroups) return;
+    setImportingGroups(true);
     const incoming = (contacts || []).filter(c => c?.email);
     if (!incoming.length) {
       setNotice({ type: 'error', message: 'No contacts to import' });
+      setImportingGroups(false);
       return;
     }
 
@@ -781,6 +960,7 @@ export default function App() {
     const dupeCount = incoming.length - additions.length;
     if (!additions.length) {
       setNotice({ type: 'info', message: 'All selected contacts are already in your recipients list.' });
+      setImportingGroups(false);
       return;
     }
 
@@ -799,6 +979,7 @@ export default function App() {
     ]));
     const baseMsg = `Imported ${additions.length} contact${additions.length !== 1 ? 's' : ''} from "${groupData?.companyName || 'group'}"`;
     setNotice({ type: 'info', message: dupeCount > 0 ? `${baseMsg}; ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} skipped.` : baseMsg });
+    setImportingGroups(false);
   }
 
   /* ── template actions ── */
@@ -1045,6 +1226,8 @@ export default function App() {
     );
   }
 
+  const isContactsPage = pagePath === '/contacts';
+
   return (
     <div className="shell">
       {/* ── HEADER ── */}
@@ -1055,6 +1238,10 @@ export default function App() {
             <b className="hdr__name">ReachFlow</b>
             <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
           </div>
+          <nav className="hdr__nav" aria-label="Main navigation">
+            <button className={`hdr__nav-link ${!isContactsPage ? 'hdr__nav-link--active' : ''}`} onClick={() => navigateTo('/')}>Dashboard</button>
+            <button className={`hdr__nav-link ${isContactsPage ? 'hdr__nav-link--active' : ''}`} onClick={() => navigateTo('/contacts')}>Contacts</button>
+          </nav>
         </div>
         <div className="hdr__right">
           <span className={`hdr__gmail-chip ${gmailConnected ? 'hdr__gmail-chip--ok' : 'hdr__gmail-chip--err'}`}>
@@ -1096,10 +1283,11 @@ export default function App() {
                   <button
                     className="hdr__dropdown-item"
                     onClick={() => confirmDisconnectGmail({ closeMenu: true })}
+                    disabled={gmailActionLoading}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <XCircle size={14} />
-                      Disconnect Gmail
+                      {gmailActionLoading ? 'Working…' : 'Disconnect Gmail'}
                     </span>
                   </button>
                 ) : (
@@ -1109,10 +1297,11 @@ export default function App() {
                       setUserMenuOpen(false);
                       await connectGmail();
                     }}
+                    disabled={gmailActionLoading}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <CheckCircle2 size={14} />
-                      Connect Gmail
+                      {gmailActionLoading ? 'Connecting…' : 'Connect Gmail'}
                     </span>
                   </button>
                 )}
@@ -1130,6 +1319,17 @@ export default function App() {
       </header>
 
       {/* ── MAIN ── */}
+      {isContactsPage ? (
+        <main className="main main--contacts">
+          {contactsPageLoading && <div className="contacts-page-loading">Loading contacts…</div>}
+          <GroupManager
+            open={isContactsPage}
+            onClose={() => navigateTo('/')}
+            authedFetch={authedFetch}
+            standalone
+          />
+        </main>
+      ) : (
       <main className="main">
         {/* LEFT */}
         <section className="side">
@@ -1162,7 +1362,7 @@ export default function App() {
                 <div className="rec-actions">
                   <button className="link" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual entry' : <><ClipboardPaste size={13} /> Paste Bulk</>}</button>
                   <span className="gm-dot-sep" aria-hidden="true">•</span>
-                  <button className="link" onClick={() => { loadGroups(); setImportModalOpen(true); }}><FileUp size={13} /> Import Group</button>
+                  <button className="link" onClick={() => { loadGroups(); setImportModalOpen(true); }} disabled={importingGroups}>{importingGroups ? 'Importing…' : <><FileUp size={13} /> Import Group</>}</button>
                 </div>
               </div>
 
@@ -1269,6 +1469,7 @@ export default function App() {
           </div>
         </section>
       </main>
+      )}
 
       {/* ── FOOTER ── */}
       <AppFooter onNavigate={navigateTo} />
@@ -1333,7 +1534,7 @@ export default function App() {
 
         {utilityTab === 'history' && (
           <div className="utility-panel">
-            {history.length ? history.map(h => (
+            {historyLoading ? <p className="muted">Loading history…</p> : history.length ? history.map(h => (
               <button className="hist-row" key={h.id} onClick={() => loadCampaign(h.id)}>
                 <div>
                   <b>{h.subject}</b><br />
@@ -1347,7 +1548,7 @@ export default function App() {
 
         {utilityTab === 'drafts' && (
           <div className="utility-panel">
-            {drafts.length ? drafts.map(d => (
+            {draftsLoading ? <p className="muted">Loading drafts…</p> : drafts.length ? drafts.map(d => (
               <button className="hist-row" key={d.id} onClick={() => loadCampaign(d.id)}>
                 <div>
                   <b>{d.subject || '(No subject)'}</b><br />
@@ -1370,7 +1571,7 @@ export default function App() {
               <h4>Templates</h4>
               <button className="link" onClick={openCreateTemplate}>+ Save current</button>
             </div>
-            {templates.length ? templates.map(t => (
+            {templatesLoading ? <p className="muted">Loading templates…</p> : templates.length ? templates.map(t => (
               <div className="utility-row" key={t.id}>
                 <div className="row__info" onClick={() => setTemplateDrawer(t)}>
                   <span className="utility-row__title">{t.title || t.subject}</span>
@@ -1415,13 +1616,13 @@ export default function App() {
                   </span>
                 </div>
                 {gmailConnected ? (
-                  <button className="settings-disconnect" onClick={() => confirmDisconnectGmail()}>Disconnect Gmail</button>
+                  <button className="settings-disconnect" onClick={() => confirmDisconnectGmail()} disabled={gmailActionLoading}>{gmailActionLoading ? 'Working…' : 'Disconnect Gmail'}</button>
                 ) : (
-                  <button className="link" onClick={connectGmail}>Connect</button>
+                  <button className="link" onClick={connectGmail} disabled={gmailActionLoading}>{gmailActionLoading ? 'Connecting…' : 'Connect'}</button>
                 )}
               </div>
-              <button className="link" onClick={confirmReconnectGmail} style={{ alignSelf: 'flex-start' }}>
-                Reconnect Gmail (fresh OAuth)
+              <button className="link" onClick={confirmReconnectGmail} style={{ alignSelf: 'flex-start' }} disabled={gmailActionLoading}>
+                {gmailActionLoading ? 'Working…' : 'Reconnect Gmail (fresh OAuth)'}
               </button>
             </div>
 

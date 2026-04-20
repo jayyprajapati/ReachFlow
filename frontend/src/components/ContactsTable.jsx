@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, Copy, Pencil, Trash2, Check, X, Mail, Linkedin } from 'lucide-react';
+import { Copy, Pencil, Trash2, Check, X, Mail, Linkedin } from 'lucide-react';
 
 function renderEmailStatus(status) {
   const safe = ['verified', 'tentative', 'not_valid'].includes(status) ? status : 'tentative';
@@ -36,8 +36,181 @@ export default function ContactsTable({
   onSave,
   onCancel,
   roleOptions,
-  connectionOptions,
+  alwaysShowNewRow = false,
+  newContactForm,
+  setNewContactForm,
+  onSaveNewEntry,
+  onResetNewEntry,
+  busyState = {},
 }) {
+  const emailStatusOptions = [
+    { value: 'verified', label: 'Valid' },
+    { value: 'tentative', label: 'Tentative' },
+    { value: 'not_valid', label: 'Invalid' },
+  ];
+
+  const linkedInStatusOptions = [
+    { value: 'connected', label: 'Connected' },
+    { value: 'request_sent', label: 'Pending' },
+    { value: 'not_connected', label: 'Not Connected' },
+  ];
+
+  function renderStatusSegments(options, value, onChange, name, disabled = false) {
+    return (
+      <div className="gm-segments" role="radiogroup" aria-label={name}>
+        {options.map(opt => (
+          <label key={opt.value} className={`gm-segment ${value === opt.value ? 'gm-segment--active' : ''}`}>
+            <input
+              type="radio"
+              name={name}
+              value={opt.value}
+              checked={value === opt.value}
+              disabled={disabled}
+              onChange={() => onChange(opt.value)}
+            />
+            <span>{opt.label}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  function renderEditableRow(form, setForm, opts = {}) {
+    const isNewRow = !!opts.isNewRow;
+    const saving = !!opts.saving;
+    const disableInputs = !!opts.disableInputs;
+    const onSaveRow = opts.onSaveRow;
+    const onSecondaryAction = opts.onSecondaryAction;
+    const secondaryTitle = opts.secondaryTitle || 'Cancel';
+
+    return (
+      <tr className="gm-ct-row gm-row--editing">
+        <td className="gm-ct-cell">
+          <div className="gm-ct-stack">
+            <input
+              className="gm-inp"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="Name"
+              autoFocus={isNewRow}
+              disabled={disableInputs}
+            />
+            <input
+              className="gm-inp"
+              value={form.linkedin}
+              onChange={e => setForm(f => ({ ...f, linkedin: e.target.value }))}
+              placeholder="LinkedIn URL"
+              disabled={disableInputs}
+            />
+          </div>
+        </td>
+        <td className="gm-ct-cell">
+          <input
+            className="gm-inp"
+            value={form.email}
+            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+            placeholder="Email"
+            disabled={disableInputs}
+          />
+        </td>
+        <td className="gm-ct-cell">
+          <select
+            className="gm-select"
+            value={form.role}
+            onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+            disabled={disableInputs}
+          >
+            {roleOptions.map(r => <option key={r} value={r}>{r || '—'}</option>)}
+          </select>
+        </td>
+        <td className="gm-ct-cell">
+          <div className="gm-ct-stack gm-ct-stack--status-edit">
+            <label className="gm-field-label"><Mail size={10} /> Email Status</label>
+            {renderStatusSegments(
+              emailStatusOptions,
+              form.email_status,
+              next => setForm(f => ({ ...f, email_status: next })),
+              `${isNewRow ? 'new' : 'edit'}-email-status`,
+              disableInputs,
+            )}
+
+            <label className="gm-field-label"><Linkedin size={10} /> LinkedIn Status</label>
+            {renderStatusSegments(
+              linkedInStatusOptions,
+              form.connectionStatus,
+              next => setForm(f => ({ ...f, connectionStatus: next })),
+              `${isNewRow ? 'new' : 'edit'}-linkedin-status`,
+              disableInputs,
+            )}
+          </div>
+        </td>
+        <td className="gm-ct-cell">
+          <div className="gm-ct-stack">
+            <label className="gm-field-label">Last Contacted</label>
+            <input
+              className="gm-inp"
+              type="date"
+              value={form.lastContactedDate}
+              onChange={e => setForm(f => ({ ...f, lastContactedDate: e.target.value }))}
+              disabled={disableInputs}
+            />
+            <div className="gm-history-count-edit">
+              <div className="gm-history-count-field">
+                <label className="gm-field-label"><Mail size={10} /> Count</label>
+                <input
+                  className="gm-inp"
+                  type="number"
+                  min="0"
+                  value={form.emailCount}
+                  onChange={e => setForm(f => ({ ...f, emailCount: e.target.value }))}
+                  disabled={disableInputs}
+                />
+              </div>
+              <div className="gm-history-count-field">
+                <label className="gm-field-label"><Linkedin size={10} /> Count</label>
+                <input
+                  className="gm-inp"
+                  type="number"
+                  min="0"
+                  value={form.linkedInCount}
+                  onChange={e => setForm(f => ({ ...f, linkedInCount: e.target.value }))}
+                  disabled={disableInputs}
+                />
+              </div>
+            </div>
+          </div>
+        </td>
+        <td className="gm-ct-cell gm-row-actions">
+          <button
+            className="gm-icon-btn gm-icon-btn--save"
+            onClick={onSaveRow}
+            title="Save"
+            disabled={saving || disableInputs}
+          >
+            <Check size={15} />
+          </button>
+          <button
+            className="gm-icon-btn"
+            onClick={onSecondaryAction}
+            title={secondaryTitle}
+            disabled={saving}
+          >
+            <X size={15} />
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  const tableBusy = !!busyState.tableBusy;
+  const savingExistingId = busyState.savingContactId || null;
+  const deletingId = busyState.deletingContactId || null;
+  const savingNewEntry = !!busyState.savingNewEntry;
+
+  const showTopNewRow = alwaysShowNewRow || editingContactId === '__new__';
+  const topRowForm = alwaysShowNewRow ? newContactForm : contactForm;
+  const setTopRowForm = alwaysShowNewRow ? setNewContactForm : setContactForm;
+
   return (
     <table className="gm-ct-table">
       <colgroup>
@@ -60,156 +233,25 @@ export default function ContactsTable({
       </thead>
 
       <tbody className="gm-ct-body">
-        {editingContactId === '__new__' && (
-          <tr className="gm-ct-row gm-row--editing">
-            <td className="gm-ct-cell">
-              <div className="gm-ct-stack">
-                <input
-                  className="gm-inp"
-                  value={contactForm.name}
-                  onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Name"
-                  autoFocus
-                />
-                <input
-                  className="gm-inp"
-                  value={contactForm.linkedin}
-                  onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))}
-                  placeholder="LinkedIn URL"
-                />
-              </div>
-            </td>
-            <td className="gm-ct-cell">
-              <input
-                className="gm-inp"
-                value={contactForm.email}
-                onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="Email"
-              />
-            </td>
-            <td className="gm-ct-cell">
-              <select
-                className="gm-select"
-                value={contactForm.role}
-                onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}
-              >
-                {roleOptions.map(r => <option key={r} value={r}>{r || '—'}</option>)}
-              </select>
-            </td>
-            <td className="gm-ct-cell">
-              <div className="gm-ct-stack">
-                <label className="gm-field-label"><Mail size={10} /> Email</label>
-                <select
-                  className="gm-select"
-                  value={contactForm.email_status}
-                  onChange={e => setContactForm(f => ({ ...f, email_status: e.target.value }))}
-                >
-                  <option value="verified">Verified</option>
-                  <option value="tentative">Tentative</option>
-                  <option value="not_valid">Not Valid</option>
-                </select>
-                <label className="gm-field-label"><Linkedin size={10} /> LinkedIn</label>
-                <select
-                  className="gm-select"
-                  value={contactForm.connectionStatus}
-                  onChange={e => setContactForm(f => ({ ...f, connectionStatus: e.target.value }))}
-                >
-                  {connectionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </div>
-            </td>
-            <td className="gm-ct-cell">
-              <div className="gm-ct-stack">
-                <label className="gm-field-label">Last Contacted</label>
-                <input
-                  className="gm-inp"
-                  type="date"
-                  value={contactForm.lastContactedDate}
-                  onChange={e => setContactForm(f => ({ ...f, lastContactedDate: e.target.value }))}
-                />
-                <div className="gm-history-count-edit">
-                  <div className="gm-history-count-field">
-                    <label className="gm-field-label"><Mail size={10} /> Count</label>
-                    <input
-                      className="gm-inp"
-                      type="number"
-                      min="0"
-                      value={contactForm.emailCount}
-                      onChange={e => setContactForm(f => ({ ...f, emailCount: e.target.value }))}
-                    />
-                  </div>
-                  <div className="gm-history-count-field">
-                    <label className="gm-field-label"><Linkedin size={10} /> Count</label>
-                    <input
-                      className="gm-inp"
-                      type="number"
-                      min="0"
-                      value={contactForm.linkedInCount}
-                      onChange={e => setContactForm(f => ({ ...f, linkedInCount: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </div>
-            </td>
-            <td className="gm-ct-cell gm-row-actions">
-              <button className="gm-icon-btn gm-icon-btn--save" onClick={onSave} title="Save"><Check size={15} /></button>
-              <button className="gm-icon-btn" onClick={onCancel} title="Cancel"><X size={15} /></button>
-            </td>
-          </tr>
-        )}
+        {showTopNewRow && topRowForm && setTopRowForm && renderEditableRow(topRowForm, setTopRowForm, {
+          isNewRow: true,
+          saving: savingNewEntry,
+          disableInputs: tableBusy,
+          onSaveRow: alwaysShowNewRow ? onSaveNewEntry : onSave,
+          onSecondaryAction: alwaysShowNewRow ? onResetNewEntry : onCancel,
+          secondaryTitle: alwaysShowNewRow ? 'Clear' : 'Cancel',
+        })}
 
         {contacts.map(c => (
           editingContactId === c.id ? (
-            <tr key={c.id} className="gm-ct-row gm-row--editing">
-              <td className="gm-ct-cell">
-                <div className="gm-ct-stack">
-                  <input className="gm-inp" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} />
-                  <input className="gm-inp" value={contactForm.linkedin} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL" />
-                </div>
-              </td>
-              <td className="gm-ct-cell">
-                <input className="gm-inp" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} />
-              </td>
-              <td className="gm-ct-cell">
-                <select className="gm-select" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
-                  {roleOptions.map(r => <option key={r} value={r}>{r || '—'}</option>)}
-                </select>
-              </td>
-              <td className="gm-ct-cell">
-                <div className="gm-ct-stack">
-                  <label className="gm-field-label"><Mail size={10} /> Email</label>
-                  <select className="gm-select" value={contactForm.email_status} onChange={e => setContactForm(f => ({ ...f, email_status: e.target.value }))}>
-                    <option value="verified">Verified</option>
-                    <option value="tentative">Tentative</option>
-                    <option value="not_valid">Not Valid</option>
-                  </select>
-                  <label className="gm-field-label"><Linkedin size={10} /> LinkedIn</label>
-                  <select className="gm-select" value={contactForm.connectionStatus} onChange={e => setContactForm(f => ({ ...f, connectionStatus: e.target.value }))}>
-                    {connectionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                  </select>
-                </div>
-              </td>
-              <td className="gm-ct-cell">
-                <div className="gm-ct-stack">
-                  <label className="gm-field-label">Last Contacted</label>
-                  <input className="gm-inp" type="date" value={contactForm.lastContactedDate} onChange={e => setContactForm(f => ({ ...f, lastContactedDate: e.target.value }))} />
-                  <div className="gm-history-count-edit">
-                    <div className="gm-history-count-field">
-                      <label className="gm-field-label"><Mail size={10} /> Count</label>
-                      <input className="gm-inp" type="number" min="0" value={contactForm.emailCount} onChange={e => setContactForm(f => ({ ...f, emailCount: e.target.value }))} />
-                    </div>
-                    <div className="gm-history-count-field">
-                      <label className="gm-field-label"><Linkedin size={10} /> Count</label>
-                      <input className="gm-inp" type="number" min="0" value={contactForm.linkedInCount} onChange={e => setContactForm(f => ({ ...f, linkedInCount: e.target.value }))} />
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td className="gm-ct-cell gm-row-actions">
-                <button className="gm-icon-btn gm-icon-btn--save" onClick={onSave} title="Save"><Check size={15} /></button>
-                <button className="gm-icon-btn" onClick={onCancel} title="Cancel"><X size={15} /></button>
-              </td>
-            </tr>
+            <React.Fragment key={c.id}>
+              {renderEditableRow(contactForm, setContactForm, {
+                saving: savingExistingId === c.id,
+                disableInputs: tableBusy,
+                onSaveRow: onSave,
+                onSecondaryAction: onCancel,
+              })}
+            </React.Fragment>
           ) : (
             <tr key={c.id} className="gm-ct-row">
               <td className="gm-ct-cell">
@@ -217,7 +259,7 @@ export default function ContactsTable({
                   {c.linkedin ? (
                     <a className="gm-name-link" href={c.linkedin} target="_blank" rel="noreferrer" title={c.name}>
                       <span className="gm-cell-ellipsis">{c.name}</span>
-                      <ExternalLink size={12} />
+                      <Linkedin size={12} />
                     </a>
                   ) : (
                     <span className="gm-cell-ellipsis" title={c.name}>{c.name}</span>
@@ -253,16 +295,22 @@ export default function ContactsTable({
                 </div>
               </td>
               <td className="gm-ct-cell gm-row-actions">
-                <button className="gm-icon-btn" onClick={() => onStartEdit(c)} title="Edit"><Pencil size={14} /></button>
-                <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => onDelete(c.id)} title="Delete"><Trash2 size={14} /></button>
+                <button className="gm-icon-btn" onClick={() => onStartEdit(c)} title="Edit" disabled={tableBusy}><Pencil size={14} /></button>
+                <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => onDelete(c.id)} title="Delete" disabled={tableBusy || deletingId === c.id}><Trash2 size={14} /></button>
               </td>
             </tr>
           )
         ))}
 
-        {!contacts.length && editingContactId !== '__new__' && (
+        {!contacts.length && editingContactId !== '__new__' && !alwaysShowNewRow && (
           <tr>
             <td colSpan={6} className="gm-empty-row">No contacts yet. Click &quot;+ Add Person&quot; to add one.</td>
+          </tr>
+        )}
+
+        {!contacts.length && alwaysShowNewRow && (
+          <tr>
+            <td colSpan={6} className="gm-empty-row">No saved contacts yet. Use the top row to add your first contact.</td>
           </tr>
         )}
       </tbody>
