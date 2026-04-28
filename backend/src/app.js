@@ -10,6 +10,7 @@ const { getAuthUrl, exchangeCodeForUser, verifyAuth, clearGmailAuthorization, ge
 const recipientRoutes = require('./routes/recipients');
 const { router: campaignRoutes } = require('./routes/campaigns');
 const groupRoutes = require('./routes/groups');
+const applicationRoutes = require('./routes/applications');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
 const {
@@ -20,6 +21,7 @@ const {
   Template,
   Campaign,
   SendLog,
+  Application,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -89,12 +91,13 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
       Variable.deleteMany({ userId }, opts),
       SendLog.deleteMany({ userId }, opts),
+      Application.deleteMany({ userId }, opts),
     ]);
 
     const userDeletion = await User.deleteOne({ _id: userId }, opts);
@@ -106,6 +109,7 @@ async function deleteCurrentUserAppData(user) {
       groups: groups.deletedCount || 0,
       variables: variables.deletedCount || 0,
       sendLogs: sendLogs.deletedCount || 0,
+      applications: applications.deletedCount || 0,
     };
     console.log('[data] Deletion summary:', JSON.stringify(summary));
     return summary;
@@ -385,6 +389,7 @@ app.get('/auth/google/callback', async (req, res) => {
 app.use('/api/recipients', requireAuth, recipientRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
 app.use('/api/groups', requireAuth, groupRoutes);
+app.use('/api/applications', requireAuth, applicationRoutes);
 app.use('/api/templates', requireAuth, templateRoutes);
 app.use('/api/variables', requireAuth, variableRoutes);
 
