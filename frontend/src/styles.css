@@ -21,6 +21,288 @@
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* ═══════════════════════════════════════
+   Applications Page
+   ═══════════════════════════════════════ */
+
+.main--applications {
+  display: block;
+  overflow: auto;
+}
+
+.applications-shell {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px;
+}
+
+.applications-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 4px 0;
+}
+
+.applications-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.applications-subtitle {
+  color: var(--sub);
+  font-size: 13px;
+  margin: 0;
+}
+
+.applications-input {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.app-textarea {
+  min-height: 140px;
+}
+
+.applications-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.applications-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.applications-statusbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.app-status-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sub);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-status-chip--active {
+  color: var(--blue);
+  border-color: #cfe3ff;
+  background: #f3f8ff;
+}
+
+.app-spin {
+  animation: appSpin 1s linear infinite;
+}
+
+@keyframes appSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.applications-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.app-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  cursor: pointer;
+}
+
+.app-select:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.app-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+}
+
+.app-input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.app-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  overflow-x: auto;
+}
+
+.app-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.app-table thead {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.app-table th {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.app-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f3;
+  vertical-align: middle;
+}
+
+.app-table tbody tr:hover {
+  background: #fafbfc;
+}
+
+.app-th-right {
+  text-align: right;
+}
+
+.app-row-actions {
+  text-align: right;
+}
+
+.app-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.app-company-panel {
+  border: 1px dashed #cfe3ff;
+  background: #f8fbff;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.app-company-panel__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.app-company-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.app-company-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.app-company-input {
+  min-width: 220px;
+  flex: 1;
+}
+
+.app-company-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-col-date { width: 12%; }
+.app-col-title { width: 26%; }
+.app-col-id { width: 14%; }
+.app-col-company { width: 22%; }
+.app-col-status { width: 14%; }
+.app-col-actions { width: 12%; }
+
+@media (max-width: 980px) {
+  .applications-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .applications-filters {
+    width: 100%;
+  }
+
+  .applications-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .applications-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 *,
 *::before,
 *::after {

@@ -152,6 +152,34 @@ const groupSchema = new mongoose.Schema(
 
 groupSchema.index({ userId: 1, updatedAt: -1 });
 
+const applicationSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    jobTitle: { type: String, trim: true, default: '' },
+    jobId: { type: String, trim: true, default: '' },
+    companyGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null, index: true },
+    companyNameSnapshot: { type: String, trim: true, default: '' },
+    status: {
+      type: String,
+      enum: ['applied', 'oa', 'interviewing', 'rejected', 'offer', 'ghosted', 'on_hold'],
+      default: 'applied',
+      index: true,
+    },
+    appliedDate: { type: Date, default: Date.now, index: true },
+    rawSourceText: { type: String, trim: true, default: '' },
+    encryptedPayload: { type: mongoose.Schema.Types.Mixed },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  }
+);
+
+applicationSchema.index({ userId: 1, appliedDate: -1 });
+applicationSchema.index({ userId: 1, status: 1, appliedDate: -1 });
+applicationSchema.index({ userId: 1, companyGroupId: 1, appliedDate: -1 });
+applicationSchema.index({ userId: 1, createdAt: -1 });
+
 const templateSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -173,11 +201,13 @@ const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables
 const Campaign = mongoose.model('Campaign', campaignSchema, 'reachflow_outreach_items');
 const SendLog = mongoose.model('SendLog', sendLogSchema, 'reachflow_send_logs');
 const Group = mongoose.model('Group', groupSchema, 'reachflow_groups');
+const Application = mongoose.model('Application', applicationSchema, 'reachflow_applications');
 const Template = mongoose.model('Template', templateSchema, 'reachflow_templates');
 const UserScopedModelNames = {
   users: 'reachflow_users',
   variables: 'reachflow_variables',
   groups: 'reachflow_groups',
+  applications: 'reachflow_applications',
   templates: 'reachflow_templates',
   campaigns: 'reachflow_outreach_items',
   sendlogs: 'reachflow_send_logs',
@@ -427,6 +457,7 @@ module.exports = {
   Campaign,
   SendLog,
   Group,
+  Application,
   Template,
   migrateUserSensitiveFields,
   migrateTemplateSensitiveFields,

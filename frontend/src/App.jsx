@@ -3,6 +3,7 @@ import ReactQuill, { Quill } from 'react-quill';
 import RecipientList from './components/RecipientList.jsx';
 import GroupManager from './components/GroupManager.jsx';
 import ImportGroupModal from './components/ImportGroupModal.jsx';
+import ApplicationsPage from './components/ApplicationsPage.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './components/TermsOfUsePage.jsx';
@@ -667,7 +668,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!appUser || pagePath !== '/contacts') return;
+    if (!appUser || (pagePath !== '/contacts' && pagePath !== '/applications')) return;
     let mounted = true;
     setContactsPageLoading(true);
     loadGroups()
@@ -1227,6 +1228,7 @@ export default function App() {
   }
 
   const isContactsPage = pagePath === '/contacts';
+  const isApplicationsPage = pagePath === '/applications';
 
   return (
     <div className="shell">
@@ -1239,8 +1241,9 @@ export default function App() {
             <p className="hdr__tagline">Track contacts, personalize emails, and manage outreach without spreadsheets.</p>
           </div>
           <nav className="hdr__nav" aria-label="Main navigation">
-            <button className={`hdr__nav-link ${!isContactsPage ? 'hdr__nav-link--active' : ''}`} onClick={() => navigateTo('/')}>Dashboard</button>
+            <button className={`hdr__nav-link ${!isContactsPage && !isApplicationsPage ? 'hdr__nav-link--active' : ''}`} onClick={() => navigateTo('/')}>Dashboard</button>
             <button className={`hdr__nav-link ${isContactsPage ? 'hdr__nav-link--active' : ''}`} onClick={() => navigateTo('/contacts')}>Contacts</button>
+            <button className={`hdr__nav-link ${isApplicationsPage ? 'hdr__nav-link--active' : ''}`} onClick={() => navigateTo('/applications')}>Applications</button>
           </nav>
         </div>
         <div className="hdr__right">
@@ -1327,6 +1330,18 @@ export default function App() {
             onClose={() => navigateTo('/')}
             authedFetch={authedFetch}
             standalone
+          />
+        </main>
+      ) : isApplicationsPage ? (
+        <main className="main main--applications">
+          <ApplicationsPage
+            authedFetch={authedFetch}
+            authKey={appUser?.firebaseUid || ''}
+            groups={groups}
+            onGroupsRefresh={loadGroups}
+            onGroupCreated={group => setGroups(prev => (prev.some(item => item.id === group.id) ? prev : [group, ...prev]))}
+            onNotify={setNotice}
+            onConfirm={setWarningDialog}
           />
         </main>
       ) : (
