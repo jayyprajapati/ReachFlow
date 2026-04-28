@@ -1,5 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, ClipboardPaste, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Building2, ClipboardPaste, Loader2, Plus, Trash2, Copy, Check, ChevronDown, ChevronUp, X } from 'lucide-react';
+
+function CopyButton({ text, title = "Copy" }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button 
+      className="gm-icon-btn" 
+      onClick={handleCopy} 
+      title={copied ? "Copied" : title}
+      style={{ padding: '4px', flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer' }}
+      type="button"
+    >
+      {copied ? <Check size={14} className="text-success" color="#10b981" /> : <Copy size={14} color="#8b8fa3" />}
+    </button>
+  );
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
@@ -132,15 +153,6 @@ function stripJobIdTokens(title) {
   return next;
 }
 
-function splitCompanyFromTitle(title) {
-  const cleaned = normalizeLine(title);
-  const atMatch = cleaned.match(/\bat\s+([A-Za-z0-9&.,'\- ]{2,})/i);
-  if (!atMatch) return { title: cleaned, company: '' };
-  const company = atMatch[1].split(/[-|]/)[0].trim();
-  const nextTitle = cleaned.replace(atMatch[0], '').trim();
-  return { title: nextTitle || cleaned, company };
-}
-
 function extractJobTitleAndId(lines, text) {
   const cleanedLines = lines.map(normalizeLine).filter(Boolean);
   const firstLine = cleanedLines[0] || '';
@@ -164,27 +176,82 @@ function extractJobTitleAndId(lines, text) {
   return { jobTitle: jobTitle.trim(), jobId: jobId.trim() };
 }
 
-function extractCompany(lines, titleLine) {
-  const cleaned = lines.map(normalizeLine).filter(Boolean);
-  const labeled = cleaned.find(line => COMPANY_LABEL.test(line));
-  if (labeled) return labeled.replace(COMPANY_LABEL, '').trim();
+function detectCompanyAndTitle(rawTitle, cleanedLines, knownGroups) {
+  let companyName = '';
+  let jobTitle = rawTitle;
 
-  const titleTarget = titleLine || cleaned[0] || '';
-  const atMatch = titleTarget.match(/\bat\s+([A-Za-z0-9&.,'\- ]{2,})/i);
-  if (atMatch) return atMatch[1].split(/[-|]/)[0].trim();
+  const labeled = cleanedLines.find(line => COMPANY_LABEL.test(line));
+  if (labeled) {
+    companyName = labeled.replace(COMPANY_LABEL, '').split(/[-|]/)[0].trim();
+  } else {
+    const atMatch = jobTitle.match(/\bat\s+([A-Za-z0-9&.,'\- ]{2,})/i);
+    if (atMatch) {
+      companyName = atMatch[1].split(/[-|]/)[0].trim();
+      jobTitle = jobTitle.replace(atMatch[0], '').trim();
+    } else if (jobTitle.includes(' - ')) {
+      const parts = jobTitle.split(' - ').map(p => p.trim());
+      if (parts.length === 2) {
+        const p0Lower = parts[0].toLowerCase();
+        const p1Lower = parts[1].toLowerCase();
+        const p0Match = knownGroups.find(g => g.toLowerCase() === p0Lower);
+        const p1Match = knownGroups.find(g => g.toLowerCase() === p1Lower);
+        
+        if (p0Match) {
+          companyName = p0Match; jobTitle = parts[1];
+        } else if (p1Match) {
+          companyName = p1Match; jobTitle = parts[0];
+        } else {
+          if (parts[0].split(' ').length <= 3 && parts[0].length < parts[1].length) {
+            companyName = parts[0]; jobTitle = parts[1];
+          } else {
+            companyName = parts[1]; jobTitle = parts[0];
+          }
+        }
+      }
+    }
+  }
 
-  return '';
+  if (!companyName && knownGroups && knownGroups.length > 0) {
+    const fullText = cleanedLines.join(' ');
+    const sortedGroups = [...knownGroups].sort((a, b) => b.length - a.length);
+    for (const group of sortedGroups) {
+      if (!group) continue;
+      const escapedGroup = group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escapedGroup}\\b`, 'i');
+      if (regex.test(fullText)) {
+        companyName = group;
+        const titleRegex = new RegExp(`\\s*[-|]?\\s*\\b${escapedGroup}\\b\\s*[-|]?\\s*`, 'i');
+        jobTitle = jobTitle.replace(titleRegex, ' ').trim();
+        jobTitle = jobTitle.replace(/^[-|]\s*/, '').replace(/\s*[-|]$/, '').trim();
+        break;
+      }
+    }
+  }
+
+  if (companyName && knownGroups && knownGroups.length > 0) {
+    const exactMatch = knownGroups.find(g => g.toLowerCase() === companyName.toLowerCase());
+    if (exactMatch) {
+      companyName = exactMatch;
+    } else {
+      companyName = '';
+    }
+  } else if (companyName && (!knownGroups || knownGroups.length === 0)) {
+     companyName = '';
+  }
+
+  return { companyName, jobTitle };
 }
 
-function parseApplicationBlock(block) {
+function parseApplicationBlock(block, knownGroups = []) {
   const text = String(block || '').trim();
   const lines = text.split('\n').map(line => line.trim());
-  const { jobTitle: rawTitle, jobId } = extractJobTitleAndId(lines, text);
-  const titleSplit = splitCompanyFromTitle(rawTitle);
-  const companyName = titleSplit.company || extractCompany(lines, rawTitle);
+  const { jobTitle: initialTitle, jobId } = extractJobTitleAndId(lines, text);
+  const cleanedLines = lines.map(normalizeLine).filter(Boolean);
+
+  const { companyName, jobTitle } = detectCompanyAndTitle(initialTitle, cleanedLines, knownGroups);
 
   return {
-    jobTitle: titleSplit.title || rawTitle,
+    jobTitle: jobTitle || initialTitle,
     jobId,
     companyName,
     rawSourceText: text,
@@ -251,7 +318,9 @@ export default function ApplicationsPage({
   const [deletingId, setDeletingId] = useState('');
   const [creatingGroupKey, setCreatingGroupKey] = useState('');
   const [filters, setFilters] = useState({ status: 'all', company: 'all' });
-  const [pendingCompanies, setPendingCompanies] = useState([]);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [addingCompanyForId, setAddingCompanyForId] = useState('');
+  const [newCompanyName, setNewCompanyName] = useState('');
 
   const authedFetchRef = useRef(authedFetch);
   const pendingChangesRef = useRef(new Map());
@@ -322,36 +391,8 @@ export default function ApplicationsPage({
     };
   }, []);
 
-  useEffect(() => {
-    setPendingCompanies(prev => prev.filter(entry => {
-      if (groupKeys.has(entry.key)) return false;
-      const stillRelevant = entry.applicationIds.some(id => {
-        const app = applications.find(item => item.id === id);
-        if (!app) return false;
-        if (app.companyGroupId) return false;
-        return normalizeCompanyKey(app.companyNameSnapshot) === entry.key;
-      });
-      return stillRelevant;
-    }));
-  }, [applications, groupKeys]);
-
-  function queuePendingCompany(name, applicationId) {
-    const key = normalizeCompanyKey(name);
-    if (!key || key.length < 3) return;
-    if (groupLookup.has(key)) return;
-
-    setPendingCompanies(prev => {
-      const existing = prev.find(entry => entry.key === key);
-      if (existing) {
-        return prev.map(entry => {
-          if (entry.key !== key) return entry;
-          const nextIds = Array.from(new Set([...entry.applicationIds, applicationId]));
-          return { ...entry, applicationIds: nextIds };
-        });
-      }
-      return [...prev, { key, name, editName: name, applicationIds: [applicationId] }];
-    });
-  }
+  // Pending companies effect removed
+  // queuePendingCompany removed
 
   async function saveApplication(id, patch) {
     if (!patch || !Object.keys(patch).length) return;
@@ -442,7 +483,7 @@ export default function ApplicationsPage({
 
     setParsing(true);
     const blocks = splitApplications(rawInput);
-    const parsed = parseApplicationBlock(blocks[0]);
+    const parsed = parseApplicationBlock(blocks[0], groupNames);
     if (blocks.length > 1 && onNotify) {
       onNotify({ type: 'info', message: 'Multiple entries detected. Use Bulk Paste to add all at once.' });
     }
@@ -485,9 +526,6 @@ export default function ApplicationsPage({
       if (!res.ok) throw new Error(data.error || 'Failed to add application');
 
       setApplications(prev => [data, ...prev]);
-      if (!matchedGroup && payload.companyNameSnapshot) {
-        queuePendingCompany(payload.companyNameSnapshot, data.id);
-      }
       setRawInput('');
     } catch (err) {
       if (onNotify) onNotify({ type: 'error', message: err.message || 'Failed to add application' });
@@ -508,7 +546,7 @@ export default function ApplicationsPage({
     setParsing(true);
     const blocks = splitApplications(rawInput);
     const entries = blocks
-      .map(parseApplicationBlock)
+      .map(b => parseApplicationBlock(b, groupNames))
       .filter(item => item.jobTitle || item.companyName || item.jobId);
     setParsing(false);
 
@@ -561,12 +599,7 @@ export default function ApplicationsPage({
       const created = Array.isArray(data) ? data : [];
       if (created.length) {
         setApplications(prev => [...created, ...prev]);
-        created.forEach((app, idx) => {
-          const source = payload[idx];
-          if (!source?.companyGroupId && source?.companyNameSnapshot) {
-            queuePendingCompany(source.companyNameSnapshot, app.id);
-          }
-        });
+        // Bulk import complete
       }
 
       setRawInput('');
@@ -633,14 +666,14 @@ export default function ApplicationsPage({
     updateApplication(id, { jobId: value }, true);
   }
 
-  async function confirmCreateGroup(entry) {
-    if (!entry?.editName || creatingGroupKey) return;
-    setCreatingGroupKey(entry.key);
+  async function handleSaveNewCompany(id) {
+    if (!newCompanyName.trim() || creatingGroupKey) return;
+    setCreatingGroupKey('creating');
     try {
       const res = await authedFetch(`${API_BASE}/api/groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName: entry.editName.trim() }),
+        body: JSON.stringify({ companyName: newCompanyName.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create group');
@@ -648,11 +681,9 @@ export default function ApplicationsPage({
       if (onGroupCreated) onGroupCreated(data);
       if (onGroupsRefresh) onGroupsRefresh();
 
-      entry.applicationIds.forEach(id => {
-        updateApplication(id, { companyGroupId: data.id, companyNameSnapshot: data.companyName }, false);
-      });
-
-      setPendingCompanies(prev => prev.filter(item => item.key !== entry.key));
+      updateApplication(id, { companyGroupId: data.id, companyNameSnapshot: data.companyName }, false);
+      setAddingCompanyForId('');
+      setNewCompanyName('');
     } catch (err) {
       if (onNotify) onNotify({ type: 'error', message: err.message || 'Failed to create group' });
     } finally {
@@ -698,89 +729,62 @@ export default function ApplicationsPage({
       </div>
 
       <div className="applications-input">
-        <textarea
-          className="inp app-textarea"
-          placeholder="Paste job description, title, or role details here..."
-          value={rawInput}
-          onChange={e => setRawInput(e.target.value)}
-          disabled={isBusy}
-        />
-        <div className="applications-toolbar">
-          <div className="applications-actions">
-            <button className="btn btn--primary" onClick={handleAddEntry} disabled={isBusy}>
-              <Plus size={14} />
-              {adding ? 'Adding...' : 'Add Entry'}
-            </button>
-            <button className="btn btn--ghost" onClick={handleBulkPaste} disabled={isBusy}>
-              <ClipboardPaste size={14} />
-              {bulkAdding ? 'Bulk import...' : 'Bulk Paste'}
-            </button>
-          </div>
-          <div className="applications-statusbar">
-            {parsing && (
-              <span className="app-status-chip app-status-chip--active">
-                <Loader2 size={12} className="app-spin" /> Parsing
-              </span>
-            )}
-            {adding && (
-              <span className="app-status-chip app-status-chip--active">
-                <Loader2 size={12} className="app-spin" /> Adding
-              </span>
-            )}
-            {bulkAdding && (
-              <span className="app-status-chip app-status-chip--active">
-                <Loader2 size={12} className="app-spin" /> Bulk import
-              </span>
-            )}
-            {creatingGroupKey && (
-              <span className="app-status-chip app-status-chip--active">
-                <Loader2 size={12} className="app-spin" /> Company creation
-              </span>
-            )}
-            {hasAutoSaving && (
-              <span className="app-status-chip">Auto-saving...</span>
-            )}
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: isExpanded ? '8px' : '0' }}>
+          <button className="btn btn--ghost btn--sm" onClick={() => setIsExpanded(!isExpanded)} style={{ gap: '4px', padding: '4px 8px', fontSize: '12px' }}>
+            {isExpanded ? <><ChevronUp size={14} /> Collapse</> : <><Plus size={14} /> Add Application</>}
+          </button>
         </div>
-      </div>
-
-      {pendingCompanies.length > 0 && (
-        <div className="app-company-panel">
-          <div className="app-company-panel__head">
-            <Building2 size={14} /> Create new company group?
-          </div>
-          {pendingCompanies.map(entry => (
-            <div className="app-company-card" key={entry.key}>
-              <div className="app-company-card__title">New company detected: {entry.name}. Create new company group?</div>
-              <input
-                className="inp app-company-input"
-                value={entry.editName}
-                placeholder="Edit company name"
-                onChange={e => {
-                  const value = e.target.value;
-                  setPendingCompanies(prev => prev.map(item => (item.key === entry.key ? { ...item, editName: value } : item)));
-                }}
-              />
-              <div className="app-company-actions">
-                <button
-                  className="btn btn--primary"
-                  onClick={() => confirmCreateGroup(entry)}
-                  disabled={!!creatingGroupKey}
-                >
-                  Confirm
+        {isExpanded && (
+          <>
+            <textarea
+              className="inp app-textarea"
+              placeholder="Paste job description, title, or role details here..."
+              value={rawInput}
+              onChange={e => setRawInput(e.target.value)}
+              disabled={isBusy}
+            />
+            <div className="applications-toolbar">
+              <div className="applications-actions">
+                <button className="btn btn--primary" onClick={handleAddEntry} disabled={isBusy}>
+                  <Plus size={14} />
+                  {adding ? 'Adding...' : 'Add Entry'}
                 </button>
-                <button
-                  className="btn btn--ghost"
-                  onClick={() => setPendingCompanies(prev => prev.filter(item => item.key !== entry.key))}
-                  disabled={!!creatingGroupKey}
-                >
-                  Cancel
+                <button className="btn btn--ghost" onClick={handleBulkPaste} disabled={isBusy}>
+                  <ClipboardPaste size={14} />
+                  {bulkAdding ? 'Bulk import...' : 'Bulk Paste'}
                 </button>
               </div>
+              <div className="applications-statusbar">
+                {parsing && (
+                  <span className="app-status-chip app-status-chip--active">
+                    <Loader2 size={12} className="app-spin" /> Parsing
+                  </span>
+                )}
+                {adding && (
+                  <span className="app-status-chip app-status-chip--active">
+                    <Loader2 size={12} className="app-spin" /> Adding
+                  </span>
+                )}
+                {bulkAdding && (
+                  <span className="app-status-chip app-status-chip--active">
+                    <Loader2 size={12} className="app-spin" /> Bulk import
+                  </span>
+                )}
+                {creatingGroupKey && (
+                  <span className="app-status-chip app-status-chip--active">
+                    <Loader2 size={12} className="app-spin" /> Company creation
+                  </span>
+                )}
+                {hasAutoSaving && (
+                  <span className="app-status-chip">Auto-saving...</span>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+          </>
+        )}
+      </div>
+
+
 
       <div className="app-table-wrap">
         {loading ? (
@@ -810,32 +814,67 @@ export default function ApplicationsPage({
                 <tr key={app.id}>
                   <td>{formatDate(app.appliedDate)}</td>
                   <td>
-                    <input
-                      className="app-input"
-                      value={app.jobTitle || ''}
-                      placeholder="Job title"
-                      onChange={e => handleJobTitleChange(app.id, e.target.value)}
-                      disabled={isBusy}
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input
+                        className="app-input"
+                        value={app.jobTitle || ''}
+                        placeholder="Job title"
+                        onChange={e => handleJobTitleChange(app.id, e.target.value)}
+                        disabled={isBusy}
+                      />
+                      <CopyButton text={app.jobTitle} title="Copy Job Title" />
+                    </div>
                   </td>
                   <td>
-                    <input
-                      className="app-input"
-                      value={app.jobId || ''}
-                      placeholder="Job ID"
-                      onChange={e => handleJobIdChange(app.id, e.target.value)}
-                      disabled={isBusy}
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input
+                        className="app-input"
+                        value={app.jobId || ''}
+                        placeholder="Job ID"
+                        onChange={e => handleJobIdChange(app.id, e.target.value)}
+                        disabled={isBusy}
+                      />
+                      <CopyButton text={app.jobId} title="Copy Job ID" />
+                    </div>
                   </td>
                   <td>
-                    <input
-                      className="app-input"
-                      list="app-company-options"
-                      value={app.companyNameSnapshot || ''}
-                      placeholder="Company"
-                      onChange={e => handleCompanyEdit(app.id, e.target.value)}
-                      disabled={isBusy}
-                    />
+                    {addingCompanyForId === app.id ? (
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <input
+                          className="app-input"
+                          value={newCompanyName}
+                          onChange={e => setNewCompanyName(e.target.value)}
+                          placeholder="New Company"
+                          autoFocus
+                        />
+                        <button className="gm-icon-btn" onClick={() => handleSaveNewCompany(app.id)} disabled={isBusy}><Check size={14}/></button>
+                        <button className="gm-icon-btn gm-icon-btn--danger" onClick={() => setAddingCompanyForId('')} disabled={isBusy}><X size={14}/></button>
+                      </div>
+                    ) : (
+                      <select
+                        className="app-select"
+                        value={app.companyNameSnapshot || ''}
+                        onChange={e => {
+                          if (e.target.value === '__ADD_NEW__') {
+                            setAddingCompanyForId(app.id);
+                            setNewCompanyName(app.companyNameSnapshot || '');
+                          } else {
+                            handleCompanyEdit(app.id, e.target.value);
+                          }
+                        }}
+                        disabled={isBusy}
+                        style={{ width: '100%' }}
+                      >
+                        <option value="" disabled>Select Company</option>
+                        {app.companyNameSnapshot && !groupNames.includes(app.companyNameSnapshot) && (
+                          <option value={app.companyNameSnapshot}>{app.companyNameSnapshot}</option>
+                        )}
+                        {groupNames.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                        <option value="__ADD_NEW__">+ Add New Company</option>
+                      </select>
+                    )}
                   </td>
                   <td>
                     <select
@@ -873,11 +912,7 @@ export default function ApplicationsPage({
         )}
       </div>
 
-      <datalist id="app-company-options">
-        {groupNames.map(name => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
+
     </div>
   );
 }
