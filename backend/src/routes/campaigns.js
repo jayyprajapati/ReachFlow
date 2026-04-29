@@ -2,7 +2,7 @@ const express = require('express');
 const { Types } = require('mongoose');
 const { Campaign, Group, SendLog, Variable } = require('../db');
 const { renderTemplate, validateVariables } = require('../services/templateService');
-const { sendMimeEmail } = require('../gmail');
+const { sendMimeEmail, validateAttachments } = require('../gmail');
 const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail, computeEmailHash } = require('../utils/dataSecurity');
 const { sanitizeEmailHtml } = require('../utils/sanitizeEmailHtml');
 
@@ -145,6 +145,15 @@ function validateRecipients(list) {
   return [];
 }
 
+function normalizeAttachment(att) {
+  return {
+    name: String(att.name || 'attachment').slice(0, 255).replace(/[^\w.\-\s]/g, '_'),
+    mimeType: String(att.mimeType || 'application/octet-stream'),
+    data: String(att.data || ''),
+    size: Number.isFinite(Number(att.size)) ? Math.max(0, Number(att.size)) : 0,
+  };
+}
+
 function buildCampaignPayload(input) {
   return {
     subject: String(input.subject || ''),
@@ -154,6 +163,7 @@ function buildCampaignPayload(input) {
     recipients: Array.isArray(input.recipients) ? input.recipients : [],
     variables: Array.isArray(input.variables) ? input.variables : [],
     group_imports: Array.isArray(input.group_imports) ? input.group_imports : [],
+    attachments: Array.isArray(input.attachments) ? input.attachments.map(normalizeAttachment) : [],
   };
 }
 
@@ -163,6 +173,7 @@ function decryptCampaignPayload(doc) {
     return {
       ...payload,
       body_html: sanitizeBody(payload.body_html || ''),
+      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
     };
   }
   return buildCampaignPayload({
@@ -180,6 +191,7 @@ function decryptCampaignPayload(doc) {
     })),
     variables: doc.variables || [],
     group_imports: doc.group_imports || [],
+    attachments: [],
   });
 }
 
@@ -298,7 +310,7 @@ async function sendCampaign(campaignId, user) {
     });
     const html = sanitizeBody(renderedHtml);
     try {
-      await sendMimeEmail({ user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name });
+      await sendMimeEmail({ user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name, attachments: payload.attachments || [] });
       const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
       if (target) target.status = 'sent';
       logs.push({ userId: user._id, sentAt: new Date() });
@@ -330,6 +342,7 @@ async function sendCampaign(campaignId, user) {
   }
 
   campaign.status = 'sent';
+  payload.attachments = []; // strip attachment data after sending
   await persistCampaignPayload(campaign, payload);
   console.log(`[campaign] Campaign marked as sent — campaignId: ${campaignId}, sent: ${sentCount}, failed: ${failedCount}`);
   return { status: 'sent', sentCount, failedCount };
@@ -337,12 +350,17 @@ async function sendCampaign(campaignId, user) {
 
 router.post('/', async (req, res) => {
   try {
-    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format, attachments } = req.body || {};
     if (!subject || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
     }
     if (!body_html || !body_html.trim()) {
       return res.status(400).json({ error: 'Body is required' });
+    }
+
+    if (attachments && attachments.length) {
+      const attErr = validateAttachments(attachments);
+      if (attErr) return res.status(400).json({ error: attErr });
     }
 
     const snapshotVariables = normalizeVariablesUsed(variables);
@@ -363,6 +381,7 @@ router.post('/', async (req, res) => {
       recipients: normalizedRecipients,
       variables: snapshotVariables,
       group_imports: normalizeGroupImports(group_imports),
+      attachments: attachments || [],
     });
 
     const doc = await Campaign.create({
@@ -421,6 +440,7 @@ router.get('/', async (req, res) => {
     const match = { userId: req.user._id };
     if (view === 'history') match.status = 'sent';
     if (view === 'drafts') match.status = 'draft';
+    if (view === 'scheduled') match.status = 'scheduled';
 
     const rows = await Campaign.find(match).sort({ updated_at: -1 });
     const payload = rows.map((row) => {
@@ -428,7 +448,8 @@ router.get('/', async (req, res) => {
       return {
         id: row._id.toString(),
         subject: decrypted.subject,
-        status: row.status === 'sent' ? 'sent' : 'draft',
+        status: row.status || 'draft',
+        scheduledAt: row.scheduledAt || null,
         created_at: row.created_at,
         updated_at: row.updated_at,
         recipient_count: row.recipient_count || decrypted.recipients.length || 0,
@@ -516,6 +537,79 @@ router.post('/preview', async (req, res) => {
   }
 });
 
+router.post('/schedule-send', async (req, res) => {
+  try {
+    if (!req.user.gmailConnected || !req.user.encryptedRefreshToken) {
+      return res.status(401).json({ error: 'Gmail not connected. Please connect your Gmail account.', authError: true });
+    }
+
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format, attachments, scheduledAt } = req.body || {};
+
+    if (!subject || !String(subject).trim()) return res.status(400).json({ error: 'Subject is required' });
+    if (!body_html || !String(body_html).trim()) return res.status(400).json({ error: 'Body is required' });
+    if (!scheduledAt) return res.status(400).json({ error: 'Scheduled time is required' });
+
+    const schedDate = new Date(scheduledAt);
+    if (isNaN(schedDate.getTime()) || schedDate <= new Date()) {
+      return res.status(400).json({ error: 'Scheduled time must be in the future' });
+    }
+
+    if (attachments && attachments.length) {
+      const attErr = validateAttachments(attachments);
+      if (attErr) return res.status(400).json({ error: attErr });
+    }
+
+    const snapshotVariables = normalizeVariablesUsed(variables);
+    const allowedVars = mergeVariableKeys(await getAllowedVariables(req.user._id), snapshotVariables);
+    const normalizedRecipients = normalizeRecipients(recipients, allowedVars);
+    const recErrors = validateRecipients(normalizedRecipients);
+    if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
+
+    const validation = validateVariables(body_html, allowedVars);
+    if (validation.unmatched) return res.status(400).json({ error: 'Invalid variable syntax detected.' });
+    if (validation.unknown.length) return res.status(400).json({ error: `Unknown variable {{${validation.unknown[0]}}} found.` });
+
+    const payload = buildCampaignPayload({
+      subject, body_html, sender_name: sender_name || '', name_format,
+      recipients: normalizedRecipients,
+      variables: snapshotVariables,
+      group_imports: normalizeGroupImports(group_imports),
+      attachments: attachments || [],
+    });
+
+    const doc = await Campaign.create({
+      userId: req.user._id,
+      encryptedPayload: encryptJson(payload),
+      recipient_count: payload.recipients.length,
+      variable_count: payload.variables.length,
+      send_mode: 'individual',
+      status: 'scheduled',
+      scheduledAt: schedDate,
+    });
+
+    return res.json({ id: doc._id.toString(), status: 'scheduled', scheduledAt: schedDate });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to schedule campaign' });
+  }
+});
+
+router.delete('/:id/cancel-schedule', async (req, res) => {
+  const { id } = req.params;
+  if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const campaign = await Campaign.findOne({ _id: id, userId: req.user._id, status: 'scheduled' });
+    if (!campaign) return res.status(404).json({ error: 'Scheduled campaign not found' });
+    const payload = decryptCampaignPayload(campaign);
+    payload.attachments = [];
+    campaign.status = 'draft';
+    campaign.scheduledAt = null;
+    await persistCampaignPayload(campaign, payload);
+    return res.json({ id: campaign._id.toString(), status: 'draft' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to cancel scheduled send' });
+  }
+});
+
 router.post('/send-now', async (req, res) => {
   const { confirm_bulk_send } = req.body || {};
 
@@ -526,7 +620,7 @@ router.post('/send-now', async (req, res) => {
       throw authErr;
     }
 
-    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format } = req.body || {};
+    const { subject, body_html, recipients, sender_name, variables, group_imports, name_format, attachments } = req.body || {};
     if (!subject || !String(subject).trim()) return res.status(400).json({ error: 'Subject is required' });
     if (!body_html || !String(body_html).trim()) return res.status(400).json({ error: 'Body is required' });
 
@@ -536,6 +630,11 @@ router.post('/send-now', async (req, res) => {
     const recErrors = validateRecipients(normalizedRecipients);
     if (recErrors.length) return res.status(400).json({ error: recErrors[0] });
 
+    if (attachments && attachments.length) {
+      const attErr = validateAttachments(attachments);
+      if (attErr) return res.status(400).json({ error: attErr });
+    }
+
     const payload = buildCampaignPayload({
       subject,
       body_html,
@@ -544,6 +643,7 @@ router.post('/send-now', async (req, res) => {
       recipients: normalizedRecipients,
       variables: snapshotVariables,
       group_imports: normalizeGroupImports(group_imports),
+      attachments: attachments || [],
     });
 
     const recipientCount = payload.recipients.length;
@@ -580,7 +680,7 @@ router.post('/send-now', async (req, res) => {
       });
       const html = sanitizeBody(renderedHtml);
       try {
-        await sendMimeEmail({ user: req.user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name });
+        await sendMimeEmail({ user: req.user, to: recipient.email, subject: payload.subject, html, senderName: payload.sender_name, attachments: payload.attachments || [] });
         const target = payload.recipients.find(r => String(r._id) === String(recipient._id));
         if (target) target.status = 'sent';
         logs.push({ userId: req.user._id, sentAt: new Date() });
@@ -601,6 +701,7 @@ router.post('/send-now', async (req, res) => {
       throw new Error(`All emails failed: ${lastError.message}`);
     }
 
+    payload.attachments = []; // strip attachment data before storing
     const doc = await Campaign.create({
       userId: req.user._id,
       encryptedPayload: encryptJson(payload),
@@ -738,7 +839,36 @@ router.post('/:id/send', async (req, res) => {
   }
 });
 
+async function processScheduledCampaigns(User) {
+  try {
+    const now = new Date();
+    const due = await Campaign.find({ status: 'scheduled', scheduledAt: { $lte: now } });
+    if (!due.length) return;
+    console.log(`[scheduler] Found ${due.length} scheduled campaign(s) due for sending`);
+    for (const campaign of due) {
+      try {
+        const user = await User.findById(campaign.userId);
+        if (!user || !user.gmailConnected || !user.encryptedRefreshToken) {
+          console.warn(`[scheduler] Campaign ${campaign._id} skipped — user not connected`);
+          campaign.status = 'failed';
+          await campaign.save();
+          continue;
+        }
+        await sendCampaign(campaign._id.toString(), user);
+        console.log(`[scheduler] Campaign ${campaign._id} sent successfully`);
+      } catch (err) {
+        console.error(`[scheduler] Campaign ${campaign._id} failed:`, err.message);
+        campaign.status = 'failed';
+        await campaign.save();
+      }
+    }
+  } catch (err) {
+    console.error('[scheduler] Worker error:', err.message);
+  }
+}
+
 module.exports = {
   router,
   sendCampaign,
+  processScheduledCampaigns,
 };

@@ -342,6 +342,79 @@ async function verifyAuth(user) {
   }
 }
 
+/* ── Gmail-safe HTML utilities ── */
+
+const QUILL_FONT_MAP = {
+  arial: 'Arial, Helvetica, sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  georgia: 'Georgia, serif',
+  'times-new-roman': '"Times New Roman", Times, serif',
+  tahoma: 'Tahoma, Geneva, sans-serif',
+  'trebuchet-ms': '"Trebuchet MS", Helvetica, sans-serif',
+};
+
+const QUILL_SIZE_MAP = {
+  small: '0.75em',
+  large: '1.5em',
+  huge: '2.5em',
+};
+
+function quillClassesToInlineStyles(html) {
+  // Convert span Quill font/size classes to inline styles
+  html = html.replace(/<span([^>]*)>/g, (match, attrs) => {
+    const classMatch = attrs.match(/class="([^"]*)"/);
+    if (!classMatch) return match;
+
+    const classes = classMatch[1].split(/\s+/);
+    const newStyles = [];
+
+    for (const cls of classes) {
+      const fontM = cls.match(/^ql-font-(.+)$/);
+      if (fontM && QUILL_FONT_MAP[fontM[1]]) {
+        newStyles.push(`font-family: ${QUILL_FONT_MAP[fontM[1]]}`);
+      }
+      const sizeM = cls.match(/^ql-size-(.+)$/);
+      if (sizeM && QUILL_SIZE_MAP[sizeM[1]]) {
+        newStyles.push(`font-size: ${QUILL_SIZE_MAP[sizeM[1]]}`);
+      }
+    }
+
+    if (!newStyles.length) return match;
+
+    const existingStyleM = attrs.match(/style="([^"]*)"/);
+    let newAttrs;
+    if (existingStyleM) {
+      const combined = `${existingStyleM[1].replace(/;?\s*$/, '')}; ${newStyles.join('; ')}`;
+      newAttrs = attrs.replace(/style="[^"]*"/, `style="${combined}"`);
+    } else {
+      newAttrs = attrs + ` style="${newStyles.join('; ')}"`;
+    }
+    return `<span${newAttrs}>`;
+  });
+
+  // Convert paragraph alignment classes to inline style
+  html = html.replace(/<(p|h[1-6]|div)([^>]*)\bclass="([^"]*)"([^>]*)>/g, (match, tag, before, cls, after) => {
+    const alignM = cls.match(/ql-align-(left|center|right|justify)/);
+    if (!alignM) return match;
+    const textAlign = alignM[1];
+    const existingStyleM = (before + after).match(/style="([^"]*)"/);
+    if (existingStyleM) {
+      const combined = `${existingStyleM[1].replace(/;?\s*$/, '')}; text-align: ${textAlign}`;
+      const newBefore = before.replace(/style="[^"]*"/, '');
+      const newAfter = after.replace(/style="[^"]*"/, '');
+      return `<${tag}${newBefore}class="${cls}"${newAfter} style="${combined}">`;
+    }
+    return `<${tag}${before}class="${cls}"${after} style="text-align: ${textAlign}">`;
+  });
+
+  return html;
+}
+
+function wrapForGmail(html) {
+  const processed = quillClassesToInlineStyles(html);
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#ffffff;"><div style="max-width:600px;margin:0 auto;padding:20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#333333;">${processed}</div></body></html>`;
+}
+
 /* ── MIME email sender ── */
 
 function toBase64Url(str) {
@@ -352,8 +425,39 @@ function toBase64Url(str) {
     .replace(/=+$/, '');
 }
 
-async function sendMimeEmail({ user, to, subject, html, senderName }) {
-  logInfo(LOG_PREFIX.gmail, `Preparing to send email — to: ${Array.isArray(to) ? to.join(', ') : to}, subject: "${subject}", userId: ${user._id}`);
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+]);
+
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024; // 20MB
+
+function validateAttachments(attachments) {
+  if (!Array.isArray(attachments) || !attachments.length) return null;
+  if (attachments.length > MAX_ATTACHMENTS) {
+    return `Max ${MAX_ATTACHMENTS} attachments allowed`;
+  }
+  let totalSize = 0;
+  for (const att of attachments) {
+    if (!ALLOWED_ATTACHMENT_TYPES.has(att.mimeType)) {
+      return `File type not allowed: ${att.mimeType}`;
+    }
+    totalSize += att.size || 0;
+  }
+  if (totalSize > MAX_ATTACHMENT_TOTAL_BYTES) {
+    return 'Total attachment size exceeds 20MB';
+  }
+  return null;
+}
+
+async function sendMimeEmail({ user, to, subject, html, senderName, attachments = [] }) {
+  logInfo(LOG_PREFIX.gmail, `Preparing to send email — to: ${Array.isArray(to) ? to.join(', ') : to}, subject: "${subject}", userId: ${user._id}, attachments: ${attachments.length}`);
 
   const auth = await getAuthorizedClient(user, { verifyAccess: true });
   const gmail = google.gmail({ version: 'v1', auth });
@@ -382,18 +486,58 @@ async function sendMimeEmail({ user, to, subject, html, senderName }) {
   );
 
   const toHeader = Array.isArray(to) ? to.join(', ') : to;
-  const messageParts = [
-    `From: ${displayName} <${identity.sendAsEmail}>`,
-    `To: ${toHeader}`,
-    `Subject: ${subject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset="UTF-8"',
-    '',
-    html,
-  ];
+  const wrappedHtml = wrapForGmail(html);
 
-  const message = messageParts.join('\r\n');
-  const encodedMessage = toBase64Url(message);
+  let rawMessage;
+
+  if (attachments.length > 0) {
+    const boundary = `rfboundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    const headerLines = [
+      `From: ${displayName} <${identity.sendAsEmail}>`,
+      `To: ${toHeader}`,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      '',
+    ].join('\r\n');
+
+    const htmlPart = [
+      `--${boundary}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from(wrappedHtml, 'utf8').toString('base64'),
+      '',
+    ].join('\r\n');
+
+    let attParts = '';
+    for (const att of attachments) {
+      attParts += [
+        `--${boundary}`,
+        `Content-Type: ${att.mimeType}; name="${att.name}"`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Disposition: attachment; filename="${att.name}"`,
+        '',
+        att.data,
+        '',
+      ].join('\r\n');
+    }
+
+    rawMessage = headerLines + htmlPart + attParts + `--${boundary}--`;
+  } else {
+    rawMessage = [
+      `From: ${displayName} <${identity.sendAsEmail}>`,
+      `To: ${toHeader}`,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset="UTF-8"',
+      '',
+      wrappedHtml,
+    ].join('\r\n');
+  }
+
+  const encodedMessage = toBase64Url(rawMessage);
 
   logInfo(LOG_PREFIX.gmail, `Sending email via Gmail API — from: ${displayName} <${identity.sendAsEmail}>, to: ${toHeader}`);
 
@@ -428,5 +572,6 @@ module.exports = {
   clearGmailAuthorization,
   ensureFreshAccessToken,
   introspectTokenScopes,
+  validateAttachments,
   REQUIRED_SCOPES,
 };

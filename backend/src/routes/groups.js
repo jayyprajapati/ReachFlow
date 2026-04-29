@@ -150,6 +150,7 @@ router.get('/', async (req, res) => {
       id: g._id.toString(),
       companyName: g.companyName,
       logoUrl: g.logoUrl || '',
+      careersPageUrl: g.careersPageUrl || '',
       contactCount: Number.isFinite(Number(g.contactCount)) ? Number(g.contactCount) : (g.contacts || []).length,
       createdAt: g.createdAt,
       updatedAt: g.updatedAt,
@@ -170,6 +171,7 @@ router.get('/:id', async (req, res) => {
       id: group._id.toString(),
       companyName: group.companyName,
       logoUrl: group.logoUrl || '',
+      careersPageUrl: group.careersPageUrl || '',
       contacts: (group.contacts || []).map(toContactPayload),
       createdAt: group.createdAt,
       updatedAt: group.updatedAt,
@@ -180,7 +182,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { companyName, logoUrl } = req.body || {};
+  const { companyName, logoUrl, careersPageUrl } = req.body || {};
   if (!companyName || !companyName.trim()) {
     return res.status(400).json({ error: 'Company name is required' });
   }
@@ -191,10 +193,11 @@ router.post('/', async (req, res) => {
       companyName: companyName.trim(),
       companyKey: normalizedCompany,
       logoUrl: (logoUrl || '').trim(),
+      careersPageUrl: (careersPageUrl || '').trim(),
       contacts: [],
       contactCount: 0,
     });
-    res.json({ id: doc._id.toString(), companyName: doc.companyName, logoUrl: doc.logoUrl || '' });
+    res.json({ id: doc._id.toString(), companyName: doc.companyName, logoUrl: doc.logoUrl || '', careersPageUrl: doc.careersPageUrl || '' });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to create group' });
   }
@@ -203,7 +206,7 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const { id } = req.params;
   if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
-  const { companyName, logoUrl } = req.body || {};
+  const { companyName, logoUrl, careersPageUrl } = req.body || {};
   try {
     const group = await Group.findOne({ _id: id, userId: req.user._id });
     if (!group) return res.status(404).json({ error: 'Not found' });
@@ -213,8 +216,9 @@ router.patch('/:id', async (req, res) => {
       group.companyKey = normalizeCompanyKey(companyName);
     }
     if (logoUrl !== undefined) group.logoUrl = (logoUrl || '').trim();
+    if (careersPageUrl !== undefined) group.careersPageUrl = (careersPageUrl || '').trim();
     await group.save();
-    res.json({ id: group._id.toString(), companyName: group.companyName, logoUrl: group.logoUrl || '' });
+    res.json({ id: group._id.toString(), companyName: group.companyName, logoUrl: group.logoUrl || '', careersPageUrl: group.careersPageUrl || '' });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to update group' });
   }

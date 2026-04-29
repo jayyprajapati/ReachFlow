@@ -1,20 +1,70 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Clock, Loader } from 'lucide-react';
+import { Clock, Loader, Calendar, X } from 'lucide-react';
 
 export default function HistoryPage() {
-  const { history, historyLoading, loadHistory, drafts, draftsLoading, loadDrafts } = useApp();
+  const { API_BASE, authedFetch, setNotice, history, historyLoading, loadHistory, drafts, draftsLoading, loadDrafts, scheduled, scheduledLoading, loadScheduled } = useApp();
+  const [cancellingId, setCancellingId] = useState(null);
 
-  useEffect(() => { loadHistory(); loadDrafts(); }, []);
+  useEffect(() => { loadHistory(); loadDrafts(); loadScheduled(); }, []);
 
-  if (historyLoading && draftsLoading) return <div className="rf-empty"><div className="rf-spinner"><Loader size={24} /></div><p className="rf-text-muted">Loading…</p></div>;
+  async function cancelScheduled(id) {
+    if (cancellingId) return;
+    setCancellingId(id);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/campaigns/${id}/cancel-schedule`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to cancel');
+      setNotice({ type: 'info', message: 'Scheduled send cancelled' });
+      loadScheduled(); loadDrafts();
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Failed to cancel scheduled send' });
+    } finally { setCancellingId(null); }
+  }
+
+  const isLoading = historyLoading && draftsLoading && scheduledLoading;
+  if (isLoading) return <div className="rf-empty"><div className="rf-spinner"><Loader size={24} /></div><p className="rf-text-muted">Loading…</p></div>;
 
   return (
     <div className="rf-history">
       <div className="rf-page-header">
-        <div><h1 className="rf-page-header__title">History</h1><p className="rf-page-header__subtitle">Sent campaigns and drafts</p></div>
+        <div><h1 className="rf-page-header__title">History</h1><p className="rf-page-header__subtitle">Sent campaigns, scheduled sends, and drafts</p></div>
       </div>
 
+      {/* Scheduled */}
+      {scheduled.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 'var(--rf-text-md)', fontWeight: 600, color: 'var(--rf-text-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--rf-sp-2)' }}>
+            <Calendar size={15} />Scheduled
+          </h3>
+          <div className="rf-history__list">
+            {scheduled.map(s => (
+              <div key={s.id} className="rf-history-item">
+                <div className="rf-history-item__info">
+                  <div className="rf-history-item__subject">{s.subject || '(No subject)'}</div>
+                  <div className="rf-history-item__date">
+                    Sends at: {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : '—'}
+                  </div>
+                </div>
+                <div className="rf-history-item__meta">
+                  <span className="rf-badge rf-badge--scheduled">scheduled</span>
+                  <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>{s.recipient_count} recipients</span>
+                  <button
+                    className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                    title="Cancel scheduled send"
+                    onClick={() => cancelScheduled(s.id)}
+                    disabled={cancellingId === s.id}
+                  >
+                    {cancellingId === s.id ? <Loader size={13} style={{ animation: 'rf-spin 1s linear infinite' }} /> : <X size={13} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Drafts */}
       {drafts.length > 0 && (
         <>
           <h3 style={{ fontSize: 'var(--rf-text-md)', fontWeight: 600, color: 'var(--rf-text-secondary)' }}>Drafts</h3>
@@ -35,6 +85,7 @@ export default function HistoryPage() {
         </>
       )}
 
+      {/* Sent */}
       <h3 style={{ fontSize: 'var(--rf-text-md)', fontWeight: 600, color: 'var(--rf-text-secondary)' }}>Sent</h3>
       {history.length ? (
         <div className="rf-history__list">

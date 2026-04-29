@@ -63,6 +63,8 @@ export function AppProvider({ children }) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
+  const [scheduled, setScheduled] = useState([]);
+  const [scheduledLoading, setScheduledLoading] = useState(false);
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
@@ -143,6 +145,18 @@ export function AppProvider({ children }) {
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Failed to load drafts' });
     } finally { setDraftsLoading(false); }
+  };
+
+  const loadScheduled = async (tok) => {
+    setScheduledLoading(true);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/campaigns?view=scheduled`, {}, tok);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      setScheduled(d);
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Failed to load scheduled campaigns' });
+    } finally { setScheduledLoading(false); }
   };
 
   const loadGroups = async (tok) => {
@@ -239,7 +253,7 @@ export function AppProvider({ children }) {
     await signOut(firebaseAuth);
     setAppUser(null); setIdToken(''); setGmailConnected(false);
     setSenderName(''); setSavedSenderName('');
-    setGroups([]); setHistory([]); setDrafts([]); setTemplates([]); setVariables([]);
+    setGroups([]); setHistory([]); setDrafts([]); setScheduled([]); setTemplates([]); setVariables([]);
   }
 
   async function saveSenderPreference() {
@@ -314,11 +328,11 @@ export function AppProvider({ children }) {
         syncExtensionAuthToken(token);
         setAppUser({ email: user.email, displayName: user.displayName, firebaseUid: user.uid });
         await hydrateProfile(token);
-        loadVariables(token); loadHistory(token); loadDrafts(token); loadGroups(token); loadTemplates(token);
+        loadVariables(token); loadHistory(token); loadDrafts(token); loadScheduled(token); loadGroups(token); loadTemplates(token);
       } else {
         clearExtensionAuthToken();
         setAppUser(null); setIdToken(''); setGmailConnected(false); setSenderName(''); setSavedSenderName('');
-        setGroups([]); setHistory([]); setDrafts([]); setTemplates([]); setVariables([]);
+        setGroups([]); setHistory([]); setDrafts([]); setScheduled([]); setTemplates([]); setVariables([]);
       }
     });
     return () => unsub();
@@ -369,12 +383,13 @@ export function AppProvider({ children }) {
     variables, setVariables, loadVariables,
     history, historyLoading, loadHistory,
     drafts, draftsLoading, loadDrafts,
+    scheduled, scheduledLoading, loadScheduled,
     hydrateProfile,
   }), [
     appUser, authLoading, idToken, gmailConnected, gmailActionLoading,
     senderName, savedSenderName, savingSenderName, grantedScopes, requiredScopes,
     notice, warningDialog, groups, templates, templatesLoading,
-    variables, history, historyLoading, drafts, draftsLoading,
+    variables, history, historyLoading, drafts, draftsLoading, scheduled, scheduledLoading,
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -8,7 +8,7 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { getAuthUrl, exchangeCodeForUser, verifyAuth, clearGmailAuthorization, getAuthorizedClient, introspectTokenScopes, REQUIRED_SCOPES } = require('./gmail');
 const recipientRoutes = require('./routes/recipients');
-const { router: campaignRoutes } = require('./routes/campaigns');
+const { router: campaignRoutes, processScheduledCampaigns } = require('./routes/campaigns');
 const groupRoutes = require('./routes/groups');
 const applicationRoutes = require('./routes/applications');
 const templateRoutes = require('./routes/templates');
@@ -135,7 +135,7 @@ async function deleteCurrentUserAppData(user) {
 
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '30mb' }));
 app.use(
   cors({
     origin: FRONTEND_ORIGIN,
@@ -401,6 +401,10 @@ connectMongo()
       console.log(`[boot] Frontend origin: ${FRONTEND_ORIGIN}`);
       console.log(`[boot] Environment: ${isProd ? 'production' : 'development'}`);
     });
+
+    // Scheduled campaign worker — checks every 60 seconds for due campaigns
+    setInterval(() => processScheduledCampaigns(User), 60 * 1000);
+    console.log('[boot] Scheduled campaign worker started (60s interval)');
   })
   .catch(err => {
     console.error('[boot] Failed to connect to MongoDB:', err.message);
