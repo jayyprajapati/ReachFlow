@@ -342,6 +342,130 @@ async function verifyAuth(user) {
   }
 }
 
+/* ── Gmail-safe HTML utilities ── */
+
+const QUILL_FONT_MAP = {
+  arial: 'Arial, Helvetica, sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  georgia: 'Georgia, serif',
+  'times-new-roman': '"Times New Roman", Times, serif',
+  tahoma: 'Tahoma, Geneva, sans-serif',
+  'trebuchet-ms': '"Trebuchet MS", Helvetica, sans-serif',
+};
+
+const QUILL_SIZE_MAP = {
+  small: '0.75em',
+  large: '1.5em',
+  huge: '2.5em',
+};
+
+function quillClassesToInlineStyles(html) {
+  // Convert span Quill font/size classes to inline styles
+  html = html.replace(/<span([^>]*)>/g, (match, attrs) => {
+    const classMatch = attrs.match(/class="([^"]*)"/);
+    if (!classMatch) return match;
+
+    const classes = classMatch[1].split(/\s+/);
+    const newStyles = [];
+
+    for (const cls of classes) {
+      const fontM = cls.match(/^ql-font-(.+)$/);
+      if (fontM && QUILL_FONT_MAP[fontM[1]]) {
+        newStyles.push(`font-family: ${QUILL_FONT_MAP[fontM[1]]}`);
+      }
+      const sizeM = cls.match(/^ql-size-(.+)$/);
+      if (sizeM && QUILL_SIZE_MAP[sizeM[1]]) {
+        newStyles.push(`font-size: ${QUILL_SIZE_MAP[sizeM[1]]}`);
+      }
+    }
+
+    if (!newStyles.length) return match;
+
+    const existingStyleM = attrs.match(/style="([^"]*)"/);
+    let newAttrs;
+    if (existingStyleM) {
+      const combined = `${existingStyleM[1].replace(/;?\s*$/, '')}; ${newStyles.join('; ')}`;
+      newAttrs = attrs.replace(/style="[^"]*"/, `style="${combined}"`);
+    } else {
+      newAttrs = attrs + ` style="${newStyles.join('; ')}"`;
+    }
+    return `<span${newAttrs}>`;
+  });
+
+  // Convert paragraph alignment classes to inline style
+  html = html.replace(/<(p|h[1-6]|div)([^>]*)\bclass="([^"]*)"([^>]*)>/g, (match, tag, before, cls, after) => {
+    const alignM = cls.match(/ql-align-(left|center|right|justify)/);
+    if (!alignM) return match;
+    const textAlign = alignM[1];
+    const existingStyleM = (before + after).match(/style="([^"]*)"/);
+    if (existingStyleM) {
+      const combined = `${existingStyleM[1].replace(/;?\s*$/, '')}; text-align: ${textAlign}`;
+      const newBefore = before.replace(/style="[^"]*"/, '');
+      const newAfter = after.replace(/style="[^"]*"/, '');
+      return `<${tag}${newBefore}class="${cls}"${newAfter} style="${combined}">`;
+    }
+    return `<${tag}${before}class="${cls}"${after} style="text-align: ${textAlign}">`;
+  });
+
+  return html;
+}
+
+function mergeInlineStyle(attrs, styles) {
+  const incoming = styles.filter(Boolean).join('; ');
+  if (!incoming) return attrs;
+  const existingStyleM = attrs.match(/style="([^"]*)"/);
+  if (existingStyleM) {
+    const combined = `${existingStyleM[1].replace(/;?\s*$/, '')}; ${incoming}`;
+    return attrs.replace(/style="[^"]*"/, `style="${combined}"`);
+  }
+  return `${attrs} style="${incoming}"`;
+}
+
+function normalizeEmailBodyHtml(html) {
+  let processed = quillClassesToInlineStyles(html || '');
+
+  processed = processed.replace(/<(p|div)([^>]*)>/g, (match, tag, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 6px 0',
+      'padding:0',
+      'line-height:1.45',
+    ]);
+    return `<${tag}${nextAttrs}>`;
+  });
+
+  processed = processed.replace(/<(h[1-6])([^>]*)>/g, (match, tag, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 8px 0',
+      'padding:0',
+      'line-height:1.25',
+    ]);
+    return `<${tag}${nextAttrs}>`;
+  });
+
+  processed = processed.replace(/<(ul|ol)([^>]*)>/g, (match, tag, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 8px 22px',
+      'padding:0',
+    ]);
+    return `<${tag}${nextAttrs}>`;
+  });
+
+  processed = processed.replace(/<li([^>]*)>/g, (match, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 3px 0',
+      'padding:0',
+      'line-height:1.45',
+    ]);
+    return `<li${nextAttrs}>`;
+  });
+
+  return processed;
+}
+
+function wrapForGmail(html) {
+  return normalizeEmailBodyHtml(html);
+}
+
 /* ── MIME email sender ── */
 
 function toBase64Url(str) {
@@ -352,8 +476,137 @@ function toBase64Url(str) {
     .replace(/=+$/, '');
 }
 
-async function sendMimeEmail({ user, to, subject, html, senderName }) {
-  logInfo(LOG_PREFIX.gmail, `Preparing to send email — to: ${Array.isArray(to) ? to.join(', ') : to}, subject: "${subject}", userId: ${user._id}`);
+function foldBase64(value) {
+  return String(value || '').replace(/\s+/g, '').match(/.{1,76}/g)?.join('\r\n') || '';
+}
+
+function encodeMimeBase64(value) {
+  return foldBase64(Buffer.from(String(value || ''), 'utf8').toString('base64'));
+}
+
+function htmlToPlainText(html) {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function quoteHeaderValue(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, ' ');
+}
+
+function buildRawMimeMessage({ from, to, subject, html, attachments = [] }) {
+  const safeAttachments = Array.isArray(attachments) ? attachments : [];
+  const wrappedHtml = wrapForGmail(html);
+  const plainText = htmlToPlainText(wrappedHtml) || htmlToPlainText(html) || ' ';
+  const altBoundary = `rf_alt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const mixedBoundary = `rf_mixed_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  const commonHeaders = [
+    `From: ${from}`,
+    `To: ${Array.isArray(to) ? to.join(', ') : to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+  ];
+
+  const alternativePart = [
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    '',
+    `--${altBoundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    encodeMimeBase64(plainText),
+    '',
+    `--${altBoundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    encodeMimeBase64(wrappedHtml),
+    '',
+    `--${altBoundary}--`,
+    '',
+  ].join('\r\n');
+
+  if (!safeAttachments.length) {
+    return [
+      ...commonHeaders,
+      alternativePart,
+    ].join('\r\n');
+  }
+
+  const message = [
+    ...commonHeaders,
+    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
+    '',
+    `--${mixedBoundary}`,
+    alternativePart,
+  ];
+
+  for (const att of safeAttachments) {
+    const name = quoteHeaderValue(att.name || 'attachment');
+    message.push(
+      `--${mixedBoundary}`,
+      `Content-Type: ${att.mimeType}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`,
+      '',
+      foldBase64(att.data),
+      ''
+    );
+  }
+
+  message.push(`--${mixedBoundary}--`);
+  return message.join('\r\n');
+}
+
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+]);
+
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024; // 20MB
+
+function validateAttachments(attachments) {
+  if (!Array.isArray(attachments) || !attachments.length) return null;
+  if (attachments.length > MAX_ATTACHMENTS) {
+    return `Max ${MAX_ATTACHMENTS} attachments allowed`;
+  }
+  let totalSize = 0;
+  for (const att of attachments) {
+    if (!ALLOWED_ATTACHMENT_TYPES.has(att.mimeType)) {
+      return `File type not allowed: ${att.mimeType}`;
+    }
+    totalSize += att.size || 0;
+  }
+  if (totalSize > MAX_ATTACHMENT_TOTAL_BYTES) {
+    return 'Total attachment size exceeds 20MB';
+  }
+  return null;
+}
+
+async function sendMimeEmail({ user, to, subject, html, senderName, attachments = [] }) {
+  logInfo(LOG_PREFIX.gmail, `Preparing to send email — to: ${Array.isArray(to) ? to.join(', ') : to}, subject: "${subject}", userId: ${user._id}, attachments: ${attachments.length}`);
 
   const auth = await getAuthorizedClient(user, { verifyAccess: true });
   const gmail = google.gmail({ version: 'v1', auth });
@@ -382,18 +635,15 @@ async function sendMimeEmail({ user, to, subject, html, senderName }) {
   );
 
   const toHeader = Array.isArray(to) ? to.join(', ') : to;
-  const messageParts = [
-    `From: ${displayName} <${identity.sendAsEmail}>`,
-    `To: ${toHeader}`,
-    `Subject: ${subject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset="UTF-8"',
-    '',
+  const rawMessage = buildRawMimeMessage({
+    from: `${displayName} <${identity.sendAsEmail}>`,
+    to: toHeader,
+    subject,
     html,
-  ];
+    attachments,
+  });
 
-  const message = messageParts.join('\r\n');
-  const encodedMessage = toBase64Url(message);
+  const encodedMessage = toBase64Url(rawMessage);
 
   logInfo(LOG_PREFIX.gmail, `Sending email via Gmail API — from: ${displayName} <${identity.sendAsEmail}>, to: ${toHeader}`);
 
@@ -428,5 +678,11 @@ module.exports = {
   clearGmailAuthorization,
   ensureFreshAccessToken,
   introspectTokenScopes,
+  validateAttachments,
   REQUIRED_SCOPES,
+  _private: {
+    buildRawMimeMessage,
+    htmlToPlainText,
+    wrapForGmail,
+  },
 };

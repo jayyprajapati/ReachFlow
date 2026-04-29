@@ -1,10 +1,13 @@
 import React from 'react';
+import { useRouter } from '../router.jsx';
 
-export default function PrivacyPolicyPage({ onBack }) {
+export default function PrivacyPolicyPage() {
+  const { navigateTo } = useRouter();
+
   return (
     <div className="info-page-wrap">
       <div className="info-page-head">
-        <button className="link" onClick={onBack}>← Back to app</button>
+        <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => navigateTo('/')}>Back to app</button>
         <h1>Privacy Policy</h1>
         <p>
           Last updated: March 2026. This policy explains what data ReachFlow uses, how it is protected,

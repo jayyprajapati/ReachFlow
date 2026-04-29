@@ -1,0 +1,262 @@
+/* ═══════════════════════════════════════════════════════
+   REACHFLOW BASE — Reset, Typography, Defaults
+   ═══════════════════════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--rf-font-body);
+  font-size: var(--rf-text-base);
+  line-height: var(--rf-leading-normal);
+  color: var(--rf-text);
+  background: var(--rf-bg-root);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+}
+
+/* ── Headings ── */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--rf-font-display);
+  font-weight: 600;
+  line-height: var(--rf-leading-tight);
+  letter-spacing: var(--rf-tracking-tight);
+  color: var(--rf-text);
+}
+
+h1 { font-size: var(--rf-text-3xl); font-weight: 700; }
+h2 { font-size: var(--rf-text-2xl); }
+h3 { font-size: var(--rf-text-xl); }
+h4 { font-size: var(--rf-text-lg); }
+h5 { font-size: var(--rf-text-md); font-weight: 500; }
+h6 { font-size: var(--rf-text-base); font-weight: 500; }
+
+/* ── Body Text ── */
+
+p {
+  margin: 0;
+  line-height: var(--rf-leading-normal);
+}
+
+a {
+  color: var(--rf-accent-text);
+  text-decoration: none;
+  transition: color var(--rf-duration-fast) var(--rf-ease-out);
+}
+
+a:hover {
+  color: var(--rf-accent-hover);
+}
+
+strong, b {
+  font-weight: 600;
+}
+
+small {
+  font-size: var(--rf-text-xs);
+}
+
+code {
+  font-family: var(--rf-font-mono);
+  font-size: 0.9em;
+  background: var(--rf-bg-overlay);
+  padding: 2px 6px;
+  border-radius: var(--rf-radius-xs);
+}
+
+/* ── Focus ── */
+
+:focus-visible {
+  outline: 2px solid var(--rf-accent);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Selection ── */
+
+::selection {
+  background: var(--rf-accent-muted);
+  color: var(--rf-text);
+}
+
+/* ── Scrollbars ── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--rf-border);
+  border-radius: var(--rf-radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--rf-border-hover);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rf-border) transparent;
+}
+
+/* ── Images ── */
+
+img, svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* ── Lists ── */
+
+ul, ol {
+  list-style: none;
+}
+
+/* ── Tables ── */
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+}
+
+/* ── Buttons (reset) ── */
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── Inputs (reset) ── */
+
+input, textarea, select {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--rf-text-faint);
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* ── Utility Classes ── */
+
+.rf-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rf-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rf-text-muted {
+  color: var(--rf-text-muted);
+}
+
+.rf-text-secondary {
+  color: var(--rf-text-secondary);
+}
+
+.rf-mono {
+  font-family: var(--rf-font-mono);
+}
+
+/* ── Keyframes ── */
+
+@keyframes rf-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rf-slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rf-slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rf-slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes rf-slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes rf-scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes rf-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rf-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes rf-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

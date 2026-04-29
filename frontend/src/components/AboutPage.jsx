@@ -1,5 +1,6 @@
 import React from 'react';
 import { Mail, Users, FileText, History, Shield } from 'lucide-react';
+import { useRouter } from '../router.jsx';
 
 function InfoCard({ icon, title, text }) {
   return (
@@ -13,11 +14,13 @@ function InfoCard({ icon, title, text }) {
   );
 }
 
-export default function AboutPage({ onBack }) {
+export default function AboutPage() {
+  const { navigateTo } = useRouter();
+
   return (
     <div className="info-page-wrap">
       <div className="info-page-head">
-        <button className="link" onClick={onBack}>← Back to app</button>
+        <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => navigateTo('/')}>Back to app</button>
         <h1>About ReachFlow</h1>
         <p>
           ReachFlow is a privacy-first outreach workspace for composing personalized emails, organizing contacts by company,

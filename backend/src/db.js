@@ -114,7 +114,8 @@ const campaignSchema = new mongoose.Schema(
     send_mode: { type: String, enum: ['individual'], default: 'individual' },
     variables: { type: [String], default: [] },
     group_imports: { type: [groupImportSchema], default: [] },
-    status: { type: String, enum: ['draft', 'sent'], default: 'draft' },
+    status: { type: String, enum: ['draft', 'scheduled', 'sent', 'failed'], default: 'draft' },
+    scheduledAt: { type: Date, default: null },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
@@ -123,6 +124,7 @@ const campaignSchema = new mongoose.Schema(
 );
 
 campaignSchema.index({ status: 1, updated_at: -1 });
+campaignSchema.index({ status: 1, scheduledAt: 1 });
 campaignSchema.index({ userId: 1, updated_at: -1 });
 
 const sendLogSchema = new mongoose.Schema(
@@ -142,6 +144,7 @@ const groupSchema = new mongoose.Schema(
     contactCount: { type: Number, default: 0, min: 0 },
     companyName: { type: String, required: true, trim: true },
     logoUrl: { type: String, default: '', trim: true },
+    careersPageUrl: { type: String, default: '', trim: true },
     contacts: { type: [contactSchema], default: [] },
   },
   {
