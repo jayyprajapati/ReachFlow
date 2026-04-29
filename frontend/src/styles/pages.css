@@ -89,7 +89,31 @@
 .rf-pipeline__table th { padding: var(--rf-sp-3); font-size: var(--rf-text-xs); font-weight: 600; color: var(--rf-text-muted); text-transform: uppercase; letter-spacing: var(--rf-tracking-wider); text-align: left; border-bottom: 1px solid var(--rf-border-subtle); background: var(--rf-bg-raised); }
 .rf-pipeline__table td { padding: var(--rf-sp-3); font-size: var(--rf-text-sm); color: var(--rf-text); border-bottom: 1px solid var(--rf-border-subtle); vertical-align: middle; }
 .rf-pipeline__table tbody tr:hover { background: var(--rf-bg-hover); }
-.rf-pipeline__table .rf-input, .rf-pipeline__table .rf-select { height: 30px; font-size: var(--rf-text-sm); }
+.rf-pipeline__table .rf-input, .rf-pipeline__table .rf-select { height: 34px; font-size: var(--rf-text-sm); line-height: 1.2; }
+.rf-pipeline__status-select {
+  min-width: 128px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 32px;
+}
+.rf-pipeline__company-select {
+  min-width: 180px;
+  max-width: 240px;
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 32px;
+}
+.rf-pipeline__company-add {
+  display: flex;
+  align-items: center;
+  gap: var(--rf-sp-1);
+  min-width: 220px;
+}
+.rf-pipeline__company-add .rf-input {
+  min-width: 150px;
+  height: 34px;
+}
 
 /* ── Contacts Page ── */
 .rf-contacts { display: flex; height: 100%; gap: 0; }

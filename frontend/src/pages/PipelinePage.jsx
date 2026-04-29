@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Plus, Trash2, Copy, Loader, ChevronDown, ChevronUp, LayoutGrid, List } from 'lucide-react';
+import { Plus, Trash2, Copy, Loader, LayoutGrid, List, Check, X } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const STATUS_COLS = [
@@ -29,6 +29,10 @@ function parseApplicationBlock(text) {
   return results;
 }
 
+function normalizeCompanyKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 export default function PipelinePage() {
   const { authedFetch, setNotice, setWarningDialog, groups, loadGroups } = useApp();
   const [apps, setApps] = useState([]);
@@ -41,10 +45,13 @@ export default function PipelinePage() {
   const [companyFilter, setCompanyFilter] = useState('');
   const [dragId, setDragId] = useState(null);
   const [copiedId, setCopiedId] = useState('');
+  const [addingCompanyForId, setAddingCompanyForId] = useState('');
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [companyBusyId, setCompanyBusyId] = useState('');
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
-  useEffect(() => { loadApps(); }, []);
+  useEffect(() => { loadApps(); loadGroups(); }, []);
   useEffect(() => { if (copiedId) { const t = setTimeout(() => setCopiedId(''), 1500); return () => clearTimeout(t); } }, [copiedId]);
 
   async function loadApps() {
@@ -61,7 +68,10 @@ export default function PipelinePage() {
     if (!rawInput.trim()) return;
     setParsing(true);
     try {
-      const parsed = parseApplicationBlock(rawInput);
+      const parsed = parseApplicationBlock(rawInput).map(app => {
+        const group = findGroupByName(app.companyName);
+        return group ? { ...app, companyGroupId: group.id, companyName: group.companyName } : app;
+      });
       if (!parsed.length) { setNotice({ type: 'error', message: 'No valid applications found' }); return; }
       for (const app of parsed) {
         const r = await authedFetch(`${API_BASE_URL}/api/applications`, { method: 'POST', headers: hdrs, body: JSON.stringify(app) });
@@ -81,6 +91,54 @@ export default function PipelinePage() {
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
 
+  async function updateCompany(id, groupId) {
+    if (!id || companyBusyId) return;
+    setCompanyBusyId(id);
+    try {
+      const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
+        method: 'PATCH',
+        headers: hdrs,
+        body: JSON.stringify({ companyGroupId: groupId || null, companyNameSnapshot: groupId ? undefined : '' }),
+      });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
+      setApps(p => p.map(a => a.id === id ? { ...a, ...d } : a));
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setCompanyBusyId(''); }
+  }
+
+  async function createCompanyForApp(id) {
+    const name = newCompanyName.trim();
+    if (!name || !id || companyBusyId) return;
+    const existing = findGroupByName(name);
+    if (existing) {
+      await updateCompany(id, existing.id);
+      setAddingCompanyForId('');
+      setNewCompanyName('');
+      return;
+    }
+    setCompanyBusyId(id);
+    try {
+      const r = await authedFetch(`${API_BASE_URL}/api/groups`, {
+        method: 'POST',
+        headers: hdrs,
+        body: JSON.stringify({ companyName: name }),
+      });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed to create company');
+      await loadGroups();
+      const ar = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
+        method: 'PATCH',
+        headers: hdrs,
+        body: JSON.stringify({ companyGroupId: d.id }),
+      });
+      const appData = await ar.json(); if (!ar.ok) throw new Error(appData.error || 'Failed to update application');
+      setApps(p => p.map(a => a.id === id ? { ...a, ...appData } : a));
+      setAddingCompanyForId('');
+      setNewCompanyName('');
+      setNotice({ type: 'success', message: 'Company added to contacts' });
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setCompanyBusyId(''); }
+  }
+
   async function deleteApp(id) {
     setWarningDialog({ title: 'Delete application?', message: 'This cannot be undone.', confirmText: 'Delete', intent: 'danger', onConfirm: async () => {
       try { const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, { method: 'DELETE' }); const d = await r.json(); if (!r.ok) throw new Error(d.error); setApps(p => p.filter(a => a.id !== id)); setNotice({ type: 'info', message: 'Deleted' }); }
@@ -94,20 +152,40 @@ export default function PipelinePage() {
   function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
   function onDrop(e, status) { e.preventDefault(); if (dragId) { updateStatus(dragId, status); setDragId(null); } }
 
+  const companyOptions = useMemo(
+    () => [...groups].sort((a, b) => String(a.companyName || '').localeCompare(String(b.companyName || ''))),
+    [groups]
+  );
+  const groupById = useMemo(() => new Map(groups.map(g => [String(g.id), g])), [groups]);
+  const groupByKey = useMemo(() => new Map(groups.map(g => [normalizeCompanyKey(g.companyName), g])), [groups]);
+
+  function findGroupByName(name) {
+    return groupByKey.get(normalizeCompanyKey(name));
+  }
+
+  function getCompanyName(app) {
+    const linked = app?.companyGroupId ? groupById.get(String(app.companyGroupId)) : null;
+    return linked?.companyName || app?.companyNameSnapshot || app?.companyName || '';
+  }
+
+  function getCompanySelectValue(app) {
+    if (app?.companyGroupId && groupById.has(String(app.companyGroupId))) return String(app.companyGroupId);
+    const name = getCompanyName(app);
+    return name ? `snapshot:${name}` : '';
+  }
+
   const filtered = useMemo(() => {
     let list = apps;
     if (statusFilter) list = list.filter(a => a.status === statusFilter);
-    if (companyFilter) list = list.filter(a => (a.companyName || '').toLowerCase().includes(companyFilter.toLowerCase()));
+    if (companyFilter) list = list.filter(a => getCompanyName(a).toLowerCase().includes(companyFilter.toLowerCase()));
     return list;
-  }, [apps, statusFilter, companyFilter]);
+  }, [apps, statusFilter, companyFilter, groupById]);
 
   const byStatus = useMemo(() => {
     const map = {}; STATUS_COLS.forEach(c => { map[c.key] = []; });
     filtered.forEach(a => { const s = map[a.status] ? a.status : 'applied'; (map[s] = map[s] || []).push(a); });
     return map;
   }, [filtered]);
-
-  const companies = useMemo(() => [...new Set(apps.map(a => a.companyName).filter(Boolean))], [apps]);
 
   const relDate = d => { if (!d) return ''; const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000); if (diff === 0) return 'Today'; if (diff === 1) return '1d ago'; return `${diff}d ago`; };
 
@@ -158,7 +236,7 @@ export default function PipelinePage() {
                 {(byStatus[col.key] || []).map(app => (
                   <div key={app.id} className={`rf-app-card ${dragId === app.id ? 'rf-app-card--dragging' : ''}`} draggable onDragStart={e => onDragStart(e, app.id)}>
                     <div className="rf-app-card__title">{app.jobTitle || 'Untitled'}</div>
-                    <div className="rf-app-card__company">{app.companyName || '—'}</div>
+                    <div className="rf-app-card__company">{getCompanyName(app) || '—'}</div>
                     <div className="rf-app-card__footer">
                       <span className="rf-app-card__date">{relDate(app.appliedDate)}</span>
                       {app.jobId && <span className="rf-app-card__id">{app.jobId}</span>}
@@ -185,9 +263,52 @@ export default function PipelinePage() {
                   <td>{app.appliedDate ? new Date(app.appliedDate).toLocaleDateString() : '—'}</td>
                   <td style={{ fontWeight: 500 }}>{app.jobTitle || '—'}</td>
                   <td><span className="rf-mono" style={{ fontSize: 'var(--rf-text-xs)' }}>{app.jobId || '—'}</span></td>
-                  <td>{app.companyName || '—'}</td>
                   <td>
-                    <select className="rf-select" value={app.status || 'applied'} onChange={e => updateStatus(app.id, e.target.value)} style={{ height: 28 }}>
+                    {addingCompanyForId === app.id ? (
+                      <div className="rf-pipeline__company-add">
+                        <input
+                          className="rf-input"
+                          value={newCompanyName}
+                          placeholder="Company name"
+                          onChange={e => setNewCompanyName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') createCompanyForApp(app.id); }}
+                          disabled={companyBusyId === app.id}
+                          autoFocus
+                        />
+                        <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => createCompanyForApp(app.id)} disabled={!newCompanyName.trim() || companyBusyId === app.id} title="Create company">
+                          <Check size={13} />
+                        </button>
+                        <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => { setAddingCompanyForId(''); setNewCompanyName(''); }} disabled={companyBusyId === app.id} title="Cancel">
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="rf-select rf-pipeline__company-select"
+                        value={getCompanySelectValue(app)}
+                        onChange={e => {
+                          const next = e.target.value;
+                          if (next === '__add_new__') {
+                            setAddingCompanyForId(app.id);
+                            setNewCompanyName(getCompanyName(app));
+                            return;
+                          }
+                          if (next.startsWith('snapshot:')) return;
+                          updateCompany(app.id, next);
+                        }}
+                        disabled={companyBusyId === app.id}
+                      >
+                        <option value="">Select company</option>
+                        {getCompanyName(app) && getCompanySelectValue(app).startsWith('snapshot:') && (
+                          <option value={`snapshot:${getCompanyName(app)}`}>{getCompanyName(app)}</option>
+                        )}
+                        {companyOptions.map(g => <option key={g.id} value={g.id}>{g.companyName}</option>)}
+                        <option value="__add_new__">+ Add new company</option>
+                      </select>
+                    )}
+                  </td>
+                  <td>
+                    <select className="rf-select rf-pipeline__status-select" value={app.status || 'applied'} onChange={e => updateStatus(app.id, e.target.value)}>
                       {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                     </select>
                   </td>
