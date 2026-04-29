@@ -3,8 +3,8 @@ import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
   Send, Users, Kanban, FileText, Clock, Settings, Search,
-  ChevronsLeft, ChevronsRight, LogOut, Mail, XCircle, CheckCircle2,
-  Zap, Menu,
+  ChevronsLeft, ChevronsRight, LogOut, XCircle, CheckCircle2,
+  Waypoints, Sun, Moon,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -17,7 +17,7 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) {
-  const { appUser, gmailConnected, confirmLogout, confirmDisconnectGmail, connectGmail, gmailActionLoading } = useApp();
+  const { appUser, gmailConnected, confirmLogout, confirmDisconnectGmail, connectGmail, gmailActionLoading, theme, toggleTheme } = useApp();
   const { path, navigateTo } = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -37,7 +37,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
       {/* Brand */}
       <button className="rf-sidebar__brand" onClick={() => navigateTo('/')}>
         <div className="rf-sidebar__logo">
-          <Zap size={18} />
+          <Waypoints size={18} />
         </div>
         <div className="rf-sidebar__brand-text">
           <span className="rf-sidebar__brand-name">ReachFlow</span>
@@ -80,6 +80,11 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
           <span className={`rf-dot ${gmailConnected ? 'rf-dot--success' : 'rf-dot--error'}`} />
           <span>{gmailConnected ? 'Gmail connected' : 'Gmail disconnected'}</span>
         </div>
+
+        <button className="rf-sidebar__theme" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+        </button>
 
         {/* User menu */}
         <div ref={menuRef} style={{ position: 'relative' }}>

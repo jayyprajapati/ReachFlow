@@ -425,6 +425,104 @@ function toBase64Url(str) {
     .replace(/=+$/, '');
 }
 
+function foldBase64(value) {
+  return String(value || '').replace(/\s+/g, '').match(/.{1,76}/g)?.join('\r\n') || '';
+}
+
+function encodeMimeBase64(value) {
+  return foldBase64(Buffer.from(String(value || ''), 'utf8').toString('base64'));
+}
+
+function htmlToPlainText(html) {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function quoteHeaderValue(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, ' ');
+}
+
+function buildRawMimeMessage({ from, to, subject, html, attachments = [] }) {
+  const safeAttachments = Array.isArray(attachments) ? attachments : [];
+  const wrappedHtml = wrapForGmail(html);
+  const plainText = htmlToPlainText(wrappedHtml) || htmlToPlainText(html) || ' ';
+  const altBoundary = `rf_alt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const mixedBoundary = `rf_mixed_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  const commonHeaders = [
+    `From: ${from}`,
+    `To: ${Array.isArray(to) ? to.join(', ') : to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+  ];
+
+  const alternativePart = [
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    '',
+    `--${altBoundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    encodeMimeBase64(plainText),
+    '',
+    `--${altBoundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    encodeMimeBase64(wrappedHtml),
+    '',
+    `--${altBoundary}--`,
+    '',
+  ].join('\r\n');
+
+  if (!safeAttachments.length) {
+    return [
+      ...commonHeaders,
+      alternativePart,
+    ].join('\r\n');
+  }
+
+  const message = [
+    ...commonHeaders,
+    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
+    '',
+    `--${mixedBoundary}`,
+    alternativePart,
+  ];
+
+  for (const att of safeAttachments) {
+    const name = quoteHeaderValue(att.name || 'attachment');
+    message.push(
+      `--${mixedBoundary}`,
+      `Content-Type: ${att.mimeType}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`,
+      '',
+      foldBase64(att.data),
+      ''
+    );
+  }
+
+  message.push(`--${mixedBoundary}--`);
+  return message.join('\r\n');
+}
+
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -486,56 +584,13 @@ async function sendMimeEmail({ user, to, subject, html, senderName, attachments 
   );
 
   const toHeader = Array.isArray(to) ? to.join(', ') : to;
-  const wrappedHtml = wrapForGmail(html);
-
-  let rawMessage;
-
-  if (attachments.length > 0) {
-    const boundary = `rfboundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-    const headerLines = [
-      `From: ${displayName} <${identity.sendAsEmail}>`,
-      `To: ${toHeader}`,
-      `Subject: ${subject}`,
-      'MIME-Version: 1.0',
-      `Content-Type: multipart/mixed; boundary="${boundary}"`,
-      '',
-    ].join('\r\n');
-
-    const htmlPart = [
-      `--${boundary}`,
-      'Content-Type: text/html; charset="UTF-8"',
-      'Content-Transfer-Encoding: base64',
-      '',
-      Buffer.from(wrappedHtml, 'utf8').toString('base64'),
-      '',
-    ].join('\r\n');
-
-    let attParts = '';
-    for (const att of attachments) {
-      attParts += [
-        `--${boundary}`,
-        `Content-Type: ${att.mimeType}; name="${att.name}"`,
-        'Content-Transfer-Encoding: base64',
-        `Content-Disposition: attachment; filename="${att.name}"`,
-        '',
-        att.data,
-        '',
-      ].join('\r\n');
-    }
-
-    rawMessage = headerLines + htmlPart + attParts + `--${boundary}--`;
-  } else {
-    rawMessage = [
-      `From: ${displayName} <${identity.sendAsEmail}>`,
-      `To: ${toHeader}`,
-      `Subject: ${subject}`,
-      'MIME-Version: 1.0',
-      'Content-Type: text/html; charset="UTF-8"',
-      '',
-      wrappedHtml,
-    ].join('\r\n');
-  }
+  const rawMessage = buildRawMimeMessage({
+    from: `${displayName} <${identity.sendAsEmail}>`,
+    to: toHeader,
+    subject,
+    html,
+    attachments,
+  });
 
   const encodedMessage = toBase64Url(rawMessage);
 
@@ -574,4 +629,9 @@ module.exports = {
   introspectTokenScopes,
   validateAttachments,
   REQUIRED_SCOPES,
+  _private: {
+    buildRawMimeMessage,
+    htmlToPlainText,
+    wrapForGmail,
+  },
 };

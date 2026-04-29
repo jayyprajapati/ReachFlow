@@ -4,7 +4,7 @@ import Sidebar from './Sidebar.jsx';
 import Toast from '../common/Toast.jsx';
 import Dialog from '../common/Dialog.jsx';
 import CommandPalette from './CommandPalette.jsx';
-import { Menu } from 'lucide-react';
+import { Menu, Waypoints } from 'lucide-react';
 
 export default function AppShell({ children }) {
   const { notice, setNotice, warningDialog, setWarningDialog } = useApp();
@@ -48,7 +48,7 @@ export default function AppShell({ children }) {
           <button className="rf-mobile-header__toggle" onClick={() => setMobileOpen(true)}>
             <Menu size={20} />
           </button>
-          <span style={{ fontFamily: 'var(--rf-font-display)', fontWeight: 700, fontSize: 'var(--rf-text-md)' }}>ReachFlow</span>
+          <span className="rf-mobile-header__brand"><Waypoints size={18} />ReachFlow</span>
         </div>
 
         {/* Page content */}

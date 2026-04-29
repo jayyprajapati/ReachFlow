@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Zap, Mail, Users, Kanban, FileText, Shield } from 'lucide-react';
+import { Waypoints, Mail, Users, Kanban, FileText, Shield, Sun, Moon } from 'lucide-react';
 
 const FEATURES = [
   { icon: Mail, label: 'Gmail Outreach' },
@@ -11,16 +11,21 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
-  const { login } = useApp();
+  const { login, theme, toggleTheme } = useApp();
 
   return (
     <div className="rf-landing">
       <header className="rf-landing__header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--rf-sp-3)' }}>
-          <div className="rf-sidebar__logo"><Zap size={18} /></div>
-          <span style={{ fontFamily: 'var(--rf-font-display)', fontWeight: 700, fontSize: 'var(--rf-text-lg)', color: 'var(--rf-text)' }}>ReachFlow</span>
+          <div className="rf-sidebar__logo"><Waypoints size={18} /></div>
+          <span className="rf-landing__brand-name">ReachFlow</span>
         </div>
-        <button className="rf-btn rf-btn--primary" onClick={login}>Sign in with Google</button>
+        <div className="rf-landing__header-actions">
+          <button className="rf-btn rf-btn--ghost rf-btn--icon" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <button className="rf-btn rf-btn--primary" onClick={login}>Sign in with Google</button>
+        </div>
       </header>
 
       <main className="rf-landing__hero">

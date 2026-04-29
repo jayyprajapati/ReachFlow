@@ -35,6 +35,13 @@ function clearExtensionAuthToken() {
 }
 
 const AppContext = createContext(null);
+const THEME_STORAGE_KEY = 'reachflow-theme';
+
+function getInitialTheme() {
+  if (typeof window === 'undefined') return 'light';
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'dark' ? 'dark' : 'light';
+}
 
 export function useApp() {
   const ctx = useContext(AppContext);
@@ -65,8 +72,19 @@ export function AppProvider({ children }) {
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [scheduled, setScheduled] = useState([]);
   const [scheduledLoading, setScheduledLoading] = useState(false);
+  const [theme, setTheme] = useState(getInitialTheme);
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme(current => current === 'dark' ? 'light' : 'dark');
+  }
 
   // ── Auth token resolver ──
   async function resolveAuthToken(tokenOverride = '', forceRefresh = false) {
@@ -384,12 +402,14 @@ export function AppProvider({ children }) {
     history, historyLoading, loadHistory,
     drafts, draftsLoading, loadDrafts,
     scheduled, scheduledLoading, loadScheduled,
+    theme, setTheme, toggleTheme,
     hydrateProfile,
   }), [
     appUser, authLoading, idToken, gmailConnected, gmailActionLoading,
     senderName, savedSenderName, savingSenderName, grantedScopes, requiredScopes,
     notice, warningDialog, groups, templates, templatesLoading,
     variables, history, historyLoading, drafts, draftsLoading, scheduled, scheduledLoading,
+    theme,
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

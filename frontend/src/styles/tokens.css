@@ -1,56 +1,56 @@
 /* ═══════════════════════════════════════════════════════
-   REACHFLOW DESIGN TOKENS — "Noir Workspace"
+   REACHFLOW DESIGN TOKENS
    ═══════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@400;500;600;700;800&display=swap');
 
 :root {
   /* ── Surface Palette ── */
-  --rf-bg-root:        #09090b;
-  --rf-bg-canvas:      #0e0e12;
-  --rf-bg-surface:     #16161d;
-  --rf-bg-raised:      #1c1c26;
-  --rf-bg-overlay:     #22222e;
-  --rf-bg-hover:       #28283a;
-  --rf-bg-active:      #2e2e42;
-  --rf-bg-input:       #12121a;
+  --rf-bg-root:        #f6f8fc;
+  --rf-bg-canvas:      #ffffff;
+  --rf-bg-surface:     #ffffff;
+  --rf-bg-raised:      #f1f5fb;
+  --rf-bg-overlay:     #e8eef7;
+  --rf-bg-hover:       #edf4ff;
+  --rf-bg-active:      #dcecff;
+  --rf-bg-input:       #ffffff;
 
   /* ── Border ── */
-  --rf-border:         #2a2a3c;
-  --rf-border-subtle:  #1e1e2e;
-  --rf-border-focus:   #6366f1;
-  --rf-border-hover:   #3a3a50;
+  --rf-border:         #d8e0ec;
+  --rf-border-subtle:  #e7edf5;
+  --rf-border-focus:   #1683ff;
+  --rf-border-hover:   #b8c7dc;
 
   /* ── Text ── */
-  --rf-text:           #e4e4e7;
-  --rf-text-secondary: #a1a1aa;
-  --rf-text-muted:     #71717a;
-  --rf-text-faint:     #52525b;
-  --rf-text-inverse:   #09090b;
+  --rf-text:           #172033;
+  --rf-text-secondary: #3f5067;
+  --rf-text-muted:     #66758b;
+  --rf-text-faint:     #9aa8bb;
+  --rf-text-inverse:   #ffffff;
 
   /* ── Accent — Electric Indigo ── */
-  --rf-accent:         #6366f1;
-  --rf-accent-hover:   #7c7ff7;
-  --rf-accent-muted:   rgba(99, 102, 241, 0.15);
-  --rf-accent-subtle:  rgba(99, 102, 241, 0.08);
-  --rf-accent-text:    #a5b4fc;
+  --rf-accent:         #1683ff;
+  --rf-accent-hover:   #006ee6;
+  --rf-accent-muted:   rgba(22, 131, 255, 0.14);
+  --rf-accent-subtle:  rgba(22, 131, 255, 0.08);
+  --rf-accent-text:    #075ec7;
 
   /* ── Status Colors ── */
   --rf-success:        #22c55e;
   --rf-success-muted:  rgba(34, 197, 94, 0.15);
-  --rf-success-text:   #86efac;
+  --rf-success-text:   #15803d;
 
   --rf-warning:        #f59e0b;
   --rf-warning-muted:  rgba(245, 158, 11, 0.15);
-  --rf-warning-text:   #fcd34d;
+  --rf-warning-text:   #9a5b00;
 
   --rf-error:          #ef4444;
   --rf-error-muted:    rgba(239, 68, 68, 0.15);
-  --rf-error-text:     #fca5a5;
+  --rf-error-text:     #c42424;
 
   --rf-info:           #3b82f6;
   --rf-info-muted:     rgba(59, 130, 246, 0.15);
-  --rf-info-text:      #93c5fd;
+  --rf-info-text:      #0b63ce;
 
   /* ── Pipeline Status ── */
   --rf-status-applied:      #3b82f6;
@@ -64,6 +64,7 @@
   /* ── Typography ── */
   --rf-font-display:   'Outfit', system-ui, -apple-system, sans-serif;
   --rf-font-body:      'DM Sans', system-ui, -apple-system, sans-serif;
+  --rf-font-hand:      'Caveat', 'Comic Sans MS', cursive;
   --rf-font-mono:      'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 
   --rf-text-xs:        0.6875rem;    /* 11px */
@@ -80,7 +81,7 @@
   --rf-leading-snug:   1.35;
   --rf-leading-normal: 1.55;
 
-  --rf-tracking-tight: -0.02em;
+  --rf-tracking-tight: 0;
   --rf-tracking-normal: 0;
   --rf-tracking-wide:  0.04em;
   --rf-tracking-wider: 0.08em;
@@ -110,12 +111,12 @@
   --rf-radius-full: 9999px;
 
   /* ── Elevation / Shadows ── */
-  --rf-shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.3);
-  --rf-shadow-md:    0 4px 12px rgba(0, 0, 0, 0.4);
-  --rf-shadow-lg:    0 8px 24px rgba(0, 0, 0, 0.5);
-  --rf-shadow-xl:    0 16px 48px rgba(0, 0, 0, 0.6);
-  --rf-shadow-glow:  0 0 20px rgba(99, 102, 241, 0.25);
-  --rf-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  --rf-shadow-sm:    0 1px 2px rgba(23, 32, 51, 0.08);
+  --rf-shadow-md:    0 4px 12px rgba(23, 32, 51, 0.10);
+  --rf-shadow-lg:    0 8px 24px rgba(23, 32, 51, 0.13);
+  --rf-shadow-xl:    0 16px 48px rgba(23, 32, 51, 0.18);
+  --rf-shadow-glow:  0 0 22px rgba(22, 131, 255, 0.24);
+  --rf-shadow-inset: inset 0 1px 2px rgba(23, 32, 51, 0.08);
 
   /* ── Transitions ── */
   --rf-ease-out:     cubic-bezier(0.16, 1, 0.3, 1);
@@ -140,4 +141,44 @@
   --rf-sidebar-collapsed: 64px;
   --rf-header-height:     56px;
   --rf-content-max:       1400px;
+}
+
+:root[data-theme="dark"] {
+  --rf-bg-root:        #090b10;
+  --rf-bg-canvas:      #0f131a;
+  --rf-bg-surface:     #151a23;
+  --rf-bg-raised:      #1b2230;
+  --rf-bg-overlay:     #232c3c;
+  --rf-bg-hover:       #263246;
+  --rf-bg-active:      #2b3b55;
+  --rf-bg-input:       #10151e;
+
+  --rf-border:         #2b3749;
+  --rf-border-subtle:  #202a3a;
+  --rf-border-focus:   #38a3ff;
+  --rf-border-hover:   #3a4b63;
+
+  --rf-text:           #eef5ff;
+  --rf-text-secondary: #b6c3d4;
+  --rf-text-muted:     #8290a4;
+  --rf-text-faint:     #5e6c80;
+  --rf-text-inverse:   #08111f;
+
+  --rf-accent:         #38a3ff;
+  --rf-accent-hover:   #66b8ff;
+  --rf-accent-muted:   rgba(56, 163, 255, 0.18);
+  --rf-accent-subtle:  rgba(56, 163, 255, 0.09);
+  --rf-accent-text:    #8ed0ff;
+
+  --rf-success-text:   #86efac;
+  --rf-warning-text:   #fcd34d;
+  --rf-error-text:     #fca5a5;
+  --rf-info-text:      #93c5fd;
+
+  --rf-shadow-sm:      0 1px 2px rgba(0, 0, 0, 0.26);
+  --rf-shadow-md:      0 4px 12px rgba(0, 0, 0, 0.34);
+  --rf-shadow-lg:      0 8px 24px rgba(0, 0, 0, 0.42);
+  --rf-shadow-xl:      0 16px 48px rgba(0, 0, 0, 0.52);
+  --rf-shadow-glow:    0 0 22px rgba(56, 163, 255, 0.28);
+  --rf-shadow-inset:   inset 0 1px 2px rgba(0, 0, 0, 0.28);
 }

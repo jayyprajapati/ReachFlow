@@ -213,15 +213,23 @@
 .rf-badge--info     { background: var(--rf-info-muted);    color: var(--rf-info-text); }
 .rf-badge--neutral  { background: var(--rf-bg-hover);      color: var(--rf-text-secondary); }
 
-.rf-badge--applied       { background: rgba(59,130,246,0.15);  color: #93c5fd; }
-.rf-badge--oa            { background: rgba(139,92,246,0.15);  color: #c4b5fd; }
-.rf-badge--interviewing  { background: rgba(245,158,11,0.15);  color: #fcd34d; }
-.rf-badge--offer         { background: rgba(34,197,94,0.15);   color: #86efac; }
-.rf-badge--rejected      { background: rgba(239,68,68,0.15);   color: #fca5a5; }
-.rf-badge--ghosted       { background: rgba(113,113,122,0.15); color: #a1a1aa; }
-.rf-badge--on_hold       { background: rgba(100,116,139,0.15); color: #94a3b8; }
+.rf-badge--applied       { background: rgba(59,130,246,0.15);  color: #0b63ce; }
+.rf-badge--oa            { background: rgba(139,92,246,0.15);  color: #6d28d9; }
+.rf-badge--interviewing  { background: rgba(245,158,11,0.15);  color: #9a5b00; }
+.rf-badge--offer         { background: rgba(34,197,94,0.15);   color: #15803d; }
+.rf-badge--rejected      { background: rgba(239,68,68,0.15);   color: #c42424; }
+.rf-badge--ghosted       { background: rgba(113,113,122,0.15); color: #66758b; }
+.rf-badge--on_hold       { background: rgba(100,116,139,0.15); color: #526071; }
 .rf-badge--draft         { background: var(--rf-bg-hover);      color: var(--rf-text-muted); }
 .rf-badge--sent          { background: var(--rf-success-muted); color: var(--rf-success-text); }
+
+:root[data-theme="dark"] .rf-badge--applied       { color: #93c5fd; }
+:root[data-theme="dark"] .rf-badge--oa            { color: #c4b5fd; }
+:root[data-theme="dark"] .rf-badge--interviewing  { color: #fcd34d; }
+:root[data-theme="dark"] .rf-badge--offer         { color: #86efac; }
+:root[data-theme="dark"] .rf-badge--rejected      { color: #fca5a5; }
+:root[data-theme="dark"] .rf-badge--ghosted       { color: #a1a1aa; }
+:root[data-theme="dark"] .rf-badge--on_hold       { color: #94a3b8; }
 
 /* ── Card ── */
 

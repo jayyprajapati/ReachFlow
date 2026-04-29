@@ -68,12 +68,13 @@
   width: 32px;
   height: 32px;
   border-radius: var(--rf-radius-md);
-  background: linear-gradient(135deg, var(--rf-accent), #818cf8);
+  background: linear-gradient(135deg, var(--rf-accent), #5ed7ff);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
+  box-shadow: var(--rf-shadow-glow);
 }
 
 .rf-sidebar__brand-text {
@@ -84,12 +85,13 @@
 }
 
 .rf-sidebar__brand-name {
-  font-family: var(--rf-font-display);
-  font-size: var(--rf-text-md);
+  font-family: var(--rf-font-hand);
+  font-size: 1.35rem;
   font-weight: 700;
-  color: var(--rf-text);
+  color: var(--rf-accent-text);
   white-space: nowrap;
-  letter-spacing: var(--rf-tracking-tight);
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .rf-sidebar__brand-sub {
@@ -240,6 +242,24 @@
   white-space: nowrap;
 }
 
+.rf-sidebar__theme {
+  display: flex;
+  align-items: center;
+  gap: var(--rf-sp-3);
+  padding: var(--rf-sp-2) var(--rf-sp-3);
+  border-radius: var(--rf-radius-md);
+  color: var(--rf-text-secondary);
+  font-size: var(--rf-text-xs);
+  transition: all var(--rf-duration-fast);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.rf-sidebar__theme:hover {
+  background: var(--rf-bg-hover);
+  color: var(--rf-text);
+}
+
 .rf-sidebar__user {
   display: flex;
   align-items: center;
@@ -359,6 +379,7 @@
 .rf-shell__sidebar--collapsed .rf-sidebar__link-badge,
 .rf-shell__sidebar--collapsed .rf-sidebar__section-label,
 .rf-shell__sidebar--collapsed .rf-sidebar__gmail span,
+.rf-shell__sidebar--collapsed .rf-sidebar__theme span,
 .rf-shell__sidebar--collapsed .rf-sidebar__user-info {
   display: none;
 }
@@ -383,6 +404,11 @@
 
 .rf-shell__sidebar--collapsed .rf-sidebar__gmail {
   justify-content: center;
+}
+
+.rf-shell__sidebar--collapsed .rf-sidebar__theme {
+  justify-content: center;
+  padding: var(--rf-sp-2);
 }
 
 .rf-shell__sidebar--collapsed .rf-sidebar__collapse {
@@ -456,6 +482,17 @@
     padding: var(--rf-sp-3) var(--rf-sp-4);
     border-bottom: 1px solid var(--rf-border-subtle);
     background: var(--rf-bg-canvas);
+  }
+
+  .rf-mobile-header__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--rf-sp-2);
+    font-family: var(--rf-font-hand);
+    font-weight: 700;
+    font-size: 1.45rem;
+    line-height: 1;
+    color: var(--rf-accent-text);
   }
 
   .rf-mobile-header__toggle {
