@@ -13,17 +13,124 @@ const STATUS_COLS = [
   { key:'on_hold', label:'On Hold', color:'var(--rf-status-onhold)' },
 ];
 
-function parseApplicationBlock(text) {
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanupParsedText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—|,;:]+|[\s\-–—|,;:]+$/g, '')
+    .trim();
+}
+
+function extractKnownCompany(text, groups = []) {
+  const sorted = [...groups]
+    .filter(g => g?.companyName)
+    .sort((a, b) => String(b.companyName).length - String(a.companyName).length);
+
+  for (const group of sorted) {
+    const name = String(group.companyName || '').trim();
+    if (!name) continue;
+    const rx = new RegExp(`(^|[\\s,;:/@()\\-–—])(${escapeRegExp(name)})(?=$|[\\s,;:/@()\\-–—])`, 'i');
+    const match = text.match(rx);
+    if (match) {
+      const matchedText = match[2];
+      const nextText = cleanupParsedText(text.replace(matchedText, ' '));
+      return { group, companyName: group.companyName, text: nextText };
+    }
+  }
+
+  return { group: null, companyName: '', text };
+}
+
+function extractJobId(text) {
+  const labeled = text.match(/\b(?:job|req|requisition|opening|posting)?\s*(?:id|no|number|#)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,})\b/i);
+  if (labeled) {
+    return {
+      jobId: labeled[1],
+      text: cleanupParsedText(text.replace(labeled[0], ' ')),
+    };
+  }
+
+  const tokens = text.split(/\s+/);
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    const clean = tokens[i].replace(/^[#(]+|[),.;:]+$/g, '');
+    if (/^(?=.*\d)[A-Za-z0-9._-]{3,}$/.test(clean)) {
+      tokens.splice(i, 1);
+      return { jobId: clean, text: cleanupParsedText(tokens.join(' ')) };
+    }
+  }
+
+  return { jobId: '', text };
+}
+
+function parseLooseApplicationLine(rawLine, groups = []) {
+  let working = cleanupParsedText(rawLine);
+  let companyName = '';
+  let companyGroupId = null;
+
+  const known = extractKnownCompany(working, groups);
+  if (known.companyName) {
+    companyName = known.companyName;
+    companyGroupId = known.group?.id || null;
+    working = known.text;
+  }
+
+  const idResult = extractJobId(working);
+  const jobId = idResult.jobId;
+  working = idResult.text;
+
+  if (!companyName) {
+    const atMatch = working.match(/\s+(?:at|@)\s+([^,|–—-]+)$/i);
+    if (atMatch) {
+      companyName = cleanupParsedText(atMatch[1]);
+      working = cleanupParsedText(working.slice(0, atMatch.index));
+    }
+  }
+
+  if (!companyName) {
+    const segments = working.split(/\s+(?:-|–|—|\bat\b|@)\s+|,\s*/).map(cleanupParsedText).filter(Boolean);
+    if (segments.length >= 2) {
+      companyName = segments[segments.length - 1];
+      working = segments.slice(0, -1).join(' - ');
+    }
+  }
+
+  const title = cleanupParsedText(working) || cleanupParsedText(rawLine);
+  const group = companyGroupId ? groups.find(g => String(g.id) === String(companyGroupId)) : null;
+
+  return {
+    jobTitle: title,
+    jobId,
+    companyName: group?.companyName || companyName,
+    companyGroupId,
+    status: 'applied',
+    appliedDate: new Date().toISOString().split('T')[0],
+  };
+}
+
+function parseApplicationBlock(text, groups = []) {
   if (!text || !text.trim()) return [];
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const results = [];
   for (const line of lines) {
     const parts = line.split(/[|\t]/).map(s => s.trim()).filter(Boolean);
-    if (parts.length >= 1) {
+    if (parts.length >= 2) {
       const title = parts[0] || '';
       const jobId = parts[1] || '';
       const company = parts[2] || '';
-      results.push({ jobTitle: title, jobId, companyName: company, status: 'applied', appliedDate: new Date().toISOString().split('T')[0] });
+      const group = groups.find(g => normalizeCompanyKey(g.companyName) === normalizeCompanyKey(company));
+      results.push({
+        jobTitle: title,
+        jobId,
+        companyName: group?.companyName || company,
+        companyGroupId: group?.id || null,
+        status: 'applied',
+        appliedDate: new Date().toISOString().split('T')[0],
+      });
+    } else {
+      results.push(parseLooseApplicationLine(line, groups));
     }
   }
   return results;
@@ -48,6 +155,7 @@ export default function PipelinePage() {
   const [addingCompanyForId, setAddingCompanyForId] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
   const [companyBusyId, setCompanyBusyId] = useState('');
+  const [fieldBusyId, setFieldBusyId] = useState('');
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
@@ -68,7 +176,7 @@ export default function PipelinePage() {
     if (!rawInput.trim()) return;
     setParsing(true);
     try {
-      const parsed = parseApplicationBlock(rawInput).map(app => {
+      const parsed = parseApplicationBlock(rawInput, groups).map(app => {
         const group = findGroupByName(app.companyName);
         return group ? { ...app, companyGroupId: group.id, companyName: group.companyName } : app;
       });
@@ -89,6 +197,25 @@ export default function PipelinePage() {
       const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
       setApps(p => p.map(a => a.id === id ? { ...a, ...d } : a));
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
+  }
+
+  function updateLocalApplication(id, changes) {
+    setApps(p => p.map(a => a.id === id ? { ...a, ...changes } : a));
+  }
+
+  async function saveApplicationFields(id, changes) {
+    if (!id || !Object.keys(changes || {}).length) return;
+    setFieldBusyId(`${id}:${Object.keys(changes).join(',')}`);
+    try {
+      const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
+        method: 'PATCH',
+        headers: hdrs,
+        body: JSON.stringify(changes),
+      });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
+      setApps(p => p.map(a => a.id === id ? { ...a, ...d } : a));
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setFieldBusyId(''); }
   }
 
   async function updateCompany(id, groupId) {
@@ -168,6 +295,13 @@ export default function PipelinePage() {
     return linked?.companyName || app?.companyNameSnapshot || app?.companyName || '';
   }
 
+  function getCompanyGroup(app) {
+    if (app?.companyGroupId && groupById.has(String(app.companyGroupId))) {
+      return groupById.get(String(app.companyGroupId));
+    }
+    return findGroupByName(app?.companyNameSnapshot || app?.companyName || '');
+  }
+
   function getCompanySelectValue(app) {
     if (app?.companyGroupId && groupById.has(String(app.companyGroupId))) return String(app.companyGroupId);
     const name = getCompanyName(app);
@@ -204,7 +338,7 @@ export default function PipelinePage() {
       {/* Input */}
       {inputOpen && (
         <div className="rf-pipeline__input">
-          <textarea className="rf-textarea" rows={4} value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="Job Title | Job ID | Company (one per line)" />
+          <textarea className="rf-textarea" rows={4} value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="Job Title | Job ID | Company is recommended, but loose pasted lines work too" />
           <div className="rf-pipeline__input-actions">
             <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={addApplications} disabled={parsing || !rawInput.trim()}>{parsing ? 'Adding…' : 'Add Applications'}</button>
             <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setInputOpen(false); setRawInput(''); }}>Cancel</button>
@@ -236,7 +370,14 @@ export default function PipelinePage() {
                 {(byStatus[col.key] || []).map(app => (
                   <div key={app.id} className={`rf-app-card ${dragId === app.id ? 'rf-app-card--dragging' : ''}`} draggable onDragStart={e => onDragStart(e, app.id)}>
                     <div className="rf-app-card__title">{app.jobTitle || 'Untitled'}</div>
-                    <div className="rf-app-card__company">{getCompanyName(app) || '—'}</div>
+                    <div className="rf-app-card__company">
+                      {getCompanyGroup(app) && (
+                        <span className="rf-app-card__company-logo">
+                          {getCompanyGroup(app).logoUrl ? <img src={getCompanyGroup(app).logoUrl} alt="" /> : (getCompanyName(app).charAt(0) || '?')}
+                        </span>
+                      )}
+                      <span>{getCompanyName(app) || '—'}</span>
+                    </div>
                     <div className="rf-app-card__footer">
                       <span className="rf-app-card__date">{relDate(app.appliedDate)}</span>
                       {app.jobId && <span className="rf-app-card__id">{app.jobId}</span>}
@@ -261,8 +402,28 @@ export default function PipelinePage() {
               {filtered.map(app => (
                 <tr key={app.id}>
                   <td>{app.appliedDate ? new Date(app.appliedDate).toLocaleDateString() : '—'}</td>
-                  <td style={{ fontWeight: 500 }}>{app.jobTitle || '—'}</td>
-                  <td><span className="rf-mono" style={{ fontSize: 'var(--rf-text-xs)' }}>{app.jobId || '—'}</span></td>
+                  <td>
+                    <input
+                      className="rf-input rf-pipeline__edit-input"
+                      value={app.jobTitle || ''}
+                      placeholder="Job title"
+                      onChange={e => updateLocalApplication(app.id, { jobTitle: e.target.value })}
+                      onBlur={e => saveApplicationFields(app.id, { jobTitle: e.target.value })}
+                      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                      disabled={fieldBusyId.startsWith(`${app.id}:`)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="rf-input rf-pipeline__edit-input rf-mono"
+                      value={app.jobId || ''}
+                      placeholder="Job ID"
+                      onChange={e => updateLocalApplication(app.id, { jobId: e.target.value })}
+                      onBlur={e => saveApplicationFields(app.id, { jobId: e.target.value })}
+                      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                      disabled={fieldBusyId.startsWith(`${app.id}:`)}
+                    />
+                  </td>
                   <td>
                     {addingCompanyForId === app.id ? (
                       <div className="rf-pipeline__company-add">

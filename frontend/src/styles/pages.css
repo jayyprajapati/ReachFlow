@@ -60,19 +60,22 @@
 .rf-name-toggle__switch--on .rf-name-toggle__thumb { transform: translateX(14px); }
 
 /* ── Pipeline Page ── */
-.rf-pipeline { display: flex; flex-direction: column; height: 100%; gap: var(--rf-sp-4); }
-.rf-pipeline__board { display: flex; gap: var(--rf-sp-4); flex: 1; overflow-x: auto; padding-bottom: var(--rf-sp-4); min-height: 0; }
-.rf-pipeline__column { flex: 0 0 280px; display: flex; flex-direction: column; gap: var(--rf-sp-2); min-height: 200px; }
+.rf-pipeline { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--rf-sp-4); }
+.rf-pipeline__board { display: flex; align-items: stretch; gap: var(--rf-sp-4); flex: 1; overflow-x: auto; overflow-y: hidden; padding-bottom: var(--rf-sp-4); min-height: 0; }
+.rf-pipeline__column { flex: 0 0 280px; display: flex; flex-direction: column; gap: var(--rf-sp-2); min-height: 0; max-height: 100%; }
 .rf-pipeline__col-header { display: flex; align-items: center; justify-content: space-between; padding: var(--rf-sp-2) var(--rf-sp-3); }
 .rf-pipeline__col-title { font-size: var(--rf-text-sm); font-weight: 600; color: var(--rf-text-secondary); display: flex; align-items: center; gap: var(--rf-sp-2); }
 .rf-pipeline__col-count { font-size: var(--rf-text-xs); color: var(--rf-text-faint); background: var(--rf-bg-hover); padding: 1px 6px; border-radius: var(--rf-radius-full); }
-.rf-pipeline__col-cards { flex: 1; display: flex; flex-direction: column; gap: var(--rf-sp-2); padding: var(--rf-sp-2); background: var(--rf-bg-surface); border: 1px solid var(--rf-border-subtle); border-radius: var(--rf-radius-lg); min-height: 100px; transition: background var(--rf-duration-fast); }
+.rf-pipeline__col-cards { flex: 1; display: flex; flex-direction: column; gap: var(--rf-sp-2); padding: var(--rf-sp-2); background: var(--rf-bg-surface); border: 1px solid var(--rf-border-subtle); border-radius: var(--rf-radius-lg); min-height: 0; overflow-y: auto; overscroll-behavior: contain; transition: background var(--rf-duration-fast); }
 .rf-pipeline__col-cards--dragover { background: var(--rf-accent-subtle); border-color: var(--rf-accent); }
 .rf-app-card { background: var(--rf-bg-raised); border: 1px solid var(--rf-border-subtle); border-radius: var(--rf-radius-md); padding: var(--rf-sp-3); cursor: grab; transition: all var(--rf-duration-fast) var(--rf-ease-out); }
 .rf-app-card:hover { border-color: var(--rf-border-hover); box-shadow: var(--rf-shadow-sm); }
 .rf-app-card--dragging { opacity: 0.5; transform: rotate(2deg); }
 .rf-app-card__title { font-size: var(--rf-text-sm); font-weight: 500; color: var(--rf-text); margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.rf-app-card__company { font-size: var(--rf-text-xs); color: var(--rf-text-muted); margin-bottom: var(--rf-sp-2); }
+.rf-app-card__company { display: flex; align-items: center; gap: 5px; font-size: var(--rf-text-xs); color: var(--rf-text-muted); margin-bottom: var(--rf-sp-2); min-width: 0; }
+.rf-app-card__company span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-app-card__company-logo { width: 1em; height: 1em; flex: 0 0 1em; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; background: var(--rf-bg-hover); color: var(--rf-text-muted); font-size: 1em; font-weight: 700; line-height: 1; overflow: hidden; }
+.rf-app-card__company-logo img { width: 100%; height: 100%; object-fit: cover; }
 .rf-app-card__footer { display: flex; align-items: center; justify-content: space-between; }
 .rf-app-card__date { font-size: var(--rf-text-xs); color: var(--rf-text-faint); }
 .rf-app-card__id { font-size: var(--rf-text-xs); font-family: var(--rf-font-mono); color: var(--rf-text-faint); }
@@ -90,6 +93,11 @@
 .rf-pipeline__table td { padding: var(--rf-sp-3); font-size: var(--rf-text-sm); color: var(--rf-text); border-bottom: 1px solid var(--rf-border-subtle); vertical-align: middle; }
 .rf-pipeline__table tbody tr:hover { background: var(--rf-bg-hover); }
 .rf-pipeline__table .rf-input, .rf-pipeline__table .rf-select { height: 34px; font-size: var(--rf-text-sm); line-height: 1.2; }
+.rf-pipeline__edit-input {
+  min-width: 150px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .rf-pipeline__status-select {
   min-width: 128px;
   padding-top: 0;

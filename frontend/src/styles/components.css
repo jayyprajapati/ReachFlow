@@ -395,6 +395,10 @@
   color: var(--rf-accent);
 }
 
+.rf-spin {
+  animation: rf-spin 1s linear infinite;
+}
+
 /* ── Divider ── */
 
 .rf-divider {

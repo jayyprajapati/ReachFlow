@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, FileUp, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar } from 'lucide-react';
+import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, FileUp, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CUSTOM_VARIABLES = 2;
@@ -85,6 +85,7 @@ export default function ComposePage() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [importingGroupId, setImportingGroupId] = useState('');
   const quillRef = useRef(null);
   const fileInputRef = useRef(null);
   const dropRef = useRef(null);
@@ -322,6 +323,21 @@ export default function ComposePage() {
     setNotice({ type: 'info', message: `Imported ${adds.length} contacts` });
   }
 
+  async function importGroupRecipients(groupId) {
+    if (!groupId || importingGroupId) return;
+    setImportingGroupId(groupId);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
+      const d = await r.json(); if (!r.ok) throw new Error(d.error);
+      handleGroupImport(d.contacts || []);
+      setImportModalOpen(false);
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    } finally {
+      setImportingGroupId('');
+    }
+  }
+
   function resetComposeState() { setRecipients([]); setSubject(''); setBody(''); setDraftId(null); setErrors({ recipients: {} }); setGroupImports([]); setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]); }
 
   // Min datetime for schedule picker (now + 1 minute)
@@ -547,20 +563,22 @@ export default function ComposePage() {
 
       {/* Import modal */}
       {importModalOpen && (
-        <div className="rf-dialog-overlay" onClick={() => setImportModalOpen(false)}>
+        <div className="rf-dialog-overlay" onClick={() => { if (!importingGroupId) setImportModalOpen(false); }}>
           <div className="rf-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
             <div className="rf-dialog__title">Import from Group</div>
             <div className="rf-dialog__body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-3)' }}>
                 {groups.length ? groups.map(g => (
-                  <button key={g.id} className="rf-btn rf-btn--secondary" style={{ justifyContent: 'flex-start' }} onClick={async () => {
-                    try { const r = await authedFetch(`${API_BASE}/api/groups/${g.id}`); const d = await r.json(); if (!r.ok) throw new Error(d.error); handleGroupImport(d.contacts || []); setImportModalOpen(false); } catch (e) { setNotice({ type: 'error', message: e.message }); }
-                  }}>{g.companyName} ({g.contactCount || 0})</button>
+                  <button key={g.id} className="rf-btn rf-btn--secondary" style={{ justifyContent: 'flex-start' }} onClick={() => importGroupRecipients(g.id)} disabled={!!importingGroupId}>
+                    {importingGroupId === g.id && <Loader size={13} className="rf-spin" />}
+                    {g.companyName} ({g.contactCount || 0})
+                    {importingGroupId === g.id && <span style={{ marginLeft: 'auto', fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>Importing…</span>}
+                  </button>
                 )) : <p className="rf-text-muted">No groups yet.</p>}
               </div>
             </div>
             <div className="rf-dialog__actions">
-              <button className="rf-btn rf-btn--ghost" onClick={() => setImportModalOpen(false)}>Close</button>
+              <button className="rf-btn rf-btn--ghost" onClick={() => setImportModalOpen(false)} disabled={!!importingGroupId}>Close</button>
             </div>
           </div>
         </div>
