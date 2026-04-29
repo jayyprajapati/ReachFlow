@@ -16,6 +16,12 @@ const NAV_ITEMS = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const LEGAL_ITEMS = [
+  { path: '/about', label: 'About' },
+  { path: '/privacy-policy', label: 'Privacy' },
+  { path: '/terms-of-use', label: 'Terms' },
+];
+
 export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) {
   const { appUser, gmailConnected, confirmLogout, confirmDisconnectGmail, connectGmail, gmailActionLoading, theme, toggleTheme } = useApp();
   const { path, navigateTo } = useRouter();
@@ -85,6 +91,18 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
         </button>
+
+        <nav className="rf-sidebar__legal" aria-label="Legal pages">
+          {LEGAL_ITEMS.map(item => (
+            <a
+              key={item.path}
+              href={item.path}
+              onClick={(e) => { e.preventDefault(); navigateTo(item.path); }}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
 
         {/* User menu */}
         <div ref={menuRef} style={{ position: 'relative' }}>

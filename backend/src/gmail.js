@@ -410,9 +410,60 @@ function quillClassesToInlineStyles(html) {
   return html;
 }
 
+function mergeInlineStyle(attrs, styles) {
+  const incoming = styles.filter(Boolean).join('; ');
+  if (!incoming) return attrs;
+  const existingStyleM = attrs.match(/style="([^"]*)"/);
+  if (existingStyleM) {
+    const combined = `${existingStyleM[1].replace(/;?\s*$/, '')}; ${incoming}`;
+    return attrs.replace(/style="[^"]*"/, `style="${combined}"`);
+  }
+  return `${attrs} style="${incoming}"`;
+}
+
+function normalizeEmailBodyHtml(html) {
+  let processed = quillClassesToInlineStyles(html || '');
+
+  processed = processed.replace(/<(p|div)([^>]*)>/g, (match, tag, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 6px 0',
+      'padding:0',
+      'line-height:1.45',
+    ]);
+    return `<${tag}${nextAttrs}>`;
+  });
+
+  processed = processed.replace(/<(h[1-6])([^>]*)>/g, (match, tag, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 8px 0',
+      'padding:0',
+      'line-height:1.25',
+    ]);
+    return `<${tag}${nextAttrs}>`;
+  });
+
+  processed = processed.replace(/<(ul|ol)([^>]*)>/g, (match, tag, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 8px 22px',
+      'padding:0',
+    ]);
+    return `<${tag}${nextAttrs}>`;
+  });
+
+  processed = processed.replace(/<li([^>]*)>/g, (match, attrs) => {
+    const nextAttrs = mergeInlineStyle(attrs, [
+      'margin:0 0 3px 0',
+      'padding:0',
+      'line-height:1.45',
+    ]);
+    return `<li${nextAttrs}>`;
+  });
+
+  return processed;
+}
+
 function wrapForGmail(html) {
-  const processed = quillClassesToInlineStyles(html);
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#ffffff;"><div style="max-width:600px;margin:0 auto;padding:20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#333333;">${processed}</div></body></html>`;
+  return normalizeEmailBodyHtml(html);
 }
 
 /* ── MIME email sender ── */

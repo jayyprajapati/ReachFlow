@@ -35,6 +35,8 @@ test('attachment MIME keeps the message body as nested alternative part', () => 
   const plain = decodePart(raw, 'text/plain');
 
   assert.match(html, /Hello <strong>there<\/strong>/);
+  assert.match(html, /<p style="margin:0 0 6px 0; padding:0; line-height:1\.45">/);
+  assert.doesNotMatch(html, /<body|background:#ffffff|max-width:600px|padding:20px/);
   assert.match(plain, /Hello there/);
   assert.ok(raw.indexOf('Content-Type: multipart/alternative') < raw.indexOf('Content-Disposition: attachment'));
 });

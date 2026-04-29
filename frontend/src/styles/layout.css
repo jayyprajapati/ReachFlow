@@ -260,6 +260,25 @@
   color: var(--rf-text);
 }
 
+.rf-sidebar__legal {
+  display: flex;
+  align-items: center;
+  gap: var(--rf-sp-2);
+  padding: 0 var(--rf-sp-3) var(--rf-sp-1);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.rf-sidebar__legal a {
+  color: var(--rf-text-muted);
+  font-size: var(--rf-text-xs);
+  line-height: 1.2;
+}
+
+.rf-sidebar__legal a:hover {
+  color: var(--rf-accent-text);
+}
+
 .rf-sidebar__user {
   display: flex;
   align-items: center;
@@ -270,6 +289,8 @@
   transition: background var(--rf-duration-fast) var(--rf-ease-out);
   overflow: hidden;
   position: relative;
+  width: 100%;
+  text-align: left;
 }
 
 .rf-sidebar__user:hover {
@@ -380,6 +401,7 @@
 .rf-shell__sidebar--collapsed .rf-sidebar__section-label,
 .rf-shell__sidebar--collapsed .rf-sidebar__gmail span,
 .rf-shell__sidebar--collapsed .rf-sidebar__theme span,
+.rf-shell__sidebar--collapsed .rf-sidebar__legal,
 .rf-shell__sidebar--collapsed .rf-sidebar__user-info {
   display: none;
 }
