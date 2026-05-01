@@ -13,6 +13,7 @@ const groupRoutes = require('./routes/groups');
 const applicationRoutes = require('./routes/applications');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
+const resumelabRoutes = require('./routes/resumelab');
 const {
   connectMongo,
   User,
@@ -22,6 +23,8 @@ const {
   Campaign,
   SendLog,
   Application,
+  Resume,
+  CanonicalProfile,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -91,13 +94,15 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs, applications] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
       Variable.deleteMany({ userId }, opts),
       SendLog.deleteMany({ userId }, opts),
       Application.deleteMany({ userId }, opts),
+      Resume.deleteMany({ userId }, opts),
+      CanonicalProfile.deleteMany({ userId }, opts),
     ]);
 
     const userDeletion = await User.deleteOne({ _id: userId }, opts);
@@ -110,6 +115,8 @@ async function deleteCurrentUserAppData(user) {
       variables: variables.deletedCount || 0,
       sendLogs: sendLogs.deletedCount || 0,
       applications: applications.deletedCount || 0,
+      resumes: resumes.deletedCount || 0,
+      canonicalProfiles: canonicalProfiles.deletedCount || 0,
     };
     console.log('[data] Deletion summary:', JSON.stringify(summary));
     return summary;
@@ -392,6 +399,7 @@ app.use('/api/groups', requireAuth, groupRoutes);
 app.use('/api/applications', requireAuth, applicationRoutes);
 app.use('/api/templates', requireAuth, templateRoutes);
 app.use('/api/variables', requireAuth, variableRoutes);
+app.use('/api/resumelab', requireAuth, resumelabRoutes);
 
 connectMongo()
   .then(() => {

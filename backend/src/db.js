@@ -199,6 +199,41 @@ const templateSchema = new mongoose.Schema(
 
 templateSchema.index({ userId: 1, updatedAt: -1 });
 
+const resumeSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, trim: true, default: '' },
+    type: { type: String, enum: ['frontend', 'backend', 'fullstack', 'custom'], default: 'custom' },
+    fileName: { type: String, trim: true, default: '' },
+    fileUrl: { type: String, trim: true, default: '' },
+    storagePath: { type: String, trim: true, default: '' },
+    mimeType: { type: String, trim: true, default: '' },
+    fileSize: { type: Number, min: 0, default: 0 },
+    parsedDocId: { type: String, trim: true, default: '' },
+    tags: { type: [String], default: [] },
+    isBaseResume: { type: Boolean, default: false },
+    uploadSource: { type: String, trim: true, default: 'manual' },
+    status: { type: String, enum: ['uploaded', 'parsed', 'failed'], default: 'uploaded' },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+resumeSchema.index({ userId: 1 });
+resumeSchema.index({ userId: 1, type: 1 });
+resumeSchema.index({ userId: 1, isBaseResume: 1 });
+
+const canonicalProfileSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    profileVersion: { type: Number, default: 1 },
+    canonicalProfile: { type: mongoose.Schema.Types.Mixed, default: null },
+    sourceResumeIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resume' }],
+    lastMergedResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+  },
+  { timestamps: true, versionKey: false }
+);
+
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');
 const Campaign = mongoose.model('Campaign', campaignSchema, 'reachflow_outreach_items');
@@ -206,6 +241,8 @@ const SendLog = mongoose.model('SendLog', sendLogSchema, 'reachflow_send_logs');
 const Group = mongoose.model('Group', groupSchema, 'reachflow_groups');
 const Application = mongoose.model('Application', applicationSchema, 'reachflow_applications');
 const Template = mongoose.model('Template', templateSchema, 'reachflow_templates');
+const Resume = mongoose.model('Resume', resumeSchema, 'reachflow_resumes');
+const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSchema, 'reachflow_canonical_profiles');
 const UserScopedModelNames = {
   users: 'reachflow_users',
   variables: 'reachflow_variables',
@@ -462,6 +499,8 @@ module.exports = {
   Group,
   Application,
   Template,
+  Resume,
+  CanonicalProfile,
   migrateUserSensitiveFields,
   migrateTemplateSensitiveFields,
   migrateCampaignSensitiveFields,
