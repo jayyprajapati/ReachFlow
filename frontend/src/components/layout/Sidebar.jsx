@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { path: '/pipeline', label: 'Applications', icon: Kanban },
   { path: '/contacts', label: 'Contacts', icon: Users },
   { path: '/resume-lab', label: 'Resume Lab', icon: Brain },
-  { path: '/roadmaps', label: 'Roadmap Lab', icon: Map },
+  { path: '/roadmaps', label: 'Roadmap', icon: Map },
 ];
 
 const LEGAL_ITEMS = [

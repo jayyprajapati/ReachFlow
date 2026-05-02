@@ -263,11 +263,11 @@ export default function DashboardPage() {
       {/* Hero header */}
       <div className="rml-dashboard__hero">
         <div className="rml-dashboard__hero-left">
-          <div className="rml-hero-icon">
+          {/* <div className="rml-hero-icon">
             <Map size={22} />
-          </div>
+          </div> */}
           <div>
-            <h1 className="rml-hero-title">Roadmap Lab</h1>
+            <h1 className="rml-hero-title">Roadmap</h1>
             <p className="rml-hero-sub">Your personal skill progression system</p>
           </div>
         </div>
