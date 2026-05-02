@@ -292,6 +292,66 @@ generatedResumeSchema.index({ userId: 1 });
 generatedResumeSchema.index({ userId: 1, analysisId: 1 });
 generatedResumeSchema.index({ userId: 1, templateType: 1 });
 
+const roadmapSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, default: '', trim: true },
+    domain: { type: String, default: '', trim: true },
+    icon: { type: String, default: '', trim: true },
+    colorTheme: { type: String, default: '', trim: true },
+    status: { type: String, enum: ['active', 'paused', 'completed'], default: 'active', index: true },
+    progressPercent: { type: Number, default: 0, min: 0, max: 100 },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+roadmapSchema.index({ userId: 1, updatedAt: -1 });
+roadmapSchema.index({ userId: 1, status: 1 });
+
+const roadmapStageSchema = new mongoose.Schema(
+  {
+    roadmapId: { type: mongoose.Schema.Types.ObjectId, ref: 'Roadmap', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    order: { type: Number, required: true, default: 0 },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+roadmapStageSchema.index({ roadmapId: 1, order: 1 });
+roadmapStageSchema.index({ userId: 1, roadmapId: 1 });
+
+const roadmapItemSchema = new mongoose.Schema(
+  {
+    roadmapId: { type: mongoose.Schema.Types.ObjectId, ref: 'Roadmap', required: true, index: true },
+    stageId: { type: mongoose.Schema.Types.ObjectId, ref: 'RoadmapStage', default: null, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, default: '', trim: true },
+    resourceType: {
+      type: String,
+      enum: ['youtube_playlist', 'youtube_video', 'course', 'article', 'book', 'github', 'custom'],
+      default: 'custom',
+    },
+    url: { type: String, default: '', trim: true },
+    platform: { type: String, default: '', trim: true },
+    order: { type: Number, required: true, default: 0 },
+    status: { type: String, enum: ['planned', 'active', 'completed', 'skipped'], default: 'planned', index: true },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    estimatedHours: { type: Number, default: null, min: 0 },
+    completedAt: { type: Date, default: null },
+    notes: { type: String, default: '', trim: true },
+    tags: { type: [String], default: [] },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+roadmapItemSchema.index({ roadmapId: 1, order: 1 });
+roadmapItemSchema.index({ stageId: 1, order: 1 });
+roadmapItemSchema.index({ userId: 1, roadmapId: 1 });
+roadmapItemSchema.index({ userId: 1, status: 1 });
+
 // B4: AI provider settings (BYOK — API key stored encrypted via dataSecurity.js)
 const aiSettingsSchema = new mongoose.Schema(
   {
@@ -323,6 +383,9 @@ const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSche
 const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema, 'reachflow_resume_analyses');
 const GeneratedResume = mongoose.model('GeneratedResume', generatedResumeSchema, 'reachflow_generated_resumes');
 const AISettings = mongoose.model('AISettings', aiSettingsSchema, 'reachflow_ai_settings');
+const Roadmap = mongoose.model('Roadmap', roadmapSchema, 'reachflow_roadmaps');
+const RoadmapStage = mongoose.model('RoadmapStage', roadmapStageSchema, 'reachflow_roadmap_stages');
+const RoadmapItem = mongoose.model('RoadmapItem', roadmapItemSchema, 'reachflow_roadmap_items');
 const UserScopedModelNames = {
   users: 'reachflow_users',
   variables: 'reachflow_variables',
@@ -584,6 +647,9 @@ module.exports = {
   ResumeAnalysis,
   GeneratedResume,
   AISettings,
+  Roadmap,
+  RoadmapStage,
+  RoadmapItem,
   migrateUserSensitiveFields,
   migrateTemplateSensitiveFields,
   migrateCampaignSensitiveFields,

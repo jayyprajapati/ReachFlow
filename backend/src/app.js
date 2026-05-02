@@ -15,6 +15,7 @@ const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
 const resumelabRoutes = require('./routes/resumelab');
 const settingsRoutes = require('./routes/settings');
+const roadmapRoutes = require('./routes/roadmaps');
 const {
   connectMongo,
   User,
@@ -411,6 +412,7 @@ app.use('/api/templates', requireAuth, templateRoutes);
 app.use('/api/variables', requireAuth, variableRoutes);
 app.use('/api/resumelab', requireAuth, resumelabRoutes);
 app.use('/api/settings', requireAuth, settingsRoutes);
+app.use('/api/roadmaps', requireAuth, roadmapRoutes);
 
 connectMongo()
   .then(() => {
