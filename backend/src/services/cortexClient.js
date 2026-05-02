@@ -5,7 +5,12 @@ const path = require('path');
 
 const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 const CORTEX_APP_NAME = process.env.CORTEX_APP_NAME || 'resumelab';
+
+// /extract makes up to 4 sequential LLM calls — give it enough time.
+// All other JSON endpoints are single-shot; 60 s is plenty.
 const CORTEX_TIMEOUT_MS = 60_000;
+const CORTEX_EXTRACT_TIMEOUT_MS = parseInt(process.env.CORTEX_EXTRACT_TIMEOUT_MS || '300000', 10); // 5 min
+
 const MAX_RETRIES = 2;
 
 const MIME_BY_EXT = {
@@ -23,16 +28,30 @@ class CortexError extends Error {
   }
 }
 
+// Extract a human-readable detail string from a CortexError's body.
+function cortexDetail(err) {
+  if (err instanceof CortexError) {
+    return err.body?.detail || err.body?.error || err.message;
+  }
+  return err.message;
+}
+
 function isRetryable(err) {
   if (err.name === 'AbortError') return true;
-  if (err instanceof CortexError) return !err.status || err.status >= 500;
+  // 4xx errors (except 408/429) are client-side failures — no point retrying.
+  // 5xx (including our new 502 for LLM provider failures) are retried.
+  if (err instanceof CortexError) {
+    if (!err.status) return true;
+    if (err.status === 408 || err.status === 429) return true; // timeout / rate-limit
+    return err.status >= 500;
+  }
   return true;
 }
 
-async function cortexFetch(method, endpoint, body, { isFormData = false } = {}) {
+async function cortexFetch(method, endpoint, body, { isFormData = false, timeoutMs = CORTEX_TIMEOUT_MS } = {}) {
   const url = `${CORTEX_BASE_URL}${endpoint}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CORTEX_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const options = { method, signal: controller.signal };
@@ -52,7 +71,7 @@ async function cortexFetch(method, endpoint, body, { isFormData = false } = {}) 
       const detail = parsed?.detail || parsed?.error || res.statusText;
       throw new CortexError(
         `Cortex ${method} ${endpoint} failed (${res.status}): ${detail}`,
-        { status: res.status, body: parsed }
+        { status: res.status, body: parsed },
       );
     }
     return parsed;
@@ -71,11 +90,11 @@ async function withRetry(fn, label) {
     } catch (err) {
       const isLast = attempt === MAX_RETRIES;
       if (isLast || !isRetryable(err)) {
-        console.error(`[cortex] ${label} — failed: ${err.message}`);
+        console.error(`[cortex] ${label} — failed: ${cortexDetail(err)}`);
         throw err;
       }
       const delay = 500 * (attempt + 1);
-      console.warn(`[cortex] ${label} — attempt ${attempt + 1} failed (${err.message}), retrying in ${delay}ms`);
+      console.warn(`[cortex] ${label} — attempt ${attempt + 1} failed (${cortexDetail(err)}), retrying in ${delay}ms`);
       await new Promise(r => setTimeout(r, delay));
     }
   }
@@ -83,10 +102,7 @@ async function withRetry(fn, label) {
 
 /**
  * Send a resume file to Cortex /extract and return the structured ExtractResponse.
- * @param {object} opts
- * @param {string} opts.filePath  Absolute path to the file on disk.
- * @param {string} opts.userId    MongoDB user ID (for Cortex routing).
- * @param {string} [opts.docId]   Optional doc_id; Cortex generates a UUID if omitted.
+ * Uses a 5-minute timeout because Cortex may make up to 4 sequential LLM calls.
  */
 async function extractResume({ filePath, userId, docId }) {
   const label = `POST /extract (user: ${userId})`;
@@ -103,18 +119,16 @@ async function extractResume({ filePath, userId, docId }) {
     if (docId) formData.append('doc_id', String(docId));
     formData.append('extraction_type', 'resume');
 
-    return cortexFetch('POST', '/extract', formData, { isFormData: true });
+    return cortexFetch('POST', '/extract', formData, {
+      isFormData: true,
+      timeoutMs: CORTEX_EXTRACT_TIMEOUT_MS,
+    });
   }, label);
 }
 
 /**
  * Merge an incoming ExtractResponse into an existing canonical profile via Cortex /profile/merge.
  * Pass existingProfile={} for a user's first upload — Cortex treats all items as new.
- * @param {object} opts
- * @param {string} opts.userId
- * @param {object} opts.existingProfile   Current CanonicalProfile or {} for first merge.
- * @param {object} opts.incomingProfile   ExtractResponse from the new resume.
- * @param {number} [opts.similarityThreshold]  0–1, default 0.85.
  */
 async function mergeCanonicalProfile({ userId, existingProfile, incomingProfile, similarityThreshold = 0.85 }) {
   const label = `POST /profile/merge (user: ${userId})`;
@@ -129,11 +143,6 @@ async function mergeCanonicalProfile({ userId, existingProfile, incomingProfile,
 
 /**
  * Analyze a job description against a canonical profile via Cortex /analyze/match.
- * @param {object} opts
- * @param {string} opts.userId
- * @param {string} opts.jobDescription   Raw JD text.
- * @param {object} opts.canonicalProfile  CanonicalProfile.canonicalProfile value.
- * @param {object} [opts.baseResume]      ExtractResponse for a specific resume (optional).
  */
 async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, baseResume }) {
   const label = `POST /analyze/match (user: ${userId})`;
@@ -149,12 +158,6 @@ async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, ba
 
 /**
  * Generate an ATS-optimised structured resume via Cortex /generate/document.
- * @param {object} opts
- * @param {string} opts.userId
- * @param {string} opts.jobDescription
- * @param {object} opts.canonicalProfile
- * @param {object} [opts.baseResume]      ExtractResponse for a specific resume (optional).
- * @param {string} [opts.templateType]    frontend | backend | fullstack (default: fullstack)
  */
 async function generateOptimizedResume({ userId, jobDescription, canonicalProfile, baseResume, templateType = 'fullstack' }) {
   const label = `POST /generate/document (user: ${userId}, template: ${templateType})`;
@@ -169,4 +172,4 @@ async function generateOptimizedResume({ userId, jobDescription, canonicalProfil
   return withRetry(() => cortexFetch('POST', '/generate/document', body), label);
 }
 
-module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, CortexError };
+module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, CortexError, cortexDetail };

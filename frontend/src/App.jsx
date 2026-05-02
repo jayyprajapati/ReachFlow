@@ -9,6 +9,7 @@ import ContactsPage from './pages/ContactsPage.jsx';
 import TemplatesPage from './pages/TemplatesPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import ResumeLabPage from './pages/ResumeLab/index.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './components/TermsOfUsePage.jsx';
@@ -24,6 +25,7 @@ function PageRouter() {
     case path === '/templates': return <TemplatesPage />;
     case path === '/history': return <HistoryPage />;
     case path === '/settings': return <SettingsPage />;
+    case path.startsWith('/resume-lab'): return <ResumeLabPage />;
     default: return <ComposePage />;
   }
 }

@@ -2,11 +2,12 @@
 
 const express = require('express');
 const { Types } = require('mongoose');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume } = require('../db');
-const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume } = require('../services/cortexClient');
+const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, cortexDetail } = require('../services/cortexClient');
 const { injectTemplate, compileToPdf } = require('../services/latexCompiler');
 
 const router = express.Router();
@@ -14,8 +15,11 @@ const router = express.Router();
 // ── Config ─────────────────────────────────────────────────────────────────
 
 const MAX_RESUME_UPLOAD_MB = parseInt(process.env.MAX_RESUME_UPLOAD_MB || '10', 10);
+
+// Default storage is ~/.reachflow/uploads/resumes — outside the project directory.
+// Override with RESUME_UPLOAD_DIR for production (e.g. a mounted DO Volume or S3-backed path).
 const RESUME_UPLOAD_DIR = process.env.RESUME_UPLOAD_DIR
-  || path.join(__dirname, '../../../uploads/resumes');
+  || path.join(os.homedir(), '.reachflow', 'uploads', 'resumes');
 
 const ALLOWED_MIME = new Set([
   'application/pdf',
@@ -182,10 +186,14 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     resumeDoc.extractedContent = extractResult;
     console.log(`[resumelab] Extraction complete — userId: ${userId}, docId: ${resumeDoc.parsedDocId}, confidence: ${extractResult.metadata?.confidence}`);
   } catch (extractErr) {
-    console.error(`[resumelab] Extraction failed — userId: ${userId}, resumeId: ${resumeDoc._id}:`, extractErr.message);
+    const detail = cortexDetail(extractErr);
+    console.error(`[resumelab] Extraction failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
     resumeDoc.status = 'failed';
     await resumeDoc.save();
-    return res.status(502).json({ error: 'Resume parsing failed. Please try again or check the file is readable.' });
+    return res.status(502).json({
+      error: 'Resume parsing failed.',
+      detail,
+    });
   }
 
   // ── Step 2: Fetch existing canonical profile ────────────────────────────
@@ -201,13 +209,14 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
       incomingProfile: extractResult,
     });
   } catch (mergeErr) {
-    console.error(`[resumelab] Merge failed — userId: ${userId}, resumeId: ${resumeDoc._id}:`, mergeErr.message);
-    // Extraction succeeded so the resume doc is salvageable — mark parsed so the
-    // user can trigger a manual rebuild once Cortex recovers.
+    const detail = cortexDetail(mergeErr);
+    console.error(`[resumelab] Merge failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
+    // Extraction succeeded — mark parsed so the user can trigger /profile/rebuild later.
     resumeDoc.status = 'parsed';
     await resumeDoc.save();
     return res.status(502).json({
       error: 'Profile merge failed. Resume was parsed but the canonical profile was not updated. Use /profile/rebuild to retry.',
+      detail,
       resume: toResumeResponse(resumeDoc),
       extract_summary: {
         doc_id: resumeDoc.parsedDocId,
@@ -623,8 +632,9 @@ router.post('/analyze', async (req, res) => {
       baseResume: baseResumeResult?.extractedContent || undefined,
     });
   } catch (err) {
-    console.error(`[resumelab] Analyze failed — userId: ${userId}:`, err.message);
-    return res.status(502).json({ error: 'Resume analysis failed. Please try again.' });
+    const detail = cortexDetail(err);
+    console.error(`[resumelab] Analyze failed — userId: ${userId}: ${detail}`);
+    return res.status(502).json({ error: 'Resume analysis failed. Please try again.', detail });
   }
 
   const analysisDoc = await ResumeAnalysis.create({
@@ -727,7 +737,8 @@ router.post('/generate', async (req, res) => {
     });
     console.log(`[resumelab] Generation complete — userId: ${userId}, score improved to: ${generatedContent.match_score_improved}`);
   } catch (err) {
-    console.error(`[resumelab] Generation failed — userId: ${userId}, analysisId: ${analysisId}:`, err.message);
+    const detail = cortexDetail(err);
+    console.error(`[resumelab] Generation failed — userId: ${userId}, analysisId: ${analysisId}: ${detail}`);
     await GeneratedResume.create({
       userId,
       analysisId: analysisDoc._id,
@@ -736,12 +747,12 @@ router.post('/generate', async (req, res) => {
       generatedContent: null,
       latexSource: '',
       pdfPath: '',
-      pdfError: err.message,
+      pdfError: detail,
       matchScoreBefore: analysisDoc.matchScore,
       matchScoreAfter: 0,
       status: 'failed',
     });
-    return res.status(502).json({ error: 'Resume generation failed. Please try again.' });
+    return res.status(502).json({ error: 'Resume generation failed. Please try again.', detail });
   }
 
   // ── Step 2: Inject into LaTeX template ────────────────────────────────

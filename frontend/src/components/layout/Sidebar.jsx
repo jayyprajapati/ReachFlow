@@ -4,7 +4,7 @@ import { useRouter } from '../../router.jsx';
 import {
   Send, Users, Kanban, FileText, Clock, Settings, Search,
   ChevronsLeft, ChevronsRight, LogOut, XCircle, CheckCircle2,
-  Waypoints, Sun, Moon,
+  Waypoints, Sun, Moon, Brain,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { path: '/contacts', label: 'Contacts', icon: Users },
   { path: '/templates', label: 'Templates', icon: FileText },
   { path: '/history', label: 'History', icon: Clock },
+  { path: '/resume-lab', label: 'Resume Lab', icon: Brain },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

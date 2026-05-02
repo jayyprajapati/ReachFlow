@@ -7,7 +7,9 @@ const { spawn } = require('child_process');
 const crypto = require('crypto');
 
 const LATEX_TEMP_DIR = process.env.LATEX_TEMP_DIR || path.join(os.tmpdir(), 'reachflow-latex');
-const PDF_OUTPUT_DIR = process.env.PDF_OUTPUT_DIR || path.join(__dirname, '../../../uploads/pdfs');
+// Default PDF output is ~/.reachflow/pdfs — outside the project directory.
+// Override with PDF_OUTPUT_DIR for production (e.g. a mounted DO Volume).
+const PDF_OUTPUT_DIR = process.env.PDF_OUTPUT_DIR || path.join(os.homedir(), '.reachflow', 'pdfs');
 const COMPILE_TIMEOUT_MS = 30_000;
 
 const TEMPLATE_DIR = path.join(__dirname, '../resume_templates');
