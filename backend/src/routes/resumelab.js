@@ -6,7 +6,8 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume } = require('../db');
+const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume, AISettings } = require('../db');
+const { decryptJson } = require('../utils/dataSecurity');
 const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, cortexDetail } = require('../services/cortexClient');
 const { injectTemplate, compileToPdf } = require('../services/latexCompiler');
 
@@ -102,6 +103,7 @@ function toResumeResponse(doc) {
     parsedDocId: doc.parsedDocId || '',
     tags: doc.tags || [],
     isBaseResume: !!doc.isBaseResume,
+    isStartingResume: !!doc.isBaseResume,
     uploadSource: doc.uploadSource || 'manual',
     status: doc.status || 'uploaded',
     uploadedAt: doc.uploadedAt,
@@ -130,6 +132,30 @@ async function safeDeleteFile(filePath) {
     if (err.code !== 'ENOENT') {
       console.warn(`[resumelab] Could not delete file ${filePath}: ${err.message}`);
     }
+  }
+}
+
+// Resolves the user's AI provider override from their saved AISettings.
+// Returns null if no valid settings exist — callers fall back to Cortex defaults.
+async function resolveUserLlm(userId) {
+  try {
+    const doc = await AISettings.findOne({ userId });
+    if (!doc || !doc.isValid) return null;
+    const override = { provider: doc.provider };
+    if (doc.selectedModel) override.model = doc.selectedModel;
+    if (doc.provider === 'ollama_local' && doc.localEndpoint) override.base_url = doc.localEndpoint;
+    if (doc.apiKeyEncrypted) {
+      try {
+        const raw = decryptJson(doc.apiKeyEncrypted);
+        const key = typeof raw === 'string' ? raw : (raw?.key || '');
+        if (key) override.api_key = key;
+      } catch {
+        // decryption failed — proceed without key
+      }
+    }
+    return override;
+  } catch {
+    return null;
   }
 }
 
@@ -184,6 +210,8 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     });
     resumeDoc.parsedDocId = extractResult.doc_id || resumeDoc._id.toString();
     resumeDoc.extractedContent = extractResult;
+    resumeDoc.normalizedResumeText = extractResult.normalized_resume_text || '';
+    resumeDoc.sectionedResumeSource = extractResult.sectioned_resume_source || null;
     console.log(`[resumelab] Extraction complete — userId: ${userId}, docId: ${resumeDoc.parsedDocId}, confidence: ${extractResult.metadata?.confidence}`);
   } catch (extractErr) {
     const detail = cortexDetail(extractErr);
@@ -548,7 +576,10 @@ function toGeneratedSummary(doc) {
     id: doc._id.toString(),
     analysisId: doc.analysisId?.toString() || null,
     baseResumeId: doc.baseResumeId?.toString() || null,
-    templateType: doc.templateType,
+    outputFormat: doc.templateType,
+    generationMode: doc.generationMode || 'canonical_only',
+    startingResumeId: doc.startingResumeId?.toString() || null,
+    aggressiveness: doc.aggressiveness || 'balanced',
     matchScoreBefore: doc.matchScoreBefore || 0,
     matchScoreAfter: doc.matchScoreAfter || 0,
     hasPdf: !!doc.pdfPath,
@@ -622,6 +653,7 @@ router.post('/analyze', async (req, res) => {
   }
 
   const baseResumeResult = await resolveBaseResume(userId, baseResumeId);
+  const llm = await resolveUserLlm(userId);
 
   let matchAnalysis;
   try {
@@ -630,6 +662,7 @@ router.post('/analyze', async (req, res) => {
       jobDescription: jd,
       canonicalProfile: profileDoc.canonicalProfile,
       baseResume: baseResumeResult?.extractedContent || undefined,
+      llm: llm || undefined,
     });
   } catch (err) {
     const detail = cortexDetail(err);
@@ -704,16 +737,34 @@ router.get('/analyses/:id', async (req, res) => {
 
 // ── POST /api/resumelab/generate ─────────────────────────────────────────────
 
+const VALID_GENERATION_MODES = new Set(['canonical_only', 'modify_existing']);
+const VALID_AGGRESSIVENESS = new Set(['conservative', 'balanced', 'aggressive']);
+
 router.post('/generate', async (req, res) => {
   const userId = req.user._id;
-  const { analysisId, templateType: reqTemplateType, baseResumeId } = req.body || {};
+  const {
+    analysisId,
+    templateType: reqTemplateType,
+    outputFormat: reqOutputFormat,
+    baseResumeId,
+    startingResumeId: reqStartingResumeId,
+    generationMode: reqGenerationMode,
+    userPrompt,
+    aggressiveness: reqAggressiveness,
+  } = req.body || {};
 
   if (!analysisId || !Types.ObjectId.isValid(analysisId)) {
     return res.status(400).json({ error: 'Valid analysisId is required' });
   }
 
-  const templateType = TEMPLATE_TYPES.has(reqTemplateType) ? reqTemplateType : 'fullstack';
-  console.log(`[resumelab] POST /generate — userId: ${userId}, analysisId: ${analysisId}, template: ${templateType}`);
+  const outputFormat = TEMPLATE_TYPES.has(reqOutputFormat) ? reqOutputFormat
+    : TEMPLATE_TYPES.has(reqTemplateType) ? reqTemplateType
+    : 'fullstack';
+  const generationMode = VALID_GENERATION_MODES.has(reqGenerationMode) ? reqGenerationMode : 'canonical_only';
+  const aggressiveness = VALID_AGGRESSIVENESS.has(reqAggressiveness) ? reqAggressiveness : 'balanced';
+  const resolvedStartingId = reqStartingResumeId || baseResumeId;
+
+  console.log(`[resumelab] POST /generate — userId: ${userId}, analysisId: ${analysisId}, mode: ${generationMode}, template: ${outputFormat}`);
 
   const analysisDoc = await ResumeAnalysis.findOne({ _id: analysisId, userId });
   if (!analysisDoc) return res.status(404).json({ error: 'Analysis not found' });
@@ -723,7 +774,16 @@ router.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'No canonical profile found. Upload at least one resume first.' });
   }
 
-  const baseResumeResult = await resolveBaseResume(userId, baseResumeId || analysisDoc.baseResumeId?.toString());
+  const baseResumeResult = await resolveBaseResume(userId, resolvedStartingId || analysisDoc.baseResumeId?.toString());
+  const llm = await resolveUserLlm(userId);
+
+  // For modify_existing, pass the raw resume text so Cortex can rewrite from it
+  let sourceResumeContent;
+  if (generationMode === 'modify_existing' && baseResumeResult?.resume) {
+    sourceResumeContent = baseResumeResult.resume.normalizedResumeText
+      || baseResumeResult.extractedContent?.normalized_resume_text
+      || undefined;
+  }
 
   // ── Step 1: Generate structured content via Cortex ─────────────────────
   let generatedContent;
@@ -733,7 +793,12 @@ router.post('/generate', async (req, res) => {
       jobDescription: analysisDoc.jobDescriptionRaw,
       canonicalProfile: profileDoc.canonicalProfile,
       baseResume: baseResumeResult?.extractedContent || undefined,
-      templateType,
+      templateType: outputFormat,
+      llm: llm || undefined,
+      mode: generationMode,
+      sourceResumeContent,
+      userTweakPrompt: userPrompt ? String(userPrompt).slice(0, 1000) : undefined,
+      aggressiveness,
     });
     console.log(`[resumelab] Generation complete — userId: ${userId}, score improved to: ${generatedContent.match_score_improved}`);
   } catch (err) {
@@ -743,7 +808,11 @@ router.post('/generate', async (req, res) => {
       userId,
       analysisId: analysisDoc._id,
       baseResumeId: baseResumeResult?.resume?._id || null,
-      templateType,
+      templateType: outputFormat,
+      generationMode,
+      startingResumeId: baseResumeResult?.resume?._id || null,
+      userPrompt: String(userPrompt || '').slice(0, 1000),
+      aggressiveness,
       generatedContent: null,
       latexSource: '',
       pdfPath: '',
@@ -757,7 +826,7 @@ router.post('/generate', async (req, res) => {
 
   // ── Step 2: Inject into LaTeX template ────────────────────────────────
   const latexSource = injectTemplate({
-    templateType,
+    templateType: outputFormat,
     name: req.user.displayName || req.user.email || 'Candidate',
     contact: req.user.email || '',
     generated: generatedContent,
@@ -784,7 +853,11 @@ router.post('/generate', async (req, res) => {
     userId,
     analysisId: analysisDoc._id,
     baseResumeId: baseResumeResult?.resume?._id || null,
-    templateType,
+    templateType: outputFormat,
+    generationMode,
+    startingResumeId: baseResumeResult?.resume?._id || null,
+    userPrompt: String(userPrompt || '').slice(0, 1000),
+    aggressiveness,
     generatedContent,
     latexSource,
     pdfPath,
@@ -803,6 +876,7 @@ router.post('/generate', async (req, res) => {
     pdfError: pdfError || null,
     matchScoreBefore: genDoc.matchScoreBefore,
     matchScoreAfter: genDoc.matchScoreAfter,
+    generationMode,
   });
 });
 
@@ -866,6 +940,32 @@ router.get('/generated/:id/pdf', async (req, res) => {
   } catch (err) {
     console.error(`[resumelab] GET /generated/${req.params.id}/pdf failed:`, err.message);
     res.status(500).json({ error: err.message || 'Failed to serve PDF' });
+  }
+});
+
+// ── GET /api/resumelab/history ───────────────────────────────────────────────
+// Returns a merged, time-sorted feed of analyses and generated resumes (max 100 items).
+
+router.get('/history', async (req, res) => {
+  try {
+    const userId = req.user._id;
+    console.log(`[resumelab] GET /history — userId: ${userId}`);
+
+    const [analyses, generated] = await Promise.all([
+      ResumeAnalysis.find({ userId }).sort({ createdAt: -1 }).limit(50),
+      GeneratedResume.find({ userId }).sort({ createdAt: -1 }).limit(50),
+    ]);
+
+    const items = [
+      ...analyses.map(doc => ({ kind: 'analysis', ...toAnalysisSummary(doc) })),
+      ...generated.map(doc => ({ kind: 'generated', ...toGeneratedSummary(doc) })),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100);
+
+    console.log(`[resumelab] GET /history — userId: ${userId}, items: ${items.length}`);
+    res.json({ history: items });
+  } catch (err) {
+    console.error('[resumelab] GET /history failed:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to load history' });
   }
 });
 

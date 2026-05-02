@@ -2,19 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Send, Users, Kanban, FileText, Clock, Settings, Search,
+  Send, Users, Kanban, Settings, Search,
   ChevronsLeft, ChevronsRight, LogOut, XCircle, CheckCircle2,
   Waypoints, Sun, Moon, Brain,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Compose', icon: Send },
-  { path: '/pipeline', label: 'Pipeline', icon: Kanban },
+  { path: '/pipeline', label: 'Applications', icon: Kanban },
   { path: '/contacts', label: 'Contacts', icon: Users },
-  { path: '/templates', label: 'Templates', icon: FileText },
-  { path: '/history', label: 'History', icon: Clock },
   { path: '/resume-lab', label: 'Resume Lab', icon: Brain },
-  { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const LEGAL_ITEMS = [
@@ -87,6 +84,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
           <span className={`rf-dot ${gmailConnected ? 'rf-dot--success' : 'rf-dot--error'}`} />
           <span>{gmailConnected ? 'Gmail connected' : 'Gmail disconnected'}</span>
         </div>
+
+        <button
+          className={`rf-sidebar__link${path.startsWith('/settings') ? ' rf-sidebar__link--active' : ''}`}
+          onClick={() => navigateTo('/settings')}
+          style={{ width: '100%', justifyContent: 'flex-start' }}
+        >
+          <span className="rf-sidebar__link-icon"><Settings size={16} /></span>
+          <span className="rf-sidebar__link-label">Settings</span>
+        </button>
 
         <button className="rf-sidebar__theme" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}

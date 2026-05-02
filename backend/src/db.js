@@ -216,6 +216,10 @@ const resumeSchema = new mongoose.Schema(
     status: { type: String, enum: ['uploaded', 'parsed', 'failed'], default: 'uploaded' },
     uploadedAt: { type: Date, default: Date.now },
     extractedContent: { type: mongoose.Schema.Types.Mixed, default: null },
+    // B1: Source-preservation fields from Cortex /extract (A1)
+    normalizedResumeText: { type: String, default: '' },
+    sectionedResumeSource: { type: mongoose.Schema.Types.Mixed, default: null },
+    extractVersion: { type: Number, default: 1 },
   },
   { timestamps: true, versionKey: false }
 );
@@ -275,6 +279,11 @@ const generatedResumeSchema = new mongoose.Schema(
     matchScoreBefore: { type: Number, min: 0, max: 100, default: 0 },
     matchScoreAfter: { type: Number, min: 0, max: 100, default: 0 },
     status: { type: String, enum: ['generated', 'failed'], default: 'generated' },
+    // B6: Generation strategy fields
+    generationMode: { type: String, enum: ['canonical_only', 'modify_existing'], default: 'canonical_only' },
+    startingResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+    userPrompt: { type: String, trim: true, default: '' },
+    aggressiveness: { type: String, enum: ['conservative', 'balanced', 'aggressive'], default: 'balanced' },
   },
   { timestamps: true, versionKey: false }
 );
@@ -282,6 +291,25 @@ const generatedResumeSchema = new mongoose.Schema(
 generatedResumeSchema.index({ userId: 1 });
 generatedResumeSchema.index({ userId: 1, analysisId: 1 });
 generatedResumeSchema.index({ userId: 1, templateType: 1 });
+
+// B4: AI provider settings (BYOK — API key stored encrypted via dataSecurity.js)
+const aiSettingsSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    provider: {
+      type: String,
+      enum: ['openai', 'ollama_cloud', 'ollama_local'],
+      default: 'ollama_cloud',
+    },
+    apiKeyEncrypted: { type: String, default: '' },
+    localEndpoint: { type: String, trim: true, default: '' },
+    selectedModel: { type: String, trim: true, default: '' },
+    isValid: { type: Boolean, default: false },
+    validatedAt: { type: Date, default: null },
+  },
+  { timestamps: true, versionKey: false }
+);
+aiSettingsSchema.index({ userId: 1 });
 
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');
@@ -294,6 +322,7 @@ const Resume = mongoose.model('Resume', resumeSchema, 'reachflow_resumes');
 const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSchema, 'reachflow_canonical_profiles');
 const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema, 'reachflow_resume_analyses');
 const GeneratedResume = mongoose.model('GeneratedResume', generatedResumeSchema, 'reachflow_generated_resumes');
+const AISettings = mongoose.model('AISettings', aiSettingsSchema, 'reachflow_ai_settings');
 const UserScopedModelNames = {
   users: 'reachflow_users',
   variables: 'reachflow_variables',
@@ -554,6 +583,7 @@ module.exports = {
   CanonicalProfile,
   ResumeAnalysis,
   GeneratedResume,
+  AISettings,
   migrateUserSensitiveFields,
   migrateTemplateSensitiveFields,
   migrateCampaignSensitiveFields,

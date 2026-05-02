@@ -1,17 +1,17 @@
 import React from 'react';
 import { useRouter } from '../../router.jsx';
 import { ResumeLabProvider } from '../../contexts/ResumeLabContext.jsx';
-import { Vault, User, Microscope, FileOutput } from 'lucide-react';
+import { Vault, User, LayoutDashboard, Clock } from 'lucide-react';
 import VaultPage from './VaultPage.jsx';
 import ProfilePage from './ProfilePage.jsx';
-import AnalyzePage from './AnalyzePage.jsx';
-import GeneratedPage from './GeneratedPage.jsx';
+import WorkspacePage from './WorkspacePage.jsx';
+import HistoryPage from './HistoryPage.jsx';
 
 const SUB_ROUTES = [
-  { path: '/resume-lab/vault',     label: 'Resume Vault',  icon: Vault,       desc: 'Upload & manage' },
-  { path: '/resume-lab/profile',   label: 'Career Profile', icon: User,       desc: 'Your merged profile' },
-  { path: '/resume-lab/analyze',   label: 'JD Analyzer',   icon: Microscope,  desc: 'Match & gap analysis' },
-  { path: '/resume-lab/generated', label: 'Generated',     icon: FileOutput,  desc: 'Versioned resumes' },
+  { path: '/resume-lab/vault',     label: 'Resume Vault',  icon: Vault,            desc: 'Upload & manage' },
+  { path: '/resume-lab/profile',   label: 'Career Profile', icon: User,            desc: 'Your merged profile' },
+  { path: '/resume-lab/workspace', label: 'Workspace',     icon: LayoutDashboard,  desc: 'Analyze & generate' },
+  { path: '/resume-lab/history',   label: 'History',       icon: Clock,            desc: 'Past analyses & resumes' },
 ];
 
 function SubNav({ path, navigateTo }) {
@@ -43,8 +43,8 @@ function SubNav({ path, navigateTo }) {
 
 function SubRouter({ path }) {
   if (path === '/resume-lab/profile')   return <ProfilePage />;
-  if (path === '/resume-lab/analyze')   return <AnalyzePage />;
-  if (path === '/resume-lab/generated') return <GeneratedPage />;
+  if (path === '/resume-lab/workspace') return <WorkspacePage />;
+  if (path === '/resume-lab/history')   return <HistoryPage />;
   return <VaultPage />;
 }
 

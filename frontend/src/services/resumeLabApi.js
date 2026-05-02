@@ -61,6 +61,18 @@ export function makeResumeLabApi(authedFetch) {
       call(`/api/resumelab/generated/${id}`),
     deleteGenerated: (id) =>
       call(`/api/resumelab/generated/${id}`, { method: 'DELETE' }),
+
+    // ── History ───────────────────────────────────────────────────────────
+    getHistory: () =>
+      call('/api/resumelab/history'),
+
+    // ── AI Settings ───────────────────────────────────────────────────────
+    getAISettings: () =>
+      call('/api/settings/ai'),
+    saveAISettings: (body) =>
+      call('/api/settings/ai', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    testAIConnection: () =>
+      call('/api/settings/ai/test', { method: 'POST' }),
   };
 }
 

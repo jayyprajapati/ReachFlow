@@ -143,8 +143,9 @@ async function mergeCanonicalProfile({ userId, existingProfile, incomingProfile,
 
 /**
  * Analyze a job description against a canonical profile via Cortex /analyze/match.
+ * Pass llm to use a BYOK provider override.
  */
-async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, baseResume }) {
+async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, baseResume, llm }) {
   const label = `POST /analyze/match (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
@@ -153,14 +154,30 @@ async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, ba
     canonical_profile: canonicalProfile,
   };
   if (baseResume) body.base_resume = baseResume;
+  if (llm) body.llm = llm;
   return withRetry(() => cortexFetch('POST', '/analyze/match', body), label);
 }
 
 /**
  * Generate an ATS-optimised structured resume via Cortex /generate/document.
+ * Pass llm for BYOK, mode for generation strategy, and optional tweak params.
  */
-async function generateOptimizedResume({ userId, jobDescription, canonicalProfile, baseResume, templateType = 'fullstack' }) {
-  const label = `POST /generate/document (user: ${userId}, template: ${templateType})`;
+async function generateOptimizedResume({
+  userId,
+  jobDescription,
+  canonicalProfile,
+  baseResume,
+  templateType = 'fullstack',
+  llm,
+  mode,
+  sourceResumeContent,
+  userTweakPrompt,
+  aggressiveness,
+  includeExternalKeywords,
+  includeMissingProfileKeywords,
+  removeIrrelevantKeywords,
+}) {
+  const label = `POST /generate/document (user: ${userId}, template: ${templateType}, mode: ${mode || 'canonical_only'})`;
   const body = {
     app_name: CORTEX_APP_NAME,
     user_id: String(userId),
@@ -169,6 +186,14 @@ async function generateOptimizedResume({ userId, jobDescription, canonicalProfil
     template_type: templateType,
   };
   if (baseResume) body.base_resume = baseResume;
+  if (llm) body.llm = llm;
+  if (mode) body.mode = mode;
+  if (sourceResumeContent) body.source_resume_content = sourceResumeContent;
+  if (userTweakPrompt) body.user_tweak_prompt = userTweakPrompt;
+  if (aggressiveness) body.aggressiveness = aggressiveness;
+  if (includeExternalKeywords !== undefined) body.include_external_keywords = includeExternalKeywords;
+  if (includeMissingProfileKeywords !== undefined) body.include_missing_profile_keywords = includeMissingProfileKeywords;
+  if (removeIrrelevantKeywords !== undefined) body.remove_irrelevant_keywords = removeIrrelevantKeywords;
   return withRetry(() => cortexFetch('POST', '/generate/document', body), label);
 }
 

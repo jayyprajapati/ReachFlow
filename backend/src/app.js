@@ -14,6 +14,7 @@ const applicationRoutes = require('./routes/applications');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
 const resumelabRoutes = require('./routes/resumelab');
+const settingsRoutes = require('./routes/settings');
 const {
   connectMongo,
   User,
@@ -27,6 +28,7 @@ const {
   CanonicalProfile,
   ResumeAnalysis,
   GeneratedResume,
+  AISettings,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -96,7 +98,7 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes, aiSettings] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
@@ -107,6 +109,7 @@ async function deleteCurrentUserAppData(user) {
       CanonicalProfile.deleteMany({ userId }, opts),
       ResumeAnalysis.deleteMany({ userId }, opts),
       GeneratedResume.deleteMany({ userId }, opts),
+      AISettings.deleteMany({ userId }, opts),
     ]);
 
     const userDeletion = await User.deleteOne({ _id: userId }, opts);
@@ -123,6 +126,7 @@ async function deleteCurrentUserAppData(user) {
       canonicalProfiles: canonicalProfiles.deletedCount || 0,
       resumeAnalyses: resumeAnalyses.deletedCount || 0,
       generatedResumes: generatedResumes.deletedCount || 0,
+      aiSettings: aiSettings.deletedCount || 0,
     };
     console.log('[data] Deletion summary:', JSON.stringify(summary));
     return summary;
@@ -406,6 +410,7 @@ app.use('/api/applications', requireAuth, applicationRoutes);
 app.use('/api/templates', requireAuth, templateRoutes);
 app.use('/api/variables', requireAuth, variableRoutes);
 app.use('/api/resumelab', requireAuth, resumelabRoutes);
+app.use('/api/settings', requireAuth, settingsRoutes);
 
 connectMongo()
   .then(() => {

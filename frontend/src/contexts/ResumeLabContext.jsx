@@ -238,6 +238,26 @@ export function ResumeLabProvider({ children }) {
     }
   }, [idToken, setNotice]);
 
+  // ── Workspace state ──────────────────────────────────────────────────────
+  const [jdText, setJdText] = useState('');
+  const [activeGenerated, setActiveGenerated] = useState(null);
+
+  // ── History ──────────────────────────────────────────────────────────────
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const data = await api.getHistory();
+      setHistory(data.history || []);
+    } catch (err) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [api, setNotice]);
+
   const value = useMemo(() => ({
     // Vault
     resumes, resumesLoading, uploadState,
@@ -253,6 +273,10 @@ export function ResumeLabProvider({ children }) {
     selectedGenerated, selectedGeneratedLoading,
     loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
     setSelectedGenerated,
+    // Workspace
+    jdText, setJdText, activeGenerated, setActiveGenerated,
+    // History
+    history, historyLoading, loadHistory,
   }), [
     resumes, resumesLoading, uploadState,
     loadResumes, uploadResume, resetUploadState, updateResume, deleteResume,
@@ -263,6 +287,8 @@ export function ResumeLabProvider({ children }) {
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
     loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
+    jdText, setJdText, activeGenerated,
+    history, historyLoading, loadHistory,
   ]);
 
   return (
