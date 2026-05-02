@@ -1,0 +1,50 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[left=0.70in,right=0.70in,top=0.65in,bottom=0.65in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{microtype}
+\usepackage{array}
+\usepackage{tabularx}
+
+\hypersetup{colorlinks=true,urlcolor=blue,linkcolor=black,pdfborder={0 0 0}}
+\titleformat{\section}{\bfseries\large}{}{0em}{}[\titlerule]
+\titlespacing{\section}{0pt}{8pt}{4pt}
+\setlist[itemize]{noitemsep,topsep=1pt,leftmargin=1.2em}
+\pagestyle{empty}
+
+\begin{document}
+
+% ── Header ──────────────────────────────────────────────────────────────────
+\begin{center}
+  {\LARGE \textbf{{{NAME}}}}\\[3pt]
+  {\small {{CONTACT}}}
+\end{center}
+
+\vspace{4pt}
+
+% ── Summary ─────────────────────────────────────────────────────────────────
+\section*{Summary}
+{{SUMMARY}}
+
+% ── Technical Skills ─────────────────────────────────────────────────────────
+% Frontend template: Skills section appears early to surface UI/UX proficiencies.
+\section*{Technical Skills}
+{{SKILLS}}
+
+% ── Projects ─────────────────────────────────────────────────────────────────
+% Frontend template: Projects appear before Experience to highlight shipped UI work.
+\section*{Projects}
+{{PROJECTS}}
+
+% ── Experience ───────────────────────────────────────────────────────────────
+\section*{Experience}
+{{EXPERIENCE}}
+
+% ── Education ────────────────────────────────────────────────────────────────
+\section*{Education}
+{{EDUCATION}}
+
+\end{document}

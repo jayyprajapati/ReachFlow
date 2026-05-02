@@ -215,6 +215,7 @@ const resumeSchema = new mongoose.Schema(
     uploadSource: { type: String, trim: true, default: 'manual' },
     status: { type: String, enum: ['uploaded', 'parsed', 'failed'], default: 'uploaded' },
     uploadedAt: { type: Date, default: Date.now },
+    extractedContent: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true, versionKey: false }
 );
@@ -234,6 +235,54 @@ const canonicalProfileSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
+const resumeAnalysisSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    baseResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+    canonicalProfileVersion: { type: Number, default: 0 },
+    jobDescriptionRaw: { type: String, trim: true, default: '' },
+    extractedJobMetadata: {
+      title: { type: String, trim: true, default: '' },
+      company: { type: String, trim: true, default: '' },
+      seniority: { type: String, trim: true, default: '' },
+      domain: { type: String, trim: true, default: '' },
+    },
+    matchAnalysis: { type: mongoose.Schema.Types.Mixed, default: null },
+    matchScore: { type: Number, min: 0, max: 100, default: 0 },
+    status: { type: String, enum: ['analyzed', 'failed'], default: 'analyzed' },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+resumeAnalysisSchema.index({ userId: 1 });
+resumeAnalysisSchema.index({ userId: 1, createdAt: -1 });
+resumeAnalysisSchema.index({ userId: 1, matchScore: -1 });
+
+const generatedResumeSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    analysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'ResumeAnalysis', required: true, index: true },
+    baseResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+    templateType: {
+      type: String,
+      enum: ['frontend', 'backend', 'fullstack', 'custom'],
+      default: 'fullstack',
+    },
+    generatedContent: { type: mongoose.Schema.Types.Mixed, default: null },
+    latexSource: { type: String, default: '' },
+    pdfPath: { type: String, trim: true, default: '' },
+    pdfError: { type: String, trim: true, default: '' },
+    matchScoreBefore: { type: Number, min: 0, max: 100, default: 0 },
+    matchScoreAfter: { type: Number, min: 0, max: 100, default: 0 },
+    status: { type: String, enum: ['generated', 'failed'], default: 'generated' },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+generatedResumeSchema.index({ userId: 1 });
+generatedResumeSchema.index({ userId: 1, analysisId: 1 });
+generatedResumeSchema.index({ userId: 1, templateType: 1 });
+
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');
 const Campaign = mongoose.model('Campaign', campaignSchema, 'reachflow_outreach_items');
@@ -243,6 +292,8 @@ const Application = mongoose.model('Application', applicationSchema, 'reachflow_
 const Template = mongoose.model('Template', templateSchema, 'reachflow_templates');
 const Resume = mongoose.model('Resume', resumeSchema, 'reachflow_resumes');
 const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSchema, 'reachflow_canonical_profiles');
+const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema, 'reachflow_resume_analyses');
+const GeneratedResume = mongoose.model('GeneratedResume', generatedResumeSchema, 'reachflow_generated_resumes');
 const UserScopedModelNames = {
   users: 'reachflow_users',
   variables: 'reachflow_variables',
@@ -501,6 +552,8 @@ module.exports = {
   Template,
   Resume,
   CanonicalProfile,
+  ResumeAnalysis,
+  GeneratedResume,
   migrateUserSensitiveFields,
   migrateTemplateSensitiveFields,
   migrateCampaignSensitiveFields,

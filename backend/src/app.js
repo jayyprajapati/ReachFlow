@@ -25,6 +25,8 @@ const {
   Application,
   Resume,
   CanonicalProfile,
+  ResumeAnalysis,
+  GeneratedResume,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -94,7 +96,7 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
@@ -103,6 +105,8 @@ async function deleteCurrentUserAppData(user) {
       Application.deleteMany({ userId }, opts),
       Resume.deleteMany({ userId }, opts),
       CanonicalProfile.deleteMany({ userId }, opts),
+      ResumeAnalysis.deleteMany({ userId }, opts),
+      GeneratedResume.deleteMany({ userId }, opts),
     ]);
 
     const userDeletion = await User.deleteOne({ _id: userId }, opts);
@@ -117,6 +121,8 @@ async function deleteCurrentUserAppData(user) {
       applications: applications.deletedCount || 0,
       resumes: resumes.deletedCount || 0,
       canonicalProfiles: canonicalProfiles.deletedCount || 0,
+      resumeAnalyses: resumeAnalyses.deletedCount || 0,
+      generatedResumes: generatedResumes.deletedCount || 0,
     };
     console.log('[data] Deletion summary:', JSON.stringify(summary));
     return summary;

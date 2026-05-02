@@ -127,4 +127,46 @@ async function mergeCanonicalProfile({ userId, existingProfile, incomingProfile,
   }), label);
 }
 
-module.exports = { extractResume, mergeCanonicalProfile, CortexError };
+/**
+ * Analyze a job description against a canonical profile via Cortex /analyze/match.
+ * @param {object} opts
+ * @param {string} opts.userId
+ * @param {string} opts.jobDescription   Raw JD text.
+ * @param {object} opts.canonicalProfile  CanonicalProfile.canonicalProfile value.
+ * @param {object} [opts.baseResume]      ExtractResponse for a specific resume (optional).
+ */
+async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, baseResume }) {
+  const label = `POST /analyze/match (user: ${userId})`;
+  const body = {
+    app_name: CORTEX_APP_NAME,
+    user_id: String(userId),
+    job_description: jobDescription,
+    canonical_profile: canonicalProfile,
+  };
+  if (baseResume) body.base_resume = baseResume;
+  return withRetry(() => cortexFetch('POST', '/analyze/match', body), label);
+}
+
+/**
+ * Generate an ATS-optimised structured resume via Cortex /generate/document.
+ * @param {object} opts
+ * @param {string} opts.userId
+ * @param {string} opts.jobDescription
+ * @param {object} opts.canonicalProfile
+ * @param {object} [opts.baseResume]      ExtractResponse for a specific resume (optional).
+ * @param {string} [opts.templateType]    frontend | backend | fullstack (default: fullstack)
+ */
+async function generateOptimizedResume({ userId, jobDescription, canonicalProfile, baseResume, templateType = 'fullstack' }) {
+  const label = `POST /generate/document (user: ${userId}, template: ${templateType})`;
+  const body = {
+    app_name: CORTEX_APP_NAME,
+    user_id: String(userId),
+    job_description: jobDescription,
+    canonical_profile: canonicalProfile,
+    template_type: templateType,
+  };
+  if (baseResume) body.base_resume = baseResume;
+  return withRetry(() => cortexFetch('POST', '/generate/document', body), label);
+}
+
+module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, CortexError };
