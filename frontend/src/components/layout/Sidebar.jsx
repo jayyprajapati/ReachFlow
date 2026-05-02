@@ -4,7 +4,7 @@ import { useRouter } from '../../router.jsx';
 import {
   Send, Users, Kanban, Settings, Search,
   ChevronsLeft, ChevronsRight, LogOut, XCircle, CheckCircle2,
-  Waypoints, Sun, Moon, Brain,
+  Waypoints, Sun, Moon, Brain, Info, Shield, FileText,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -15,15 +15,21 @@ const NAV_ITEMS = [
 ];
 
 const LEGAL_ITEMS = [
-  { path: '/about', label: 'About' },
-  { path: '/privacy-policy', label: 'Privacy' },
-  { path: '/terms-of-use', label: 'Terms' },
+  { path: '/about',          label: 'About',   icon: Info },
+  { path: '/privacy-policy', label: 'Privacy', icon: Shield },
+  { path: '/terms-of-use',   label: 'Terms',   icon: FileText },
 ];
 
 export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) {
-  const { appUser, gmailConnected, confirmLogout, confirmDisconnectGmail, connectGmail, gmailActionLoading, theme, toggleTheme } = useApp();
+  const {
+    API_BASE, authedFetch,
+    appUser, gmailConnected,
+    confirmLogout, confirmDisconnectGmail, connectGmail, gmailActionLoading,
+    theme, toggleTheme,
+  } = useApp();
   const { path, navigateTo } = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [llmValid, setLlmValid] = useState(null);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +38,17 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [userMenuOpen]);
+
+  // Check AI settings validity once on mount
+  useEffect(() => {
+    if (!authedFetch || !API_BASE) return;
+    let cancelled = false;
+    authedFetch(`${API_BASE}/api/settings/ai`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setLlmValid(d.isValid === true); })
+      .catch(() => { if (!cancelled) setLlmValid(false); });
+    return () => { cancelled = true; };
+  }, [authedFetch, API_BASE]);
 
   const initial = (appUser?.displayName || appUser?.email || 'U').charAt(0).toUpperCase();
   const displayName = appUser?.displayName || appUser?.email?.split('@')[0] || 'User';
@@ -79,12 +96,17 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
 
       {/* Footer */}
       <div className="rf-sidebar__footer">
-        {/* Gmail status */}
+        {/* Gmail + LLM status */}
         <div className="rf-sidebar__gmail">
           <span className={`rf-dot ${gmailConnected ? 'rf-dot--success' : 'rf-dot--error'}`} />
           <span>{gmailConnected ? 'Gmail connected' : 'Gmail disconnected'}</span>
         </div>
+        <div className="rf-sidebar__gmail">
+          <span className={`rf-dot ${llmValid ? 'rf-dot--success' : 'rf-dot--error'}`} />
+          <span>{llmValid ? 'AI configured' : 'AI not configured'}</span>
+        </div>
 
+        {/* Settings link */}
         <button
           className={`rf-sidebar__link${path.startsWith('/settings') ? ' rf-sidebar__link--active' : ''}`}
           onClick={() => navigateTo('/settings')}
@@ -94,22 +116,11 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
           <span className="rf-sidebar__link-label">Settings</span>
         </button>
 
+        {/* Theme toggle */}
         <button className="rf-sidebar__theme" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
         </button>
-
-        <nav className="rf-sidebar__legal" aria-label="Legal pages">
-          {LEGAL_ITEMS.map(item => (
-            <a
-              key={item.path}
-              href={item.path}
-              onClick={(e) => { e.preventDefault(); navigateTo(item.path); }}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
 
         {/* User menu */}
         <div ref={menuRef} style={{ position: 'relative' }}>
@@ -139,6 +150,25 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
             </div>
           )}
         </div>
+
+        {/* Legal links — below user, at very bottom */}
+        <nav className="rf-sidebar__legal" aria-label="Legal pages">
+          {LEGAL_ITEMS.map(item => {
+            const Icon = item.icon;
+            return (
+              <a
+                key={item.path}
+                href={item.path}
+                onClick={(e) => { e.preventDefault(); navigateTo(item.path); }}
+                title={item.label}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Icon size={11} />
+                <span className="rf-sidebar__link-label">{item.label}</span>
+              </a>
+            );
+          })}
+        </nav>
 
         {/* Collapse toggle */}
         <button className="rf-sidebar__collapse" onClick={onToggleCollapse} title={collapsed ? 'Expand' : 'Collapse'}>

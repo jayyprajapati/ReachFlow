@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, FileUp, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader } from 'lucide-react';
+import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CUSTOM_VARIABLES = 2;
@@ -56,7 +56,16 @@ function formatFileSize(bytes) {
 }
 
 export default function ComposePage() {
-  const { API_BASE, authedFetch, gmailConnected, setNotice, setWarningDialog, variables, setVariables, loadVariables, groups, loadGroups, templates, loadTemplates, loadHistory, loadDrafts, senderName, hydrateProfile } = useApp();
+  const {
+    API_BASE, authedFetch, gmailConnected, setNotice, setWarningDialog,
+    variables, setVariables, loadVariables,
+    groups, loadGroups,
+    templates, templatesLoading, loadTemplates,
+    history, historyLoading, loadHistory,
+    drafts, draftsLoading, loadDrafts,
+    scheduled, scheduledLoading, loadScheduled,
+    senderName, hydrateProfile,
+  } = useApp();
   const [recipients, setRecipients] = useState([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -77,6 +86,9 @@ export default function ComposePage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [templateDrawer, setTemplateDrawer] = useState(null);
   const [templateTitle, setTemplateTitle] = useState('');
+  const [templateBrowseOpen, setTemplateBrowseOpen] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [cancellingId, setCancellingId] = useState(null);
   const [slashMenu, setSlashMenu] = useState({ open: false, top: 0, left: 0 });
   const [slashHighlight, setSlashHighlight] = useState(0);
   const [slashTriggerIdx, setSlashTriggerIdx] = useState(null);
@@ -338,6 +350,20 @@ export default function ComposePage() {
     }
   }
 
+  async function cancelScheduled(id) {
+    if (cancellingId) return;
+    setCancellingId(id);
+    try {
+      const r = await authedFetch(`${API_BASE}/api/campaigns/${id}/cancel-schedule`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to cancel');
+      setNotice({ type: 'info', message: 'Scheduled send cancelled' });
+      loadScheduled(); loadDrafts();
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    } finally { setCancellingId(null); }
+  }
+
   function resetComposeState() { setRecipients([]); setSubject(''); setBody(''); setDraftId(null); setErrors({ recipients: {} }); setGroupImports([]); setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]); }
 
   // Min datetime for schedule picker (now + 1 minute)
@@ -356,8 +382,11 @@ export default function ComposePage() {
       <div className="rf-compose__toolbar">
         <div className="rf-compose__toolbar-left">
           <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual' : 'Paste Bulk'}</button>
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}><FileUp size={13} />Import Group</button>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}><UserPlus size={13} />Import Group</button>
           <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={resetComposeState}><RotateCcw size={13} />Reset</button>
+          <span style={{ width: 1, background: 'var(--rf-border-subtle)', alignSelf: 'stretch', margin: '0 4px' }} />
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadTemplates(); setTemplateBrowseOpen(true); }}><FileText size={13} />Templates</button>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadHistory(); loadDrafts(); loadScheduled(); setHistoryDrawerOpen(true); }}><History size={13} />History</button>
         </div>
         <div className="rf-compose__toolbar-right">
           <div className="rf-name-toggle">
@@ -556,6 +585,124 @@ export default function ComposePage() {
             </div>
             <div className="rf-drawer__footer">
               <button className="rf-btn rf-btn--primary" onClick={saveTemplate}>Save Template</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Template browser drawer */}
+      {templateBrowseOpen && (
+        <>
+          <div className="rf-drawer-overlay" onClick={() => setTemplateBrowseOpen(false)} />
+          <div className="rf-drawer">
+            <div className="rf-drawer__header">
+              <span className="rf-drawer__title"><FileText size={15} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />Templates ({templates.length})</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setTemplateBrowseOpen(false)}>✕</button>
+            </div>
+            <div className="rf-drawer__body">
+              {templatesLoading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}><Loader size={18} className="rf-spin" /></div>
+              ) : templates.length === 0 ? (
+                <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-muted)', textAlign: 'center', padding: '24px 0' }}>No saved templates yet. Write an email and click "Save Template".</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {templates.map(t => (
+                    <div key={t.id} style={{ border: '1px solid var(--rf-border-subtle)', borderRadius: 'var(--rf-radius-md)', padding: '10px 12px' }}>
+                      <div style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', marginBottom: 2 }}>{t.title || 'Untitled'}</div>
+                      {t.subject && <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginBottom: 6 }}>Subject: {t.subject}</div>}
+                      <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', marginBottom: 8, lineHeight: 1.4 }}>
+                        {(t.body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Empty body'}…
+                      </div>
+                      <button
+                        className="rf-btn rf-btn--secondary rf-btn--sm"
+                        style={{ width: '100%' }}
+                        onClick={() => { importTemplate(t); setTemplateBrowseOpen(false); }}
+                      >
+                        <CheckCheck size={13} /> Use Template
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* History drawer */}
+      {historyDrawerOpen && (
+        <>
+          <div className="rf-drawer-overlay" onClick={() => setHistoryDrawerOpen(false)} />
+          <div className="rf-drawer">
+            <div className="rf-drawer__header">
+              <span className="rf-drawer__title"><History size={15} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />Campaign History</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setHistoryDrawerOpen(false)}>✕</button>
+            </div>
+            <div className="rf-drawer__body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-5)' }}>
+
+              {/* Scheduled */}
+              {(scheduled.length > 0 || scheduledLoading) && (
+                <div>
+                  <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Calendar size={12} /> Scheduled
+                  </div>
+                  {scheduledLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader size={14} className="rf-spin" /></div> : scheduled.map(s => (
+                    <div key={s.id} className="rf-history-item" style={{ marginBottom: 6 }}>
+                      <div className="rf-history-item__info">
+                        <div className="rf-history-item__subject">{s.subject || '(No subject)'}</div>
+                        <div className="rf-history-item__date">Sends: {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : '—'} · {s.recipient_count} recipients</div>
+                      </div>
+                      <div className="rf-history-item__meta">
+                        <span className="rf-badge rf-badge--scheduled">scheduled</span>
+                        <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" title="Cancel" onClick={() => cancelScheduled(s.id)} disabled={cancellingId === s.id}>
+                          {cancellingId === s.id ? <Loader size={12} className="rf-spin" /> : <X size={12} />}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Drafts */}
+              <div>
+                <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                  Drafts
+                </div>
+                {draftsLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader size={14} className="rf-spin" /></div>
+                : drafts.length === 0 ? <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', margin: 0 }}>No drafts.</p>
+                : drafts.map(d => (
+                  <div key={d.id} className="rf-history-item" style={{ marginBottom: 6, cursor: 'pointer' }} onClick={() => { loadCampaign(d.id); setHistoryDrawerOpen(false); }}>
+                    <div className="rf-history-item__info">
+                      <div className="rf-history-item__subject">{d.subject || '(No subject)'}</div>
+                      <div className="rf-history-item__date">{new Date(d.updated_at || d.created_at).toLocaleDateString()} · {d.recipient_count} recipients</div>
+                    </div>
+                    <div className="rf-history-item__meta">
+                      <span className="rf-badge rf-badge--draft">draft</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Sent */}
+              <div>
+                <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                  Sent
+                </div>
+                {historyLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader size={14} className="rf-spin" /></div>
+                : history.length === 0 ? <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', margin: 0 }}>No sent campaigns yet.</p>
+                : history.map(h => (
+                  <div key={h.id} className="rf-history-item" style={{ marginBottom: 6 }}>
+                    <div className="rf-history-item__info">
+                      <div className="rf-history-item__subject">{h.subject || '(No subject)'}</div>
+                      <div className="rf-history-item__date">{new Date(h.updated_at || h.created_at).toLocaleDateString()} · {h.recipient_count} recipients</div>
+                    </div>
+                    <div className="rf-history-item__meta">
+                      <span className={`rf-badge rf-badge--${h.status}`}>{h.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
             </div>
           </div>
         </>
