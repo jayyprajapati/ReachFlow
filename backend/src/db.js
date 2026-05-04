@@ -361,7 +361,7 @@ const aiSettingsSchema = new mongoose.Schema(
       enum: ['openai', 'ollama_cloud', 'ollama_local'],
       default: 'ollama_cloud',
     },
-    apiKeyEncrypted: { type: String, default: '' },
+    apiKeyEncrypted: { type: mongoose.Schema.Types.Mixed, default: '' },
     localEndpoint: { type: String, trim: true, default: '' },
     selectedModel: { type: String, trim: true, default: '' },
     isValid: { type: Boolean, default: false },
