@@ -14,7 +14,8 @@ const LATEX_TEMP_DIR = process.env.LATEX_TEMP_DIR || '/tmp/reachflow-latex';
 const PDF_OUTPUT_DIR = process.env.PDF_OUTPUT_DIR || path.join(os.homedir(), '.reachflow', 'pdfs');
 const COMPILE_TIMEOUT_MS = 30_000;
 const DOCKER_COMPILE_TIMEOUT_MS = 120_000; // first run pulls the image
-const DOCKER_LATEX_IMAGE = process.env.DOCKER_LATEX_IMAGE || 'blang/latex:ubuntu';
+const DOCKER_LATEX_IMAGE = process.env.DOCKER_LATEX_IMAGE || 'reachflow-latex';
+const DOCKER_COMPILE_MAX_RETRIES = 2;
 
 const TEMPLATE_DIR = path.join(__dirname, '../resume_templates');
 
@@ -191,7 +192,24 @@ async function compileToPdf({ latexSource, userId, outputName }) {
   fs.mkdirSync(userPdfDir, { recursive: true });
 
   try {
-    fs.writeFileSync(texFile, latexSource, 'utf8');
+    // Safety-net: microtype requires scalable fonts — inject lmodern if missing.
+    let src = latexSource;
+    if (src.includes('microtype') && !src.includes('lmodern')) {
+      src = src.replace(/(\\usepackage(?:\[.*?\])?\{microtype\})/, '\\usepackage{lmodern}\n$1');
+    }
+
+    // Safety-net: fullpage (deprecated, ships only via TeX Live's `preprint` bundle)
+    // is unreliable across environments. Rewrite to geometry — equivalent 1in margins,
+    // shipped in every TeX distribution, already used by our templates.
+    if (/\\usepackage(?:\[[^\]]*\])?\{fullpage\}/.test(src)) {
+      if (/\\usepackage(?:\[[^\]]*\])?\{geometry\}/.test(src)) {
+        // geometry already loaded — drop the fullpage line to avoid option clashes.
+        src = src.replace(/\\usepackage(?:\[[^\]]*\])?\{fullpage\}[ \t]*\n?/g, '');
+      } else {
+        src = src.replace(/\\usepackage(?:\[[^\]]*\])?\{fullpage\}/g, '\\usepackage[margin=1in]{geometry}');
+      }
+    }
+    fs.writeFileSync(texFile, src, 'utf8');
 
     await runPdflatex(tmpDir, texFile);
 
@@ -234,6 +252,7 @@ function extractLatexErrors(stdout, stderr) {
 function runPdflatex(workDir, texFile) {
   return new Promise((resolve, reject) => {
     const envPath = `${process.env.PATH || ''}:${TEX_EXTRA_PATHS}`;
+    let settled = false;
 
     const proc = spawn('pdflatex', [
       '-interaction=nonstopmode',
@@ -251,12 +270,16 @@ function runPdflatex(workDir, texFile) {
     proc.stderr.on('data', d => { stderr += d.toString(); });
 
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       proc.kill('SIGKILL');
       reject(new Error(`pdflatex timed out after ${COMPILE_TIMEOUT_MS / 1000}s`));
     }, COMPILE_TIMEOUT_MS);
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (settled) return;
+      settled = true;
       if (code === 0) {
         resolve();
       } else {
@@ -267,18 +290,39 @@ function runPdflatex(workDir, texFile) {
 
     proc.on('error', (err) => {
       clearTimeout(timer);
+      if (settled) return;
       if (err.code === 'ENOENT') {
-        // pdflatex not on PATH — try Docker fallback
-        runPdflatexDocker(workDir, path.basename(texFile)).then(resolve).catch(reject);
+        // pdflatex not on PATH — try Docker fallback (with retries for transient failures)
+        settled = true;
+        runPdflatexDockerWithRetry(workDir, path.basename(texFile)).then(resolve).catch(reject);
       } else {
+        settled = true;
         reject(err);
       }
     });
   });
 }
 
+async function runPdflatexDockerWithRetry(workDir, texFilename) {
+  let lastErr;
+  for (let attempt = 0; attempt <= DOCKER_COMPILE_MAX_RETRIES; attempt++) {
+    try {
+      await runPdflatexDocker(workDir, texFilename);
+      return; // success
+    } catch (err) {
+      lastErr = err;
+      // Only retry on transient failures (negative exit codes from signal crashes, e.g. -2)
+      const isTransient = err.message && /exited with code -\d/.test(err.message);
+      if (!isTransient || attempt >= DOCKER_COMPILE_MAX_RETRIES) throw err;
+      console.warn(`[latexCompiler] Docker compile attempt ${attempt + 1} failed (transient), retrying: ${err.message}`);
+    }
+  }
+  throw lastErr;
+}
+
 function runPdflatexDocker(workDir, texFilename) {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const proc = spawn('docker', [
       'run', '--rm',
       '--network=none',
@@ -297,12 +341,16 @@ function runPdflatexDocker(workDir, texFilename) {
     proc.stderr.on('data', d => { stderr += d.toString(); });
 
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       proc.kill('SIGKILL');
       reject(new Error(`Docker pdflatex timed out after ${DOCKER_COMPILE_TIMEOUT_MS / 1000}s`));
     }, DOCKER_COMPILE_TIMEOUT_MS);
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (settled) return;
+      settled = true;
       if (code === 0) {
         resolve();
       } else {
@@ -313,6 +361,8 @@ function runPdflatexDocker(workDir, texFilename) {
 
     proc.on('error', (err) => {
       clearTimeout(timer);
+      if (settled) return;
+      settled = true;
       if (err.code === 'ENOENT') {
         reject(new Error(
           `pdflatex not found and Docker is not available. ` +
