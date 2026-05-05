@@ -985,6 +985,13 @@
   white-space: pre-wrap;
 }
 
+.rl-latex-preview--full {
+  max-height: 640px;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
 /* ── Inline edit input ───────────────────────────────────────────────────── */
 
 .rl-inline-input {

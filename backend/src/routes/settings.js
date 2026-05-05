@@ -105,74 +105,93 @@ router.put('/ai', async (req, res) => {
 });
 
 // ── POST /api/settings/ai/test ──────────────────────────────────────────────
-// Tests the stored AI provider configuration by making a minimal LLM call.
+// Tests the stored AI provider by calling Cortex /llm/ping — a lightweight
+// single-token LLM call, much faster than the old /analyze/match approach.
+// Returns step-by-step diagnostics so the UI can show a timeline.
 router.post('/ai/test', async (req, res) => {
+  const steps = [];
+
+  function step(name) {
+    const s = { name, ok: false };
+    steps.push(s);
+    return s;
+  }
+
   try {
     const userId = req.user._id;
-    const doc = await AISettings.findOne({ userId });
 
+    // ── Step 1: Load settings ──────────────────────────────────────────────
+    const s1 = step('Loading saved settings');
+    const doc = await AISettings.findOne({ userId });
     if (!doc) {
-      return res.status(400).json({ ok: false, error: 'No AI settings configured. Save your provider settings first.' });
+      s1.error = 'No AI settings configured. Save your provider settings first.';
+      return res.status(400).json({ ok: false, error: s1.error, steps });
     }
+    s1.ok = true;
 
     const provider = doc.provider;
+
+    // ── Step 2: Decrypt credentials ────────────────────────────────────────
+    const s2 = step('Decrypting credentials');
     let apiKey = '';
     if (doc.apiKeyEncrypted) {
       try {
         const raw = decryptJson(doc.apiKeyEncrypted);
         apiKey = typeof raw === 'string' ? raw : (raw?.key || '');
       } catch {
-        return res.status(400).json({ ok: false, error: 'API key decryption failed. Please re-save your API key.' });
+        s2.error = 'API key decryption failed. Please re-save your API key.';
+        return res.status(400).json({ ok: false, error: s2.error, steps });
       }
     }
+    s2.ok = true;
+
+    // ── Step 3: Call Cortex /llm/ping ──────────────────────────────────────
+    const model = doc.selectedModel || '';
+    const s3 = step(`Testing ${provider}${model ? ` (${model})` : ''} via Cortex`);
 
     const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-    // Build the LLM override to pass to Cortex
     const llmOverride = { provider };
     if (apiKey) llmOverride.api_key = apiKey;
-    if (doc.selectedModel) llmOverride.model = doc.selectedModel;
+    if (model) llmOverride.model = model;
     if (provider === 'ollama_local' && doc.localEndpoint) llmOverride.base_url = doc.localEndpoint;
 
-    // Use Cortex /analyze/match as the test vehicle with a minimal synthetic profile
-    const testPayload = {
-      app_name: process.env.CORTEX_APP_NAME || 'resumelab',
-      user_id: userId.toString(),
-      job_description: 'Software Engineer. Python required.',
-      canonical_profile: {
-        skills: [{ normalized_name: 'Python', proficiency: 'expert', sources: ['test'], aliases: ['Python'], canonical_key: 'python' }],
-        projects: [], experience: [], education: [], certifications: [],
-        keywords: ['Python'], source_documents: ['test'], canonical_ids: [], merged_at: new Date().toISOString(),
-      },
-      llm: llmOverride,
-    };
-
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60_000);
+    // 30 s — enough for a single-token generation even on slow hardware
+    const timer = setTimeout(() => controller.abort(), 30_000);
     let testOk = false;
     let testError = '';
 
     try {
-      const testRes = await fetch(`${CORTEX_BASE_URL}/analyze/match`, {
+      const pingRes = await fetch(`${CORTEX_BASE_URL}/llm/ping`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testPayload),
+        body: JSON.stringify({ llm: llmOverride }),
         signal: controller.signal,
       });
       clearTimeout(timer);
 
-      if (testRes.ok) {
+      if (pingRes.ok) {
         testOk = true;
       } else {
-        const body = await testRes.text().catch(() => '');
+        const body = await pingRes.text().catch(() => '');
         let parsed;
         try { parsed = JSON.parse(body); } catch { parsed = { detail: body }; }
-        testError = parsed?.detail || `HTTP ${testRes.status}`;
+        testError = parsed?.detail || `HTTP ${pingRes.status}`;
       }
     } catch (fetchErr) {
       clearTimeout(timer);
-      testError = fetchErr.name === 'AbortError' ? 'Connection timed out (60s)' : fetchErr.message;
+      if (fetchErr.name === 'AbortError') {
+        testError = `Connection timed out after 30s. Check that ${provider === 'ollama_local' ? `Ollama is running at ${doc.localEndpoint || 'http://localhost:11434'}` : `the ${provider} API is reachable`}.`;
+      } else if (fetchErr.code === 'ECONNREFUSED') {
+        testError = `Cannot reach Cortex backend at ${CORTEX_BASE_URL}. Is the Cortex server running?`;
+      } else {
+        testError = fetchErr.message;
+      }
     }
+
+    s3.ok = testOk;
+    if (!testOk) s3.error = testError;
 
     // Persist validation result
     doc.isValid = testOk;
@@ -180,15 +199,22 @@ router.post('/ai/test', async (req, res) => {
     await doc.save();
 
     if (testOk) {
+      const label = model ? `${provider} / ${model}` : provider;
       console.log(`[settings] AI test PASSED — userId: ${userId}, provider: ${provider}`);
-      return res.json({ ok: true, message: `${provider} connection validated successfully.` });
+      return res.json({
+        ok: true,
+        message: `${label} connection validated successfully.`,
+        provider,
+        model,
+        steps,
+      });
     } else {
       console.warn(`[settings] AI test FAILED — userId: ${userId}, provider: ${provider}: ${testError}`);
-      return res.status(400).json({ ok: false, error: testError });
+      return res.status(400).json({ ok: false, error: testError, steps });
     }
   } catch (err) {
     console.error('[settings] POST /ai/test failed:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: err.message, steps });
   }
 });
 

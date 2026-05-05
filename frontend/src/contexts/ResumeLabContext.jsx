@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useApp } from './AppContext.jsx';
 import { makeResumeLabApi, uploadResumeFile, downloadResumePdf } from '../services/resumeLabApi.js';
 
@@ -13,6 +13,29 @@ export function useResumeLab() {
 export function ResumeLabProvider({ children }) {
   const { authedFetch, idToken, setNotice } = useApp();
   const api = useMemo(() => makeResumeLabApi(authedFetch), [authedFetch]);
+
+  // Keep a ref to api so loadAiSettings stays stable across token refreshes.
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
+  // ── AI Settings (BYOK gate) ──────────────────────────────────────────────
+  const [aiSettings, setAiSettings] = useState(null);
+  const [aiSettingsLoading, setAiSettingsLoading] = useState(true);
+
+  const loadAiSettings = useCallback(async () => {
+    setAiSettingsLoading(true);
+    try {
+      const data = await apiRef.current.getAISettings();
+      setAiSettings(data);
+    } catch {
+      setAiSettings(null);
+    } finally {
+      setAiSettingsLoading(false);
+    }
+  }, []); // stable — reads api via ref, never re-creates on token refresh
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadAiSettings(); }, []); // runs once on mount
 
   // ── Resume Vault ─────────────────────────────────────────────────────────
   const [resumes, setResumes] = useState([]);
@@ -238,6 +261,20 @@ export function ResumeLabProvider({ children }) {
     }
   }, [idToken, setNotice]);
 
+  const fetchPdfBlob = useCallback(async (id) => {
+    return downloadResumePdf(idToken, id);
+  }, [idToken]);
+
+  const compileLatex = useCallback(async (id, latexSource) => {
+    try {
+      if (id) return await api.compileLatex(id, latexSource);
+      return await api.compileLatexStateless(latexSource);
+    } catch (err) {
+      setNotice({ type: 'error', message: err.message });
+      throw err;
+    }
+  }, [api, setNotice]);
+
   // ── Workspace state ──────────────────────────────────────────────────────
   const [jdText, setJdText] = useState('');
   const [activeGenerated, setActiveGenerated] = useState(null);
@@ -259,6 +296,8 @@ export function ResumeLabProvider({ children }) {
   }, [api, setNotice]);
 
   const value = useMemo(() => ({
+    // AI Settings (BYOK gate)
+    aiSettings, aiSettingsLoading, loadAiSettings,
     // Vault
     resumes, resumesLoading, uploadState,
     loadResumes, uploadResume, resetUploadState, updateResume, deleteResume,
@@ -272,12 +311,14 @@ export function ResumeLabProvider({ children }) {
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
     loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
+    fetchPdfBlob, compileLatex,
     setSelectedGenerated,
     // Workspace
     jdText, setJdText, activeGenerated, setActiveGenerated,
     // History
     history, historyLoading, loadHistory,
   }), [
+    aiSettings, aiSettingsLoading, loadAiSettings,
     resumes, resumesLoading, uploadState,
     loadResumes, uploadResume, resetUploadState, updateResume, deleteResume,
     profile, profileLoading, rebuildLoading,
@@ -287,6 +328,7 @@ export function ResumeLabProvider({ children }) {
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
     loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
+    fetchPdfBlob, compileLatex,
     jdText, setJdText, activeGenerated,
     history, historyLoading, loadHistory,
   ]);

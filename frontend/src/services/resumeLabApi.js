@@ -21,7 +21,12 @@ export function makeResumeLabApi(authedFetch) {
   async function call(path, opts = {}) {
     const res = await authedFetch(`${API_BASE}${path}`, opts);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    if (!res.ok) {
+      const err = new Error(data.error || `Request failed (${res.status})`);
+      if (data.steps) err.steps = data.steps;
+      if (data.code) err.code = data.code;
+      throw err;
+    }
     return data;
   }
 
@@ -61,6 +66,18 @@ export function makeResumeLabApi(authedFetch) {
       call(`/api/resumelab/generated/${id}`),
     deleteGenerated: (id) =>
       call(`/api/resumelab/generated/${id}`, { method: 'DELETE' }),
+    compileLatex: (id, latexSource) =>
+      call(`/api/resumelab/generated/${id}/compile-latex`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latexSource }),
+      }),
+    compileLatexStateless: (latexSource) =>
+      call('/api/resumelab/compile-latex', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latexSource }),
+      }),
 
     // ── History ───────────────────────────────────────────────────────────
     getHistory: () =>

@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
+import { useResumeLab } from '../contexts/ResumeLabContext.jsx';
 import { makeResumeLabApi } from '../services/resumeLabApi.js';
 import {
   CheckCircle2, XCircle, Save, AlertCircle, CheckCheck, Loader,
@@ -29,24 +30,27 @@ function SectionTitle({ icon: Icon, children }) {
 
 // ── AI Settings section ───────────────────────────────────────────────────────
 
-function AISettingsSection({ authedFetch }) {
+function AISettingsSection({ authedFetch, cachedSettings, cachedLoading }) {
   const api = useMemo(() => makeResumeLabApi(authedFetch), [authedFetch]);
 
-  const [loading, setLoading] = useState(true);
+  // Only show spinner if context hasn't loaded yet and we have no cached data
+  const [loading, setLoading] = useState(!cachedSettings && cachedLoading !== false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [settings, setSettings] = useState(null);
-  const [supportedModels, setSupportedModels] = useState({});
-  const [provider, setProvider] = useState('ollama_cloud');
-  const [model, setModel] = useState('');
+  const [settings, setSettings] = useState(cachedSettings || null);
+  const [supportedModels, setSupportedModels] = useState(cachedSettings?.supportedModels || {});
+  const [provider, setProvider] = useState(cachedSettings?.provider || 'ollama_cloud');
+  const [model, setModel] = useState(cachedSettings?.model || '');
   const [apiKey, setApiKey] = useState('');
-  const [localEndpoint, setLocalEndpoint] = useState('');
+  const [localEndpoint, setLocalEndpoint] = useState(cachedSettings?.localEndpoint || '');
   const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saveError, setSaveError] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const fetchedRef = useRef(false);
+
+  const load = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       const data = await api.getAISettings();
       setSettings(data);
@@ -56,10 +60,15 @@ function AISettingsSection({ authedFetch }) {
       setLocalEndpoint(data.localEndpoint || '');
       setApiKey('');
     } catch { /* show empty form */ }
-    finally { setLoading(false); }
+    finally { if (showSpinner) setLoading(false); }
   }, [api]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    // If we already have cached data, background-refresh without a spinner
+    load(!cachedSettings);
+  }, [load, cachedSettings]);
 
   async function handleSave(e) {
     e.preventDefault();
@@ -73,7 +82,7 @@ function AISettingsSection({ authedFetch }) {
         apiKey: apiKey || undefined,
         localEndpoint: localEndpoint || undefined,
       });
-      await load();
+      await load(true);
     } catch (err) { setSaveError(err.message); }
     finally { setSaving(false); }
   }
@@ -83,9 +92,15 @@ function AISettingsSection({ authedFetch }) {
     setTesting(true);
     try {
       const data = await api.testAIConnection();
-      setTestResult({ ok: true, message: data.message || 'Connection validated.' });
-      await load();
-    } catch (err) { setTestResult({ ok: false, error: err.message }); }
+      setTestResult({ ok: true, message: data.message || 'Connection validated.', steps: data.steps || [] });
+      await load(true);
+    } catch (err) {
+      let steps = [];
+      try {
+        if (err.steps) steps = err.steps;
+      } catch { /* ignore */ }
+      setTestResult({ ok: false, error: err.message, steps });
+    }
     finally { setTesting(false); }
   }
 
@@ -110,7 +125,7 @@ function AISettingsSection({ authedFetch }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 'var(--rf-radius-md)', background: 'var(--rf-bg-root)', border: '1px solid var(--rf-border-subtle)' }}>
           {isValid
             ? <><CheckCircle2 size={13} style={{ color: 'var(--rf-success)', flexShrink: 0 }} /><span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-success-text)' }}>Validated{settings.validatedAt ? ` · ${new Date(settings.validatedAt).toLocaleDateString()}` : ''}</span></>
-            : <><XCircle size={13} style={{ color: 'var(--rf-error)', flexShrink: 0 }} /><span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-error-text)' }}>Not validated — save settings then click Test</span></>
+            : <><XCircle size={13} style={{ color: 'var(--rf-error)', flexShrink: 0 }} /><span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-error-text)' }}>Not validated — Resume Lab is disabled until you test the connection</span></>
           }
         </div>
       )}
@@ -201,18 +216,34 @@ function AISettingsSection({ authedFetch }) {
         </button>
       </div>
 
-      {/* Test result */}
+      {/* Test result timeline */}
       {testResult && (
-        <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderRadius: 'var(--rf-radius-md)', background: 'var(--rf-bg-root)', border: '1px solid var(--rf-border-subtle)', fontSize: 'var(--rf-text-sm)' }}>
-          {testResult.ok
-            ? <><CheckCircle2 size={14} style={{ color: 'var(--rf-success)', flexShrink: 0, marginTop: 1 }} /><span style={{ color: 'var(--rf-success-text)' }}>{testResult.message}</span></>
-            : <><WifiOff size={14} style={{ color: 'var(--rf-error)', flexShrink: 0, marginTop: 1 }} /><span style={{ color: 'var(--rf-error-text)' }}>{testResult.error}</span></>
-          }
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', borderRadius: 'var(--rf-radius-md)', background: 'var(--rf-bg-root)', border: `1px solid ${testResult.ok ? 'var(--rf-border-success, var(--rf-border-subtle))' : 'var(--rf-border-error, var(--rf-border-subtle))'}`, fontSize: 'var(--rf-text-sm)' }}>
+          {/* Step-by-step timeline */}
+          {(testResult.steps || []).map((s, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              {s.ok
+                ? <CheckCircle2 size={13} style={{ color: 'var(--rf-success)', flexShrink: 0, marginTop: 1 }} />
+                : <XCircle size={13} style={{ color: 'var(--rf-error)', flexShrink: 0, marginTop: 1 }} />
+              }
+              <div>
+                <span style={{ color: s.ok ? 'var(--rf-text-secondary)' : 'var(--rf-error-text)' }}>{s.name}</span>
+                {s.error && <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-error-text)', marginTop: 2 }}>{s.error}</div>}
+              </div>
+            </div>
+          ))}
+          {/* Final status */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: (testResult.steps || []).length ? 4 : 0, paddingTop: (testResult.steps || []).length ? 6 : 0, borderTop: (testResult.steps || []).length ? '1px solid var(--rf-border-subtle)' : 'none' }}>
+            {testResult.ok
+              ? <><CheckCircle2 size={13} style={{ color: 'var(--rf-success)', flexShrink: 0, marginTop: 1 }} /><span style={{ color: 'var(--rf-success-text)', fontWeight: 600 }}>{testResult.message}</span></>
+              : <><WifiOff size={13} style={{ color: 'var(--rf-error)', flexShrink: 0, marginTop: 1 }} /><span style={{ color: 'var(--rf-error-text)' }}>{testResult.error}</span></>
+            }
+          </div>
         </div>
       )}
 
       <p className="rf-settings__help">
-        Your API key is encrypted at rest and only decrypted at request time. Cortex falls back to its default provider when no key is configured.
+        Your API key is encrypted at rest and only decrypted at request time. Resume Lab features require a validated API key — no fallback to any default key is used.
       </p>
     </form>
   );
@@ -228,6 +259,8 @@ export default function SettingsPage() {
     grantedScopes, requiredScopes,
     deleteMyAccount, confirmLogout,
   } = useApp();
+
+  const { aiSettings, aiSettingsLoading } = useResumeLab();
 
   // Card style shared by both columns
   const card = {
@@ -324,10 +357,10 @@ export default function SettingsPage() {
         <div style={card}>
           <SectionTitle icon={Brain}>AI · Resume Lab</SectionTitle>
           <p className="rf-settings__help" style={{ marginTop: -8 }}>
-            Configure the LLM used for JD analysis and resume generation. Leave unconfigured to use the Cortex default provider.
+            Configure the LLM used for JD analysis and resume generation. A validated API key is required — Resume Lab will not work without one.
           </p>
           <Divider />
-          <AISettingsSection authedFetch={authedFetch} />
+          <AISettingsSection authedFetch={authedFetch} cachedSettings={aiSettings} cachedLoading={aiSettingsLoading} />
         </div>
       </div>
 

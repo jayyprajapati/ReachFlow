@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const express = require('express');
 const { Types } = require('mongoose');
 const os = require('os');
@@ -9,7 +10,7 @@ const multer = require('multer');
 const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume, AISettings } = require('../db');
 const { decryptJson } = require('../utils/dataSecurity');
 const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, cortexDetail } = require('../services/cortexClient');
-const { injectTemplate, compileToPdf } = require('../services/latexCompiler');
+const { injectTemplate, compileToPdf, validateLatex } = require('../services/latexCompiler');
 
 const router = express.Router();
 
@@ -136,27 +137,72 @@ async function safeDeleteFile(filePath) {
 }
 
 // Resolves the user's AI provider override from their saved AISettings.
-// Returns null if no valid settings exist — callers fall back to Cortex defaults.
+// Throws a typed error when no valid settings exist — enforces BYOK strictly.
 async function resolveUserLlm(userId) {
-  try {
-    const doc = await AISettings.findOne({ userId });
-    if (!doc || !doc.isValid) return null;
-    const override = { provider: doc.provider };
-    if (doc.selectedModel) override.model = doc.selectedModel;
-    if (doc.provider === 'ollama_local' && doc.localEndpoint) override.base_url = doc.localEndpoint;
-    if (doc.apiKeyEncrypted) {
-      try {
-        const raw = decryptJson(doc.apiKeyEncrypted);
-        const key = typeof raw === 'string' ? raw : (raw?.key || '');
-        if (key) override.api_key = key;
-      } catch {
-        // decryption failed — proceed without key
-      }
-    }
-    return override;
-  } catch {
-    return null;
+  const doc = await AISettings.findOne({ userId });
+
+  if (!doc) {
+    const err = new Error(
+      'AI provider not configured. Go to Settings → AI · Resume Lab to add and test your API key before using Resume Lab.'
+    );
+    err.code = 'LLM_NOT_CONFIGURED';
+    throw err;
   }
+
+  if (!doc.isValid) {
+    const err = new Error(
+      'AI provider connection not verified. Go to Settings → AI · Resume Lab and click "Test Connection" to validate your key.'
+    );
+    err.code = 'LLM_NOT_VALIDATED';
+    throw err;
+  }
+
+  const override = { provider: doc.provider };
+  if (doc.selectedModel) override.model = doc.selectedModel;
+  if (doc.provider === 'ollama_local' && doc.localEndpoint) override.base_url = doc.localEndpoint;
+  if (doc.apiKeyEncrypted) {
+    try {
+      const raw = decryptJson(doc.apiKeyEncrypted);
+      const key = typeof raw === 'string' ? raw : (raw?.key || '');
+      if (key) override.api_key = key;
+    } catch {
+      const err = new Error('API key decryption failed. Please re-save your API key in Settings.');
+      err.code = 'LLM_KEY_ERROR';
+      throw err;
+    }
+  }
+  return override;
+}
+
+function isByokError(err) {
+  return err.code === 'LLM_NOT_CONFIGURED' || err.code === 'LLM_NOT_VALIDATED' || err.code === 'LLM_KEY_ERROR';
+}
+
+// ── JD analysis in-memory cache ─────────────────────────────────────────────
+// Keyed by userId:profileVersion:sha256(jd)[:16] — avoids re-running the LLM
+// for the same JD + profile combination within the TTL window.
+
+const _jdAnalysisCache = new Map();
+const _JD_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const _JD_CACHE_MAX = 200;
+
+function _jdCacheKey(userId, profileVersion, jd) {
+  const h = crypto.createHash('sha256').update(jd).digest('hex').slice(0, 16);
+  return `${userId}:${profileVersion}:${h}`;
+}
+
+function _jdCacheGet(key) {
+  const entry = _jdAnalysisCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > _JD_CACHE_TTL_MS) { _jdAnalysisCache.delete(key); return null; }
+  return entry.data;
+}
+
+function _jdCacheSet(key, data) {
+  if (_jdAnalysisCache.size >= _JD_CACHE_MAX) {
+    _jdAnalysisCache.delete(_jdAnalysisCache.keys().next().value);
+  }
+  _jdAnalysisCache.set(key, { data, ts: Date.now() });
 }
 
 // ── POST /api/resumelab/upload ───────────────────────────────────────────────
@@ -173,6 +219,19 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
   const resumeType = RESUME_TYPES.has(type) ? type : 'custom';
   const tags = parseTags(tagsRaw);
   const defaultTitle = path.basename(file.originalname, path.extname(file.originalname));
+
+  // Enforce BYOK — user must have a validated AI provider before any LLM call.
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) {
+      await safeDeleteFile(file.path);
+      return res.status(402).json({ error: err.message, code: err.code });
+    }
+    await safeDeleteFile(file.path);
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
 
   console.log(`[resumelab] POST /upload — userId: ${userId}, file: ${file.filename}, size: ${file.size}B, type: ${resumeType}`);
 
@@ -200,19 +259,26 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     return res.status(500).json({ error: 'Failed to save resume metadata' });
   }
 
-  // ── Step 1: Extract via Cortex ──────────────────────────────────────────
-  let extractResult;
+  // ── Steps 1 + 2 in parallel: extract + fetch existing profile ──────────
+  // Both are independent — extract is the slow path (Cortex LLM), profile
+  // fetch is a fast MongoDB read. Running them concurrently saves ~200-400 ms.
+  const _t0 = Date.now();
+  let extractResult, profileDoc;
   try {
-    extractResult = await extractResume({
-      filePath: file.path,
-      userId: userId.toString(),
-      docId: resumeDoc._id.toString(),
-    });
+    [extractResult, profileDoc] = await Promise.all([
+      extractResume({
+        filePath: file.path,
+        userId: userId.toString(),
+        docId: resumeDoc._id.toString(),
+        llm,
+      }),
+      CanonicalProfile.findOne({ userId }),
+    ]);
     resumeDoc.parsedDocId = extractResult.doc_id || resumeDoc._id.toString();
     resumeDoc.extractedContent = extractResult;
     resumeDoc.normalizedResumeText = extractResult.normalized_resume_text || '';
     resumeDoc.sectionedResumeSource = extractResult.sectioned_resume_source || null;
-    console.log(`[resumelab] Extraction complete — userId: ${userId}, docId: ${resumeDoc.parsedDocId}, confidence: ${extractResult.metadata?.confidence}`);
+    console.log(`[resumelab] [latency] upload.extract=${Date.now() - _t0}ms userId:${userId} confidence:${extractResult.metadata?.confidence} cache_hit:${extractResult.metadata?.cache_hit || false}`);
   } catch (extractErr) {
     const detail = cortexDetail(extractErr);
     console.error(`[resumelab] Extraction failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
@@ -224,18 +290,18 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     });
   }
 
-  // ── Step 2: Fetch existing canonical profile ────────────────────────────
-  let profileDoc = await CanonicalProfile.findOne({ userId });
   const existingProfile = profileDoc?.canonicalProfile || {};
 
   // ── Step 3: Merge into canonical profile via Cortex ────────────────────
   let mergeResult;
+  const _t1 = Date.now();
   try {
     mergeResult = await mergeCanonicalProfile({
       userId: userId.toString(),
       existingProfile,
       incomingProfile: extractResult,
     });
+    console.log(`[resumelab] [latency] upload.merge=${Date.now() - _t1}ms userId:${userId}`);
   } catch (mergeErr) {
     const detail = cortexDetail(mergeErr);
     console.error(`[resumelab] Merge failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
@@ -435,6 +501,14 @@ router.post('/profile/rebuild', async (req, res) => {
   const userId = req.user._id;
   console.log(`[resumelab] POST /profile/rebuild — userId: ${userId}`);
 
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) return res.status(402).json({ error: err.message, code: err.code });
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
+
   try {
     const resumes = await Resume.find({ userId, status: 'parsed' }).sort({ uploadedAt: 1 });
     if (!resumes.length) {
@@ -466,6 +540,7 @@ router.post('/profile/rebuild', async (req, res) => {
           filePath: resume.storagePath,
           userId: userId.toString(),
           docId: resume._id.toString(),
+          llm,
         });
       } catch (err) {
         console.warn(`[resumelab] Rebuild — extract failed for resumeId: ${resume._id}: ${err.message}, skipping`);
@@ -594,7 +669,7 @@ function toGeneratedFull(doc) {
   return {
     ...toGeneratedSummary(doc),
     generatedContent: doc.generatedContent || null,
-    latexPreview: (doc.latexSource || '').slice(0, 3000),
+    latexSource: doc.latexSource || '',
     pdfUrl: doc.pdfPath ? `/api/resumelab/generated/${doc._id}/pdf` : null,
   };
 }
@@ -647,27 +722,49 @@ router.post('/analyze', async (req, res) => {
   const jd = String(jobDescription).trim().slice(0, JD_MAX_LENGTH);
   console.log(`[resumelab] POST /analyze — userId: ${userId}, jdLen: ${jd.length}`);
 
-  const profileDoc = await CanonicalProfile.findOne({ userId });
+  // Enforce BYOK — must have a validated AI provider before any LLM call.
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) return res.status(402).json({ error: err.message, code: err.code });
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
+
+  // Parallel reads: profile and base resume are independent of each other.
+  const _ta0 = Date.now();
+  const [profileDoc, baseResumeResult] = await Promise.all([
+    CanonicalProfile.findOne({ userId }),
+    resolveBaseResume(userId, baseResumeId),
+  ]);
+  console.log(`[resumelab] [latency] analyze.fetch=${Date.now() - _ta0}ms userId:${userId}`);
+
   if (!profileDoc?.canonicalProfile) {
     return res.status(400).json({ error: 'No canonical profile found. Upload at least one resume first.' });
   }
 
-  const baseResumeResult = await resolveBaseResume(userId, baseResumeId);
-  const llm = await resolveUserLlm(userId);
-
-  let matchAnalysis;
-  try {
-    matchAnalysis = await analyzeResumeMatch({
-      userId: userId.toString(),
-      jobDescription: jd,
-      canonicalProfile: profileDoc.canonicalProfile,
-      baseResume: baseResumeResult?.extractedContent || undefined,
-      llm: llm || undefined,
-    });
-  } catch (err) {
-    const detail = cortexDetail(err);
-    console.error(`[resumelab] Analyze failed — userId: ${userId}: ${detail}`);
-    return res.status(502).json({ error: 'Resume analysis failed. Please try again.', detail });
+  // Check in-memory JD analysis cache before hitting the LLM.
+  const _cacheKey = _jdCacheKey(userId, profileDoc.profileVersion, jd);
+  let matchAnalysis = _jdCacheGet(_cacheKey);
+  if (matchAnalysis) {
+    console.log(`[resumelab] analyze cache hit — userId: ${userId}, profileVersion: ${profileDoc.profileVersion}`);
+  } else {
+    const _ta1 = Date.now();
+    try {
+      matchAnalysis = await analyzeResumeMatch({
+        userId: userId.toString(),
+        jobDescription: jd,
+        canonicalProfile: profileDoc.canonicalProfile,
+        baseResume: baseResumeResult?.extractedContent || undefined,
+        llm,
+      });
+      console.log(`[resumelab] [latency] analyze.llm=${Date.now() - _ta1}ms userId:${userId}`);
+    } catch (err) {
+      const detail = cortexDetail(err);
+      console.error(`[resumelab] Analyze failed — userId: ${userId}: ${detail}`);
+      return res.status(502).json({ error: 'Resume analysis failed. Please try again.', detail });
+    }
+    _jdCacheSet(_cacheKey, matchAnalysis);
   }
 
   const analysisDoc = await ResumeAnalysis.create({
@@ -766,41 +863,58 @@ router.post('/generate', async (req, res) => {
 
   console.log(`[resumelab] POST /generate — userId: ${userId}, analysisId: ${analysisId}, mode: ${generationMode}, template: ${outputFormat}`);
 
-  const analysisDoc = await ResumeAnalysis.findOne({ _id: analysisId, userId });
-  if (!analysisDoc) return res.status(404).json({ error: 'Analysis not found' });
+  // Enforce BYOK — must have a validated AI provider before any LLM call.
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) return res.status(402).json({ error: err.message, code: err.code });
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
 
-  const profileDoc = await CanonicalProfile.findOne({ userId });
+  // Phase 1: two independent reads in parallel.
+  const _tg0 = Date.now();
+  const [analysisDoc, profileDoc] = await Promise.all([
+    ResumeAnalysis.findOne({ _id: analysisId, userId }),
+    CanonicalProfile.findOne({ userId }),
+  ]);
+
+  if (!analysisDoc) return res.status(404).json({ error: 'Analysis not found' });
   if (!profileDoc?.canonicalProfile) {
     return res.status(400).json({ error: 'No canonical profile found. Upload at least one resume first.' });
   }
 
+  // Phase 2: base resume depends on analysisDoc.baseResumeId.
   const baseResumeResult = await resolveBaseResume(userId, resolvedStartingId || analysisDoc.baseResumeId?.toString());
-  const llm = await resolveUserLlm(userId);
+  console.log(`[resumelab] [latency] generate.fetch=${Date.now() - _tg0}ms userId:${userId}`);
 
-  // For modify_existing, pass the raw resume text so Cortex can rewrite from it
+  // For modify_existing, pass the sectioned resume dict (not raw text) so Cortex can rewrite sections
   let sourceResumeContent;
   if (generationMode === 'modify_existing' && baseResumeResult?.resume) {
-    sourceResumeContent = baseResumeResult.resume.normalizedResumeText
-      || baseResumeResult.extractedContent?.normalized_resume_text
+    sourceResumeContent = baseResumeResult.resume.sectionedResumeSource
+      || baseResumeResult.extractedContent?.sectioned_resume_source
       || undefined;
   }
 
   // ── Step 1: Generate structured content via Cortex ─────────────────────
+  const _cortexArgs = () => ({
+    userId: userId.toString(),
+    jobDescription: analysisDoc.jobDescriptionRaw,
+    canonicalProfile: profileDoc.canonicalProfile,
+    baseResume: baseResumeResult?.extractedContent || undefined,
+    templateType: outputFormat,
+    llm,
+    mode: generationMode,
+    sourceResumeContent,
+    userTweakPrompt: userPrompt ? String(userPrompt).slice(0, 1000) : undefined,
+    aggressiveness,
+  });
+
   let generatedContent;
+  const _tg1 = Date.now();
   try {
-    generatedContent = await generateOptimizedResume({
-      userId: userId.toString(),
-      jobDescription: analysisDoc.jobDescriptionRaw,
-      canonicalProfile: profileDoc.canonicalProfile,
-      baseResume: baseResumeResult?.extractedContent || undefined,
-      templateType: outputFormat,
-      llm: llm || undefined,
-      mode: generationMode,
-      sourceResumeContent,
-      userTweakPrompt: userPrompt ? String(userPrompt).slice(0, 1000) : undefined,
-      aggressiveness,
-    });
-    console.log(`[resumelab] Generation complete — userId: ${userId}, score improved to: ${generatedContent.match_score_improved}`);
+    generatedContent = await generateOptimizedResume(_cortexArgs());
+    console.log(`[resumelab] [latency] generate.llm=${Date.now() - _tg1}ms userId:${userId} scoreAfter:${generatedContent.match_score_improved}`);
   } catch (err) {
     const detail = cortexDetail(err);
     console.error(`[resumelab] Generation failed — userId: ${userId}, analysisId: ${analysisId}: ${detail}`);
@@ -824,16 +938,39 @@ router.post('/generate', async (req, res) => {
     return res.status(502).json({ error: 'Resume generation failed. Please try again.', detail });
   }
 
-  // ── Step 2: Inject into LaTeX template ────────────────────────────────
-  const latexSource = injectTemplate({
+  // ── Step 2: Inject into LaTeX template + validate ─────────────────────
+  const _tg2 = Date.now();
+  const _injectArgs = (content) => ({
     templateType: outputFormat,
     name: req.user.displayName || req.user.email || 'Candidate',
     contact: req.user.email || '',
-    generated: generatedContent,
+    generated: content,
     canonicalProfile: profileDoc.canonicalProfile,
   });
 
+  let latexSource = injectTemplate(_injectArgs(generatedContent));
+  const latexErrors = validateLatex(latexSource);
+  if (latexErrors.length > 0) {
+    console.warn(`[resumelab] LaTeX validation failed (${latexErrors.join('; ')}) — retrying generation once userId:${userId}`);
+    try {
+      const retryContent = await generateOptimizedResume(_cortexArgs());
+      const retryLatex = injectTemplate(_injectArgs(retryContent));
+      const retryErrors = validateLatex(retryLatex);
+      if (retryErrors.length === 0) {
+        generatedContent = retryContent;
+        latexSource = retryLatex;
+        console.log(`[resumelab] LaTeX retry succeeded userId:${userId}`);
+      } else {
+        console.warn(`[resumelab] LaTeX retry still invalid (${retryErrors.join('; ')}) — proceeding with first attempt userId:${userId}`);
+      }
+    } catch (retryErr) {
+      console.warn(`[resumelab] LaTeX retry generation threw — proceeding with first attempt: ${retryErr.message}`);
+    }
+  }
+  console.log(`[resumelab] [latency] generate.inject=${Date.now() - _tg2}ms userId:${userId}`);
+
   // ── Step 3: Compile PDF (non-fatal on failure) ─────────────────────────
+  const _tg3 = Date.now();
   let pdfPath = '';
   let pdfError = '';
   try {
@@ -842,11 +979,12 @@ router.post('/generate', async (req, res) => {
       userId: userId.toString(),
       outputName: `resume_${analysisDoc._id}_${Date.now()}`,
     });
-    console.log(`[resumelab] PDF compiled — userId: ${userId}, path: ${pdfPath}`);
+    console.log(`[resumelab] [latency] generate.compile=${Date.now() - _tg3}ms userId:${userId} path:${pdfPath}`);
   } catch (pdfErr) {
     pdfError = pdfErr.message;
     console.warn(`[resumelab] PDF compilation failed — userId: ${userId}: ${pdfErr.message}`);
   }
+  console.log(`[resumelab] [latency] generate.total=${Date.now() - _tg0}ms userId:${userId}`);
 
   // ── Step 4: Persist generated resume ──────────────────────────────────
   const genDoc = await GeneratedResume.create({
@@ -871,7 +1009,7 @@ router.post('/generate', async (req, res) => {
 
   res.json({
     generatedResumeId: genDoc._id.toString(),
-    latexPreview: latexSource.slice(0, 3000),
+    latexSource,
     pdfUrl: pdfPath ? `/api/resumelab/generated/${genDoc._id}/pdf` : null,
     pdfError: pdfError || null,
     matchScoreBefore: genDoc.matchScoreBefore,
@@ -966,6 +1104,97 @@ router.get('/history', async (req, res) => {
   } catch (err) {
     console.error('[resumelab] GET /history failed:', err.message);
     res.status(500).json({ error: err.message || 'Failed to load history' });
+  }
+});
+
+// ── POST /api/resumelab/compile-latex ────────────────────────────────────────
+// Stateless compile: takes LaTeX source directly, returns base64 PDF.
+// Used when there is no GeneratedResume record (e.g. pasting custom LaTeX).
+
+router.post('/compile-latex', async (req, res) => {
+  const userId = req.user._id;
+  const { latexSource } = req.body || {};
+
+  if (!latexSource || !String(latexSource).trim()) {
+    return res.status(400).json({ error: 'latexSource is required' });
+  }
+
+  const src = String(latexSource);
+  const outputName = `resume_preview_${userId}_${Date.now()}`;
+
+  let pdfPath;
+  try {
+    pdfPath = await compileToPdf({ latexSource: src, userId: userId.toString(), outputName });
+  } catch (compileErr) {
+    console.warn(`[resumelab] Stateless compile failed — userId: ${userId}: ${compileErr.message}`);
+    return res.status(422).json({ error: compileErr.message });
+  }
+
+  try {
+    const pdfBytes = await fs.promises.readFile(pdfPath);
+    const pdfBase64 = pdfBytes.toString('base64');
+    // Preview PDFs are not tracked in DB; clean up after serving.
+    fs.promises.unlink(pdfPath).catch(() => {});
+    console.log(`[resumelab] Stateless compile complete — userId: ${userId}`);
+    return res.json({ ok: true, pdfBase64 });
+  } catch (err) {
+    console.error(`[resumelab] POST /compile-latex read failed:`, err.message);
+    return res.status(500).json({ error: err.message || 'Failed to read compiled PDF' });
+  }
+});
+
+// ── POST /api/resumelab/generated/:id/compile-latex ──────────────────────────
+// Compiles the stored (or supplied) LaTeX source to PDF and returns base64.
+
+router.post('/generated/:id/compile-latex', async (req, res) => {
+  const { id } = req.params;
+  if (!Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  const userId = req.user._id;
+  const { latexSource: submittedLatex } = req.body || {};
+
+  try {
+    const doc = await GeneratedResume.findOne({ _id: id, userId });
+    if (!doc) return res.status(404).json({ error: 'Generated resume not found' });
+
+    const latexSource = (typeof submittedLatex === 'string' && submittedLatex.trim())
+      ? submittedLatex
+      : doc.latexSource;
+
+    if (!latexSource) {
+      return res.status(400).json({ error: 'No LaTeX source available to compile' });
+    }
+
+    const outputName = `resume_${id}_${Date.now()}`;
+    let pdfPath;
+    try {
+      pdfPath = await compileToPdf({ latexSource, userId: userId.toString(), outputName });
+    } catch (compileErr) {
+      console.warn(`[resumelab] Compile failed — userId: ${userId}, genId: ${id}: ${compileErr.message}`);
+      doc.pdfError = compileErr.message;
+      await doc.save();
+      return res.status(422).json({ error: compileErr.message });
+    }
+
+    const pdfBytes = await fs.promises.readFile(pdfPath);
+    const pdfBase64 = pdfBytes.toString('base64');
+
+    if (typeof submittedLatex === 'string' && submittedLatex.trim()) {
+      doc.latexSource = latexSource;
+    }
+    doc.pdfPath = pdfPath;
+    doc.pdfError = '';
+    await doc.save();
+
+    console.log(`[resumelab] Compile complete — userId: ${userId}, genId: ${id}`);
+    return res.json({
+      ok: true,
+      pdfBase64,
+      pdfUrl: `/api/resumelab/generated/${id}/pdf`,
+    });
+  } catch (err) {
+    console.error(`[resumelab] POST /generated/${id}/compile-latex failed:`, err.message);
+    res.status(500).json({ error: err.message || 'Compilation failed' });
   }
 });
 

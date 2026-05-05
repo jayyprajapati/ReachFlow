@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import {
   Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle,
   Lightbulb, ChevronDown, ChevronUp, Sparkles, Download, CheckCheck,
-  CheckCircle2,
+  CheckCircle2, Code2, Copy, FileText, Zap,
 } from 'lucide-react';
 
 const OUTPUT_FORMAT_OPTIONS = [
@@ -142,12 +142,14 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
   }
 
   return (
-    <div className="rf-dialog-overlay" onClick={onClose}>
+    // Outside click only closes when NOT loading
+    <div className="rf-dialog-overlay" onClick={loading ? undefined : onClose}>
       <div className="rf-dialog" style={{ maxWidth: 520, width: '90vw' }} onClick={e => e.stopPropagation()}>
         <div className="rf-dialog__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Sparkles size={16} /> Generation Strategy
+          {loading && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>Generating — please wait…</span>}
         </div>
-        <div className="rf-dialog__body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div className="rf-dialog__body" style={{ display: 'flex', flexDirection: 'column', gap: 20, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : undefined }}>
 
           {/* Mode */}
           <div>
@@ -157,8 +159,8 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
                 { value: 'canonical_only', label: 'From Profile', desc: 'Build from your full canonical profile — most comprehensive coverage' },
                 { value: 'modify_existing', label: 'Modify Existing', desc: 'Rewrite and optimize a specific resume you already have' },
               ].map(opt => (
-                <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--rf-radius-md)', border: `1px solid ${mode === opt.value ? 'var(--rf-accent)' : 'var(--rf-border-subtle)'}`, background: mode === opt.value ? 'var(--rf-accent-faint)' : 'transparent' }}>
-                  <input type="radio" name="mode" value={opt.value} checked={mode === opt.value} onChange={() => setMode(opt.value)} style={{ marginTop: 2 }} />
+                <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: loading ? 'default' : 'pointer', padding: '10px 12px', borderRadius: 'var(--rf-radius-md)', border: `1px solid ${mode === opt.value ? 'var(--rf-accent)' : 'var(--rf-border-subtle)'}`, background: mode === opt.value ? 'var(--rf-accent-faint)' : 'transparent' }}>
+                  <input type="radio" name="mode" value={opt.value} checked={mode === opt.value} onChange={() => setMode(opt.value)} style={{ marginTop: 2 }} disabled={loading} />
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)' }}>{opt.label}</div>
                     <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginTop: 2 }}>{opt.desc}</div>
@@ -172,7 +174,7 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
           {mode === 'modify_existing' && (
             <div className="rl-form-group">
               <label className="rl-form-label">Starting Resume *</label>
-              <select className="rl-form-select" value={startingResumeId} onChange={e => setStartingResumeId(e.target.value)}>
+              <select className="rl-form-select" value={startingResumeId} onChange={e => setStartingResumeId(e.target.value)} disabled={loading}>
                 <option value="">Select a resume to rewrite…</option>
                 {parsedResumes.map(r => (
                   <option key={r.id} value={r.id}>{r.title || r.fileName}</option>
@@ -189,7 +191,7 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
           {/* Output format */}
           <div className="rl-form-group">
             <label className="rl-form-label">Output Format</label>
-            <select className="rl-form-select" value={outputFormat} onChange={e => setOutputFormat(e.target.value)}>
+            <select className="rl-form-select" value={outputFormat} onChange={e => setOutputFormat(e.target.value)} disabled={loading}>
               {OUTPUT_FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
@@ -199,8 +201,8 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
             <div className="rl-form-label" style={{ marginBottom: 8 }}>Optimization Level</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {AGGRESSIVENESS_OPTIONS.map(opt => (
-                <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-                  <input type="radio" name="aggressiveness" value={opt.value} checked={aggressiveness === opt.value} onChange={() => setAggressiveness(opt.value)} style={{ marginTop: 2 }} />
+                <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: loading ? 'default' : 'pointer' }}>
+                  <input type="radio" name="aggressiveness" value={opt.value} checked={aggressiveness === opt.value} onChange={() => setAggressiveness(opt.value)} style={{ marginTop: 2 }} disabled={loading} />
                   <div>
                     <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)' }}>{opt.label}</span>
                     <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginLeft: 8 }}>{opt.desc}</span>
@@ -220,12 +222,14 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
               value={userPrompt}
               onChange={e => setUserPrompt(e.target.value)}
               maxLength={1000}
+              disabled={loading}
             />
           </div>
         </div>
 
         <div className="rf-dialog__actions">
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={onClose} disabled={loading}>Cancel</button>
+          {/* Cancel always enabled — user can abort the generation */}
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={onClose}>Cancel</button>
           <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={handleSubmit} disabled={!canGenerate}>
             {loading ? <><Loader size={13} className="rf-spin" /> Generating…</> : <><Sparkles size={13} /> Generate Resume</>}
           </button>
@@ -235,51 +239,155 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
   );
 }
 
-// ── Generated preview ─────────────────────────────────────────────────────────
+// ── LaTeX + PDF split panel ───────────────────────────────────────────────────
 
-function GeneratedPreview({ result, onDownload, downloading }) {
-  const content = result?.generatedContent;
-  if (!content) return null;
+function LatexPreviewSection({ result, compileLatex, fetchPdfBlob }) {
+  const [latexCode, setLatexCode] = useState('');
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+  const [compiling, setCompiling] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const prevIdRef = useRef(null);
+  const blobUrlRef = useRef(null);
+
+  // Sync editor content when a new generation loads
+  useEffect(() => {
+    const newId = result?.id ?? null;
+    if (prevIdRef.current === newId) return;
+    prevIdRef.current = newId;
+    setLatexCode(result?.latexSource || '');
+    if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
+    setPdfBlobUrl(null);
+  }, [result?.id, result?.latexSource]);
+
+  // Auto-load PDF blob if the generate step already compiled successfully
+  useEffect(() => {
+    if (!result?.id || !(result.pdfUrl || result.hasPdf)) return;
+    fetchPdfBlob(result.id)
+      .then(blob => {
+        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setPdfBlobUrl(url);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.id, result?.pdfUrl, result?.hasPdf]);
+
+  useEffect(() => {
+    return () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); };
+  }, []);
+
+  function copy() {
+    if (!latexCode) return;
+    navigator.clipboard?.writeText(latexCode).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function handleCompile() {
+    if (!latexCode.trim()) return;
+    setCompiling(true);
+    try {
+      // If there's a generated resume record, compile against it (saves updated source + PDF).
+      // Otherwise use the stateless route (custom pasted LaTeX — no DB record needed).
+      const { pdfBase64 } = await compileLatex(result?.id || null, latexCode);
+      if (pdfBase64) {
+        const bytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setPdfBlobUrl(url);
+      }
+    } catch {
+      // error toast handled by context
+    } finally {
+      setCompiling(false);
+    }
+  }
+
+  const PANEL_HEIGHT = 620;
+  const canCompile = latexCode.trim().length > 0;
 
   return (
-    <div className="rl-panel" style={{ gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <CheckCircle2 size={16} style={{ color: 'var(--rf-success)' }} />
-          <span style={{ fontWeight: 600, color: 'var(--rf-text)' }}>Resume Generated</span>
-          <ScoreDelta before={result.matchScoreBefore} after={result.matchScoreAfter} />
-        </div>
-        <button
-          className="rf-btn rf-btn--primary rf-btn--sm"
-          onClick={() => onDownload(result.generatedResumeId, `resume_${result.generatedResumeId}.pdf`)}
-          disabled={!result.pdfUrl || downloading}
-          title={!result.pdfUrl ? result.pdfError || 'PDF not available' : 'Download PDF'}
-        >
-          {downloading ? <><Loader size={13} className="rf-spin" /> Downloading…</> : <><Download size={13} /> Download PDF</>}
-        </button>
-      </div>
+    <div className="rl-panel" style={{ padding: 0, overflow: 'hidden', marginTop: 20 }}>
+      <div style={{ display: 'flex', height: PANEL_HEIGHT }}>
 
-      {content.summary && (
-        <div>
-          <div className="rl-gen-detail__section-title">Summary</div>
-          <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)', lineHeight: 1.6, margin: 0 }}>{content.summary}</p>
+        {/* ── Left: LaTeX editor ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--rf-border-subtle)', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--rf-border-subtle)', flexShrink: 0 }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--rf-text)' }}>
+              <Code2 size={14} /> LaTeX Source
+            </span>
+            <button
+              style={{ background: 'none', border: 'none', cursor: latexCode ? 'pointer' : 'default', color: 'var(--rf-text-muted)', fontSize: 'var(--rf-text-xs)', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 'var(--rf-radius-sm)', opacity: latexCode ? 1 : 0.4 }}
+              onClick={copy}
+              disabled={!latexCode}
+            >
+              {copied ? <><CheckCheck size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+            </button>
+          </div>
+          <textarea
+            value={latexCode}
+            onChange={e => setLatexCode(e.target.value)}
+            placeholder="Generate a resume above to populate the LaTeX source…"
+            style={{
+              flex: 1,
+              fontFamily: 'var(--rf-font-mono)',
+              fontSize: 11,
+              lineHeight: 1.6,
+              color: 'var(--rf-text-secondary)',
+              background: 'var(--rf-bg-root)',
+              border: 'none',
+              resize: 'none',
+              padding: '12px 14px',
+              outline: 'none',
+            }}
+            spellCheck={false}
+          />
         </div>
-      )}
 
-      {content.skills?.length > 0 && (
-        <div>
-          <div className="rl-gen-detail__section-title">Skills ({content.skills.length})</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {content.skills.map((s, i) => <span key={i} className="rl-tag">{s}</span>)}
+        {/* ── Right: PDF preview ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--rf-border-subtle)', flexShrink: 0 }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--rf-text)' }}>
+              <FileText size={14} /> PDF Preview
+            </span>
+            <button
+              className="rf-btn rf-btn--primary rf-btn--sm"
+              onClick={handleCompile}
+              disabled={!canCompile || compiling}
+            >
+              {compiling
+                ? <><Loader size={13} className="rf-spin" /> Compiling…</>
+                : <><Zap size={13} /> Compile</>
+              }
+            </button>
+          </div>
+          <div style={{ flex: 1, background: 'var(--rf-bg-root)', position: 'relative', overflow: 'hidden' }}>
+            {pdfBlobUrl ? (
+              <iframe
+                src={pdfBlobUrl}
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                title="Resume PDF Preview"
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--rf-text-muted)', padding: 24 }}>
+                <FileText size={36} style={{ opacity: 0.2 }} />
+                <p style={{ fontSize: 'var(--rf-text-sm)', margin: 0, textAlign: 'center' }}>
+                  {!result?.id
+                    ? 'Generate a resume above, then click Compile to preview the PDF'
+                    : result?.pdfError
+                    ? <><span style={{ color: 'var(--rf-error)', fontWeight: 600 }}>Compile failed:</span> {result.pdfError}</>
+                    : 'Edit the LaTeX source, then click Compile to preview'
+                  }
+                </p>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {content.target_keywords_used?.length > 0 && (
-        <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>
-          {content.target_keywords_used.length} target keywords used
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -291,7 +399,8 @@ export default function WorkspacePage() {
     resumes, loadResumes,
     activeAnalysis, analyzeLoading,
     analyzeJD, setActiveAnalysis,
-    generateLoading, generateResume, downloadPdf,
+    generateLoading, generateResume, loadGeneratedById, downloadPdf,
+    fetchPdfBlob, compileLatex,
     jdText, setJdText,
     activeGenerated, setActiveGenerated,
   } = useResumeLab();
@@ -314,8 +423,9 @@ export default function WorkspacePage() {
 
   async function handleGenerate(payload) {
     const result = await generateResume(payload);
-    if (result) {
-      setActiveGenerated(result);
+    if (result?.generatedResumeId) {
+      const full = await loadGeneratedById(result.generatedResumeId);
+      setActiveGenerated(full || result);
       setShowStrategyModal(false);
     }
   }
@@ -406,21 +516,18 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {/* ── Results layout ── */}
+      {/* ── Results: keywords + score row ── */}
       {hasResult && (
         <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
           {/* Left: keyword insights */}
           <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-            {/* JD summary */}
             {(activeAnalysis.seniority || activeAnalysis.domain) && (
               <div className="rl-panel" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 {activeAnalysis.seniority && <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-secondary)' }}>{activeAnalysis.seniority}</span>}
                 {activeAnalysis.domain && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontStyle: 'italic' }}>{activeAnalysis.domain}</span>}
               </div>
             )}
-
             <div className="rl-panel" style={{ gap: 18 }}>
               <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Missing Keywords"         icon={AlertCircle} />
               <KwChips items={activeAnalysis.existingButMissingFromResume}  variant="omitted"  label="In Profile, Not in Resume" icon={Info} />
@@ -430,16 +537,13 @@ export default function WorkspacePage() {
             </div>
           </div>
 
-          {/* Right: score + actions */}
+          {/* Right: score + generate actions */}
           <div style={{ flex: '0 1 260px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-            {/* Score card */}
             <div className="rl-panel" style={{ alignItems: 'center', gap: 8 }}>
               <ScoreRing score={activeAnalysis.matchScore || 0} size={120} />
               <div className="rl-score-label">ATS Match Score</div>
             </div>
 
-            {/* Generate button */}
             {!activeGenerated && (
               <button
                 className="rf-btn rf-btn--primary"
@@ -454,13 +558,23 @@ export default function WorkspacePage() {
               </button>
             )}
 
-            {/* Generated preview */}
             {activeGenerated && (
-              <GeneratedPreview
-                result={activeGenerated}
-                onDownload={handleDownload}
-                downloading={downloading}
-              />
+              <div className="rl-panel" style={{ gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={14} style={{ color: 'var(--rf-success)', flexShrink: 0 }} />
+                  <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)' }}>Generated</span>
+                </div>
+                <ScoreDelta before={activeGenerated.matchScoreBefore} after={activeGenerated.matchScoreAfter} />
+                <button
+                  className="rf-btn rf-btn--primary rf-btn--sm"
+                  style={{ width: '100%' }}
+                  onClick={() => handleDownload(activeGenerated.id, `resume_${activeGenerated.id}.pdf`)}
+                  disabled={!(activeGenerated.pdfUrl || activeGenerated.hasPdf) || downloading}
+                  title={!(activeGenerated.pdfUrl || activeGenerated.hasPdf) ? 'Compile first to enable download' : 'Download PDF'}
+                >
+                  {downloading ? <><Loader size={13} className="rf-spin" /> Downloading…</> : <><Download size={13} /> Download PDF</>}
+                </button>
+              </div>
             )}
 
             {activeGenerated && (
@@ -476,6 +590,13 @@ export default function WorkspacePage() {
           </div>
         </div>
       )}
+
+      {/* ── Full-width LaTeX editor + PDF preview — always visible ── */}
+      <LatexPreviewSection
+        result={activeGenerated}
+        compileLatex={compileLatex}
+        fetchPdfBlob={fetchPdfBlob}
+      />
 
       {/* ── Strategy Modal ── */}
       {showStrategyModal && (

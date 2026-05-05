@@ -7,9 +7,10 @@ const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000')
 const CORTEX_APP_NAME = process.env.CORTEX_APP_NAME || 'resumelab';
 
 // /extract makes up to 4 sequential LLM calls — give it enough time.
-// All other JSON endpoints are single-shot; 60 s is plenty.
+// /generate/document is a complex single LLM call that can exceed 60s.
 const CORTEX_TIMEOUT_MS = 60_000;
 const CORTEX_EXTRACT_TIMEOUT_MS = parseInt(process.env.CORTEX_EXTRACT_TIMEOUT_MS || '300000', 10); // 5 min
+const CORTEX_GENERATE_TIMEOUT_MS = parseInt(process.env.CORTEX_GENERATE_TIMEOUT_MS || '180000', 10); // 3 min
 
 const MAX_RETRIES = 2;
 
@@ -31,9 +32,12 @@ class CortexError extends Error {
 // Extract a human-readable detail string from a CortexError's body.
 function cortexDetail(err) {
   if (err instanceof CortexError) {
-    return err.body?.detail || err.body?.error || err.message;
+    const raw = err.body?.detail || err.body?.error || err.message;
+    if (typeof raw === 'string') return raw;
+    if (Array.isArray(raw)) return raw.map(e => e?.msg || JSON.stringify(e)).join('; ');
+    return JSON.stringify(raw);
   }
-  return err.message;
+  return err.message || String(err);
 }
 
 function isRetryable(err) {
@@ -103,8 +107,9 @@ async function withRetry(fn, label) {
 /**
  * Send a resume file to Cortex /extract and return the structured ExtractResponse.
  * Uses a 5-minute timeout because Cortex may make up to 4 sequential LLM calls.
+ * Pass llm to use a BYOK provider override.
  */
-async function extractResume({ filePath, userId, docId }) {
+async function extractResume({ filePath, userId, docId, llm }) {
   const label = `POST /extract (user: ${userId})`;
   return withRetry(async () => {
     const fileBuffer = await fs.promises.readFile(filePath);
@@ -118,6 +123,7 @@ async function extractResume({ filePath, userId, docId }) {
     formData.append('user_id', String(userId));
     if (docId) formData.append('doc_id', String(docId));
     formData.append('extraction_type', 'resume');
+    if (llm) formData.append('llm', JSON.stringify(llm));
 
     return cortexFetch('POST', '/extract', formData, {
       isFormData: true,
@@ -194,7 +200,7 @@ async function generateOptimizedResume({
   if (includeExternalKeywords !== undefined) body.include_external_keywords = includeExternalKeywords;
   if (includeMissingProfileKeywords !== undefined) body.include_missing_profile_keywords = includeMissingProfileKeywords;
   if (removeIrrelevantKeywords !== undefined) body.remove_irrelevant_keywords = removeIrrelevantKeywords;
-  return withRetry(() => cortexFetch('POST', '/generate/document', body), label);
+  return withRetry(() => cortexFetch('POST', '/generate/document', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
 }
 
 module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, CortexError, cortexDetail };

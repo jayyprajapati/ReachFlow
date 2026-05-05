@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppProvider, useApp } from './contexts/AppContext.jsx';
 import { RouterProvider, useRouter } from './router.jsx';
+import { ResumeLabProvider } from './contexts/ResumeLabContext.jsx';
 import AppShell from './components/layout/AppShell.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import ComposePage from './pages/ComposePage.jsx';
@@ -55,9 +56,11 @@ function AuthGate() {
 
   // Logged in — show shell + router
   return (
-    <AppShell>
-      <PageRouter />
-    </AppShell>
+    <ResumeLabProvider>
+      <AppShell>
+        <PageRouter />
+      </AppShell>
+    </ResumeLabProvider>
   );
 }
 

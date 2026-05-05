@@ -3,7 +3,7 @@ import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
   FileOutput, Download, Trash2, Loader, Code2,
-  ChevronDown, ChevronUp, TrendingUp, AlertCircle, Sparkles,
+  TrendingUp, AlertCircle, Sparkles,
 } from 'lucide-react';
 
 const TEMPLATE_LABEL = { frontend: 'Frontend', backend: 'Backend', fullstack: 'Fullstack', custom: 'Custom' };
@@ -72,7 +72,6 @@ function DetailSkeleton() {
 // ── Generated detail pane ─────────────────────────────────────────────────────
 
 function GeneratedDetail({ item, loading, onDownload, onDelete, downloading }) {
-  const [showLatex, setShowLatex] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (loading) return <DetailSkeleton />;
@@ -156,23 +155,6 @@ function GeneratedDetail({ item, loading, onDownload, onDelete, downloading }) {
             </div>
           )}
         </div>
-
-        {/* LaTeX preview toggle */}
-        {item.latexPreview && (
-          <div>
-            <button
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--rf-text-secondary)', fontSize: 'var(--rf-text-xs)', fontWeight: 600, padding: 0, marginBottom: showLatex ? 8 : 0 }}
-              onClick={() => setShowLatex(v => !v)}
-            >
-              <Code2 size={13} />
-              {showLatex ? 'Hide LaTeX Source' : 'View LaTeX Source'}
-              {showLatex ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            </button>
-            {showLatex && (
-              <pre className="rl-latex-preview">{item.latexPreview}</pre>
-            )}
-          </div>
-        )}
 
         <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', margin: 0 }}>
           Generated {fmt(item.createdAt)}
@@ -345,6 +327,7 @@ export default function GeneratedPage() {
           <DetailSkeleton />
         </div>
       ) : generatedResumes.length > 0 ? (
+        <>
         <div className="rl-gen-layout">
 
           {/* List column */}
@@ -408,6 +391,20 @@ export default function GeneratedPage() {
             )}
           </div>
         </div>
+
+        {/* Full-width LaTeX source section */}
+        {selectedGenerated?.latexSource && (
+          <div className="rl-gen-detail" style={{ marginTop: 20 }}>
+            <div className="rl-gen-detail__header" style={{ gap: 8 }}>
+              <Code2 size={14} style={{ color: 'var(--rf-text-faint)' }} />
+              <span style={{ fontSize: 'var(--rf-text-sm)', fontWeight: 700, color: 'var(--rf-text)' }}>LaTeX Source</span>
+            </div>
+            <div style={{ padding: '16px 20px' }}>
+              <pre className="rl-latex-preview rl-latex-preview--full">{selectedGenerated.latexSource}</pre>
+            </div>
+          </div>
+        )}
+        </>
       ) : null}
     </div>
   );
