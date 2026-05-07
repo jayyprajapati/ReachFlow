@@ -1,85 +1,110 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Repository Layout
-
-- `backend/` — Node.js + Express API server (CommonJS, `src/app.js` entry).
-- `frontend/` — React + Vite SPA. No external router lib — see `src/router.jsx` (custom history-based router used by `App.jsx`'s `PageRouter` switch).
-- `backend/docker/latex/` — Dockerfile for the `reachflow-latex` image used by the LaTeX compiler service.
-- `env/` — local Python venv tooling (unrelated to the Node app).
+- `backend/` — Node.js + Express API (CommonJS, `src/app.js` entry).
+- `frontend/` — React + Vite SPA. Custom `pushState` router in `src/router.jsx` — no React Router.
+- `backend/docker/latex/` — Dockerfile for `reachflow-latex` image (PDF generation).
+- `.claude/specs/` — feature specs (product truth). `.claude/tasks/` — engineering tasks (implementation truth).
 
 ## Commands
 
-### Backend (run from `backend/`)
-- `npm run dev` — nodemon dev server on `PORT` (default 4000).
-- `npm start` — production start.
-- `npm test` — runs all tests in `test/` and `src/test/` via `node --test` (uses Node's built-in test runner — no Jest/Mocha).
-- Run a single test file: `node --test src/test/resumelab.test.js` (or any specific path).
-- `npm run migrate` — runs `src/scripts/runMigrations.js`. Migrations are explicitly decoupled from app startup and must be run manually.
+### Backend (from `backend/`)
+- `npm run dev` — nodemon, port 4000
+- `npm test` — Node built-in test runner (`node --test`); no Jest/Mocha
+- `npm run migrate` — runs `src/scripts/runMigrations.js` manually (not on startup)
 
-### Frontend (run from `frontend/`)
-- `npm run dev` — Vite dev server on port 5173.
-- `npm run build` / `npm run preview` — production build / preview.
+### Frontend (from `frontend/`)
+- `npm run dev` — Vite dev server, port 5173
+- `npm run build` / `npm run preview`
 
-### LaTeX image (resume PDF compilation)
-- Build: `docker build -t reachflow-latex ./backend/docker/latex` — required before Resume Lab PDF generation works locally. Image name is overridable via `DOCKER_LATEX_IMAGE`.
+### LaTeX image
+- `docker build -t reachflow-latex ./backend/docker/latex` — required before Resume Lab PDF generation works locally.
 
 ## Required Environment Variables (Backend)
-
-Crypto config is asserted on boot via `assertDataSecurityConfig()` — the server will not start without these:
-- `DATA_ENC_KEY` (32 bytes, hex or base64), `DATA_ENC_KEY_ID`, `DATA_HASH_KEY` — used by `src/utils/dataSecurity.js` for AES-256-GCM envelope encryption and HMAC email hashing.
-- `TOKEN_ENC_KEY` — used by `src/utils/crypto.js` for Gmail refresh-token encryption.
-- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (use `\n` escapes for newlines).
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` — Gmail OAuth.
-- `MONGO_URI`, `FRONTEND_ORIGIN`, `PORT`.
+Server won't start without these (asserted on boot):
+- `DATA_ENC_KEY`, `DATA_ENC_KEY_ID`, `DATA_HASH_KEY` — AES-256-GCM + HMAC hashing
+- `TOKEN_ENC_KEY` — Gmail refresh token encryption (separate module from dataSecurity.js)
+- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+- `MONGO_URI`, `FRONTEND_ORIGIN`, `PORT`
 
 Optional:
-- `CORTEX_BASE_URL` (default `http://localhost:8000`), `CORTEX_EXTRACT_TIMEOUT_MS`, `CORTEX_GENERATE_TIMEOUT_MS` — external LLM service (Cortex) used by Resume Lab.
-- `RESUME_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — Resume Lab file storage paths. Defaults live under `~/.reachflow/` (outside the repo). `LATEX_TEMP_DIR` defaults to `/tmp/reachflow-latex` because Docker Desktop on macOS cannot bind-mount `os.tmpdir()` (`/var/folders/...`).
-- `RATE_LIMIT_BYPASS_EMAILS` — comma-separated allowlist for campaign send rate limits.
+- `CORTEX_BASE_URL` (default `http://localhost:8000`) — external Python LLM service
+- `RESUME_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/`
+- `RATE_LIMIT_BYPASS_EMAILS` — comma-separated emails exempt from send rate limits
 
 ## Architecture
 
 ### Backend request flow
-1. `src/app.js` boots: initializes Firebase Admin, asserts crypto config, mounts Helmet/CORS/rate limiters (`/auth/` and `/api/` have separate limits), then attaches routes.
-2. All `/api/*` routes go through `requireAuth`, which verifies a Firebase ID token (`Bearer` header) and **upserts a `User` doc keyed by `firebaseUid`** before setting `req.user`. Any new auth path will create a user row — keep this in mind when reasoning about user creation.
-3. Routes are split per domain in `src/routes/` (`campaigns`, `groups`, `recipients`, `templates`, `variables`, `applications`, `resumelab`, `roadmaps`, `settings`).
-4. Gmail OAuth callback `/auth/google/callback` is **public** (no `requireAuth`) — it correlates by a server-issued `gmailState` stored on the user row. Token exchange happens in `src/gmail.js::exchangeCodeForUser`.
-5. A `setInterval` worker (`processScheduledCampaigns`, every 60s) drives scheduled campaign sends. It is started after Mongo connects.
+1. `src/app.js`: Firebase Admin init → crypto config assert → Helmet/CORS/rate limiters → routes.
+2. All `/api/*` routes: `requireAuth` verifies Firebase ID token and **upserts a User doc** (`firebaseUid` key).
+3. Routes in `src/routes/`: campaigns, groups, recipients, templates, variables, applications, resumelab, roadmaps, settings.
+4. `/auth/google/callback` is **public** — correlates OAuth state via `gmailState` on user doc.
+5. Scheduled campaign worker: `setInterval(processScheduledCampaigns, 60s)` starts after Mongo connects.
 
-### Encryption model (read this before touching any model)
+### Encryption model — READ BEFORE TOUCHING ANY MODEL
+- Sensitive fields stored as AES-256-GCM envelopes: `{ v, alg, kid, iv, tag, ct }` — see `isEncryptedEnvelope()` in `src/utils/dataSecurity.js`.
+- Helpers: `encryptJson`/`decryptJson`, `encryptString`/`decryptString`.
+- Fields: `encryptedPayload` (or `*Enc`) on each model. Legacy plaintext fields (`subject`, `body_html`, `gmailEmail`) are being phased out — new writes encrypt and `$unset` plaintext.
+- Lookup by content uses HMAC hashes: `computeEmailHash(email)` for dedup, `normalizeCompanyKey` for group keys.
+- Gmail tokens use `src/utils/crypto.js` (`TOKEN_ENC_KEY`) — separate from `dataSecurity.js`.
 
-ReachFlow uses **server-side AES-256-GCM envelope encryption** for sensitive fields. Envelopes are JSON objects of shape `{ v, alg, kid, iv, tag, ct }` — see `isEncryptedEnvelope()` in `src/utils/dataSecurity.js`. Helpers: `encryptJson`/`decryptJson`, `encryptString`/`decryptString`.
+### Mongoose models & collections
+All collections prefixed `reachflow_*`. All defined in `src/db.js`.
 
-- Sensitive payloads live in `encryptedPayload` (or `*Enc`) Mixed-type fields on each model. Plaintext columns alongside them (e.g. `subject`, `body_html`, `gmailEmail`, `senderDisplayName`) are **legacy** and being phased out — new writes should encrypt and `unset` the plaintext counterpart (see `migrateUserSensitiveFields`, `migrateTemplateSensitiveFields`, etc. in `src/db.js` for the canonical pattern).
-- Lookup-by-content uses HMAC-derived hashes, never plaintext: `computeEmailHash(email)` for recipient/contact dedupe (`emailHash` index), `normalizeCompanyKey` / `deriveCompanyKeyFromEmail` for group keys (`companyKey` index).
-- Gmail refresh tokens use a **separate** crypto module (`src/utils/crypto.js`, key `TOKEN_ENC_KEY`) — do not conflate it with `dataSecurity.js`.
-
-### Mongoose models & collection naming
-
-All collections are prefixed `reachflow_*` (e.g. `reachflow_users`, `reachflow_outreach_items` for campaigns, `reachflow_send_logs`). Models are defined and exported from `src/db.js`. The `migrateCollectionNames()` migration renames or merges legacy unprefixed collections — keep using prefixed names for any new model.
-
-Major collections: `reachflow_users`, `reachflow_groups` (with embedded `contacts[]`), `reachflow_outreach_items` (campaigns/drafts), `reachflow_templates`, `reachflow_variables`, `reachflow_send_logs`, `reachflow_applications`, `reachflow_resumes`, `reachflow_canonical_profiles`, `reachflow_resume_analyses`, `reachflow_generated_resumes`, `reachflow_ai_settings`, `reachflow_roadmaps`, `reachflow_roadmap_stages`, `reachflow_roadmap_items`.
+| Model | Collection |
+|---|---|
+| User | `reachflow_users` |
+| Campaign | `reachflow_outreach_items` |
+| Group (+ contacts[]) | `reachflow_groups` |
+| Template | `reachflow_templates` |
+| Variable | `reachflow_variables` |
+| SendLog | `reachflow_send_logs` |
+| Application | `reachflow_applications` |
+| Resume | `reachflow_resumes` |
+| CanonicalProfile | `reachflow_canonical_profiles` |
+| ResumeAnalysis | `reachflow_resume_analyses` |
+| GeneratedResume | `reachflow_generated_resumes` |
+| AISettings | `reachflow_ai_settings` |
+| Roadmap | `reachflow_roadmaps` |
+| RoadmapStage | `reachflow_roadmap_stages` |
+| RoadmapItem | `reachflow_roadmap_items` |
 
 ### Resume Lab subsystem
-
-Resume Lab is the AI-driven resume tooling under `/api/resumelab` and `frontend/src/pages/ResumeLab/`. It depends on:
-- **Cortex** — external Python LLM service (`src/services/cortexClient.js`). It must be reachable at `CORTEX_BASE_URL`. `/extract` and `/generate/document` have long timeouts (5min / 3min) because they make multiple LLM calls.
-- **LaTeX compiler** (`src/services/latexCompiler.js`) — invokes a Docker container (`reachflow-latex`) to compile populated `.tex` templates from `src/resume_templates/` into PDFs. Has retry logic and a fallback path; for the Docker path to work the image must be built first.
-- AI provider settings are BYOK and stored encrypted in `reachflow_ai_settings`.
+- **Cortex** (`src/services/cortexClient.js`): external Python LLM service. `/extract` timeout 5 min, `/generate/document` 3 min.
+- **LaTeX compiler** (`src/services/latexCompiler.js`): Docker container `reachflow-latex`.
+- **BYOK**: AI provider stored encrypted in `reachflow_ai_settings`. `resolveUserLlm()` enforces validation before any LLM call (HTTP 402 if not configured/validated).
+- **JD cache**: in-memory, keyed `userId:profileVersion:sha256(jd)[:16]`, TTL 30 min, max 200 entries.
 
 ### Frontend
-
-- `App.jsx` → `AppProvider` (auth + global app state) → `RouterProvider` → `AuthGate` (handles unauthenticated landing + static legal pages) → `AppShell` + `PageRouter`.
-- Routing is a hand-rolled `pushState` wrapper in `src/router.jsx` — do not assume React Router.
-- API base is `VITE_API_BASE` (default `http://localhost:4000`); Firebase config + optional `VITE_LINKEDIN_EXTENSION_ID` for the companion Chrome extension messaging in `AppContext.jsx`.
-- Styles are plain CSS files under `src/styles/` (tokens, base, components, layout, pages, plus per-feature `resumelab.css` / `roadmaplab.css`). No CSS-in-JS, no Tailwind.
-- Major contexts: `AppContext`, `ResumeLabContext`, `RoadmapContext`. Most state and API calls live in these contexts rather than per-page hooks.
+- `App.jsx` → `AppProvider` → `RouterProvider` → `AuthGate` → `AppShell` + `PageRouter`.
+- Contexts: `AppContext` (auth + global), `ResumeLabContext`, `RoadmapContext`. State + API calls live in contexts.
+- Styles: plain CSS in `src/styles/` (tokens, base, components, pages). No Tailwind, no CSS-in-JS.
+- Firebase config + `VITE_API_BASE` (default `http://localhost:4000`) set via env.
 
 ## Conventions
+- Backend: **CommonJS** (`require`/`module.exports`). Frontend: **ESM**. Never mix.
+- Never log plaintext sensitive content (emails, names, body HTML).
+- New sensitive fields → encrypted envelope (Mixed type) + migration in `src/db.js` + wire into `runMigrations.js`.
+- Mongoose indexes defined in `src/db.js` alongside schemas (`autoIndex: true` on connect).
+- New collections: always use `reachflow_` prefix.
 
-- Backend is **CommonJS** (`require`/`module.exports`), frontend is **ESM**. Don't mix.
-- Avoid logging plaintext sensitive content (emails, names, body HTML) in operational logs — existing code follows this; preserve it.
-- New sensitive fields should be added as encrypted envelope payloads (Mixed type), never raw strings, and a corresponding migration in `src/db.js` should backfill existing rows. Wire any new migration into `src/scripts/runMigrations.js`.
-- Mongoose indexes are defined alongside schemas in `src/db.js`; `autoIndex: true` is on at connect time.
+## Specs-Driven Development
+All features are documented in `.claude/specs/` (product truth) and `.claude/tasks/` (engineering truth).
+Read the relevant spec + task files before implementing any feature change.
+
+| # | Feature | Spec | Tasks |
+|---|---|---|---|
+| 1 | Compose | `.claude/specs/01-compose.spec.md` | `.claude/tasks/01-compose.tasks.md` |
+| 2 | Contacts | `.claude/specs/02-contacts.spec.md` | `.claude/tasks/02-contacts.tasks.md` |
+| 3 | Applications | `.claude/specs/03-applications.spec.md` | `.claude/tasks/03-applications.tasks.md` |
+| 4 | Resume Lab | `.claude/specs/04-resume-lab.spec.md` | `.claude/tasks/04-resume-lab.tasks.md` |
+| 5 | Roadmap Lab | `.claude/specs/05-roadmap-lab.spec.md` | `.claude/tasks/05-roadmap-lab.tasks.md` |
+| 6 | Settings | `.claude/specs/06-settings.spec.md` | `.claude/tasks/06-settings.tasks.md` |
+| 7 | Authentication | `.claude/specs/07-authentication.spec.md` | `.claude/tasks/07-authentication.tasks.md` |
+| 8 | Gmail Integration | `.claude/specs/08-gmail-integration.spec.md` | `.claude/tasks/08-gmail-integration.tasks.md` |
+| 9 | Templates | `.claude/specs/09-templates.spec.md` | `.claude/tasks/09-templates.tasks.md` |
+| 10 | Drafts | `.claude/specs/10-drafts.spec.md` | `.claude/tasks/10-drafts.tasks.md` |
+| 11 | Groups | `.claude/specs/11-groups.spec.md` | `.claude/tasks/11-groups.tasks.md` |
+| 12 | Global UI/UX | `.claude/specs/12-global-ui.spec.md` | `.claude/tasks/12-global-ui.tasks.md` |
+| 13 | AI/LLM Orchestration | `.claude/specs/13-ai-llm-orchestration.spec.md` | `.claude/tasks/13-ai-llm-orchestration.tasks.md` |
