@@ -9,7 +9,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume, AISettings } = require('../db');
 const { decryptJson } = require('../utils/dataSecurity');
-const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, cortexDetail } = require('../services/cortexClient');
+const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, cortexDetail } = require('../services/cortexClient');
 const { injectTemplate, compileToPdf, validateLatex } = require('../services/latexCompiler');
 
 const router = express.Router();
@@ -171,6 +171,7 @@ async function resolveUserLlm(userId) {
       throw err;
     }
   }
+  override._personalizationPrefs = doc.personalizationPrefs || null;
   return override;
 }
 
@@ -1219,6 +1220,125 @@ router.delete('/generated/:id', async (req, res) => {
   } catch (err) {
     console.error(`[resumelab] DELETE /generated/${id} failed:`, err.message);
     res.status(500).json({ error: err.message || 'Failed to delete generated resume' });
+  }
+});
+
+// ── POST /api/resumelab/generate-cover-letter ────────────────────────────────
+
+router.post('/generate-cover-letter', async (req, res) => {
+  const userId = req.user._id;
+  const { analysisId, userPrompt } = req.body || {};
+
+  if (!analysisId || !Types.ObjectId.isValid(analysisId)) {
+    return res.status(400).json({ error: 'analysisId is required' });
+  }
+
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) return res.status(402).json({ error: err.message, code: err.code });
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
+
+  try {
+    const analysis = await ResumeAnalysis.findOne({ _id: analysisId, userId });
+    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
+
+    const profile = await CanonicalProfile.findOne({ userId });
+    const canonicalProfile = profile?.canonicalProfile || {};
+
+    const personalization = llm._personalizationPrefs || null;
+    const cleanLlm = { ...llm };
+    delete cleanLlm._personalizationPrefs;
+
+    const result = await generateCoverLetter({
+      userId: userId.toString(),
+      jobDescription: analysis.jobDescription || '',
+      canonicalProfile,
+      llm: cleanLlm,
+      ...(personalization ? { personalization } : {}),
+      ...(userPrompt ? { userPrompt } : {}),
+    });
+
+    const coverLetterText = result.cover_letter_text || result.text || '';
+
+    await GeneratedResume.create({
+      userId,
+      analysisId,
+      outputType: 'cover_letter',
+      textContent: coverLetterText,
+      matchScoreBefore: analysis.matchScore || 0,
+      matchScoreAfter: analysis.matchScore || 0,
+      generationMode: 'canonical_only',
+      status: 'generated',
+    });
+
+    return res.json({ coverLetterText, wordCount: result.word_count || null });
+  } catch (err) {
+    const detail = cortexDetail(err);
+    console.error(`[resumelab] generate-cover-letter failed — userId: ${userId}: ${detail}`);
+    return res.status(502).json({ error: 'Cover letter generation failed.', detail });
+  }
+});
+
+// ── POST /api/resumelab/generate-hr-email ────────────────────────────────────
+
+router.post('/generate-hr-email', async (req, res) => {
+  const userId = req.user._id;
+  const { analysisId, userPrompt, recipientName } = req.body || {};
+
+  if (!analysisId || !Types.ObjectId.isValid(analysisId)) {
+    return res.status(400).json({ error: 'analysisId is required' });
+  }
+
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) return res.status(402).json({ error: err.message, code: err.code });
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
+
+  try {
+    const analysis = await ResumeAnalysis.findOne({ _id: analysisId, userId });
+    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
+
+    const profile = await CanonicalProfile.findOne({ userId });
+    const canonicalProfile = profile?.canonicalProfile || {};
+
+    const personalization = llm._personalizationPrefs || null;
+    const cleanLlm = { ...llm };
+    delete cleanLlm._personalizationPrefs;
+
+    const result = await generateHrEmail({
+      userId: userId.toString(),
+      jobDescription: analysis.jobDescription || '',
+      canonicalProfile,
+      recipientName: recipientName || null,
+      llm: cleanLlm,
+      ...(personalization ? { personalization } : {}),
+    });
+
+    const subject = result.subject || '';
+    const body = result.body || '';
+
+    await GeneratedResume.create({
+      userId,
+      analysisId,
+      outputType: 'hr_email',
+      textContent: JSON.stringify({ subject, body }),
+      matchScoreBefore: analysis.matchScore || 0,
+      matchScoreAfter: analysis.matchScore || 0,
+      generationMode: 'canonical_only',
+      status: 'generated',
+    });
+
+    return res.json({ subject, body, wordCount: result.word_count || null });
+  } catch (err) {
+    const detail = cortexDetail(err);
+    console.error(`[resumelab] generate-hr-email failed — userId: ${userId}: ${detail}`);
+    return res.status(502).json({ error: 'HR email generation failed.', detail });
   }
 });
 

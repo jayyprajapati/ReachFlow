@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
+import { useRouter } from '../../router.jsx';
 import { Clock, Microscope, Sparkles, Loader, AlertCircle, TrendingUp } from 'lucide-react';
 
 function fmt(iso) {
@@ -31,17 +32,25 @@ function KindBadge({ kind }) {
   );
 }
 
-function HistoryRow({ item }) {
+function HistoryRow({ item, onRestore, restoring }) {
   const score = item.kind === 'analysis' ? item.matchScore : item.matchScoreAfter;
   const label = item.jobTitle || item.company || (item.kind === 'analysis' ? 'Analysis' : 'Generated Resume');
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 16,
-      padding: '12px 16px',
-      borderBottom: '1px solid var(--rf-border-subtle)',
-      background: 'var(--rf-bg-canvas)',
-    }}>
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 16,
+        padding: '12px 16px',
+        borderBottom: '1px solid var(--rf-border-subtle)',
+        background: 'var(--rf-bg-canvas)',
+        cursor: 'pointer',
+        transition: 'background var(--rf-duration-fast)',
+      }}
+      onClick={() => onRestore(item)}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--rf-bg-hover)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'var(--rf-bg-canvas)'}
+      title="Click to restore in Workspace"
+    >
       <KindBadge kind={item.kind} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -68,14 +77,33 @@ function HistoryRow({ item }) {
 }
 
 export default function HistoryPage() {
-  const { history, historyLoading, loadHistory } = useResumeLab();
+  const { history, historyLoading, loadHistory, loadAnalysis, loadGeneratedById, setActiveGenerated } = useResumeLab();
+  const { navigateTo } = useRouter();
   const [filter, setFilter] = useState('all');
+  const [restoring, setRestoring] = useState(null);
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
   const filtered = history.filter(item => filter === 'all' || item.kind === filter);
+
+  async function handleRestore(item) {
+    if (restoring) return;
+    setRestoring(item.id);
+    try {
+      if (item.kind === 'analysis') {
+        await loadAnalysis(item.id);
+        navigateTo('/resume-lab/workspace');
+      } else if (item.kind === 'generated') {
+        const data = await loadGeneratedById(item.id);
+        if (data) setActiveGenerated(data);
+        navigateTo('/resume-lab/workspace');
+      }
+    } finally {
+      setRestoring(null);
+    }
+  }
 
   return (
     <div className="rl-page">
@@ -119,7 +147,7 @@ export default function HistoryPage() {
         </div>
       ) : (
         <div style={{ border: '1px solid var(--rf-border-subtle)', borderRadius: 'var(--rf-radius-lg)', overflow: 'hidden' }}>
-          {filtered.map((item, i) => <HistoryRow key={`${item.kind}-${item.id}-${i}`} item={item} />)}
+          {filtered.map((item, i) => <HistoryRow key={`${item.kind}-${item.id}-${i}`} item={item} onRestore={handleRestore} restoring={restoring === item.id} />)}
         </div>
       )}
     </div>

@@ -284,6 +284,9 @@ const generatedResumeSchema = new mongoose.Schema(
     startingResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
     userPrompt: { type: String, trim: true, default: '' },
     aggressiveness: { type: String, enum: ['conservative', 'balanced', 'aggressive'], default: 'balanced' },
+    // B7: Output type — allows cover letter and HR email to share the history collection
+    outputType: { type: String, enum: ['resume', 'cover_letter', 'hr_email'], default: 'resume' },
+    textContent: { type: String, default: '' },
   },
   { timestamps: true, versionKey: false }
 );
@@ -366,6 +369,7 @@ const aiSettingsSchema = new mongoose.Schema(
     selectedModel: { type: String, trim: true, default: '' },
     isValid: { type: Boolean, default: false },
     validatedAt: { type: Date, default: null },
+    personalizationPrefs: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true, versionKey: false }
 );

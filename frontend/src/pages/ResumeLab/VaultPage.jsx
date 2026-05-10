@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import {
-  UploadCloud, FileText, Trash2, Star, StarOff, Tag,
+  UploadCloud, FileText, Trash2, Tag,
   RefreshCw, Loader, CheckCircle, AlertCircle, X, Search,
   Pencil, ChevronDown,
 } from 'lucide-react';
@@ -80,12 +80,8 @@ function ResumeCard({ resume, onDelete, onUpdate }) {
     setEditingTitle(false);
   }
 
-  function toggleBase() {
-    onUpdate(resume.id, { isBaseResume: !resume.isBaseResume });
-  }
-
   return (
-    <div className={`rl-resume-card${resume.isBaseResume ? ' rl-resume-card--base' : ''}`}>
+    <div className="rl-resume-card">
       <div className="rl-resume-card__header">
         <div style={{ flex: 1, minWidth: 0 }}>
           {editingTitle ? (
@@ -108,9 +104,6 @@ function ResumeCard({ resume, onDelete, onUpdate }) {
             </div>
           )}
         </div>
-        {resume.isBaseResume && (
-          <Star size={13} style={{ color: 'var(--rf-accent)', flexShrink: 0 }} />
-        )}
       </div>
 
       <div className="rl-resume-card__badges">
@@ -132,14 +125,6 @@ function ResumeCard({ resume, onDelete, onUpdate }) {
       </div>
 
       <div className="rl-resume-card__actions">
-        <button
-          className={`rl-card-btn${resume.isBaseResume ? ' rl-card-btn--primary' : ''}`}
-          onClick={toggleBase}
-          title={resume.isBaseResume ? 'Unset as base resume' : 'Set as base resume'}
-        >
-          {resume.isBaseResume ? <StarOff size={11} /> : <Star size={11} />}
-          {resume.isBaseResume ? 'Unset Base' : 'Set Base'}
-        </button>
         <button
           className="rl-card-btn"
           onClick={() => { setEditingTitle(true); setTitleVal(resume.title || ''); }}

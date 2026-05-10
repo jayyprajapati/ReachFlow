@@ -1,11 +1,9 @@
 import React from 'react';
-import { Mail, Users, FileText, History, Shield } from 'lucide-react';
 import { useRouter } from '../router.jsx';
 
-function InfoCard({ icon, title, text }) {
+function InfoCard({ title, text }) {
   return (
     <article className="info-card">
-      <div className="info-card__icon">{icon}</div>
       <div>
         <h3>{title}</h3>
         <p>{text}</p>
@@ -30,27 +28,22 @@ export default function AboutPage() {
 
       <section className="info-grid">
         <InfoCard
-          icon={<Mail size={18} />}
           title="Personalized compose flow"
           text="Compose once, personalize per recipient with {{name}} and custom variables, preview output, then send only on explicit action."
         />
         <InfoCard
-          icon={<Users size={18} />}
           title="Groups, bulk import, and dedupe"
           text="Manage contacts by company, bulk paste or CSV import across groups, auto-route by domain, and skip duplicates consistently."
         />
         <InfoCard
-          icon={<History size={18} />}
           title="Drafts and reusable templates"
           text="Drafts store full editable compose snapshots. Templates store reusable content patterns for fast campaign setup."
         />
         <InfoCard
-          icon={<FileText size={18} />}
           title="Encrypted data at rest"
           text="Sensitive content is encrypted server-side with authenticated encryption, while safe metadata remains queryable for app behavior."
         />
         <InfoCard
-          icon={<Shield size={18} />}
           title="User-scoped and auditable"
           text="User-owned records are queried by ownership scope, with migration and security controls designed for safe long-term operation."
         />

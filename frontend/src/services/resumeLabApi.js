@@ -79,6 +79,12 @@ export function makeResumeLabApi(authedFetch) {
         body: JSON.stringify({ latexSource }),
       }),
 
+    // ── Cover Letter + HR Email ───────────────────────────────────────────
+    generateCoverLetter: (body) =>
+      call('/api/resumelab/generate-cover-letter', json(body)),
+    generateHrEmail: (body) =>
+      call('/api/resumelab/generate-hr-email', json(body)),
+
     // ── History ───────────────────────────────────────────────────────────
     getHistory: () =>
       call('/api/resumelab/history'),

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck } from 'lucide-react';
+import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CUSTOM_VARIABLES = 2;
@@ -94,6 +94,7 @@ export default function ComposePage() {
   const [slashTriggerIdx, setSlashTriggerIdx] = useState(null);
   const [attachments, setAttachments] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
@@ -104,6 +105,20 @@ export default function ComposePage() {
 
   const variableKeys = useMemo(() => ['name', ...variables.map(v => v.variableName)], [variables]);
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
+
+  // Pre-fill from HR email "Open in Compose" flow
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('rf_compose_prefill');
+      if (raw) {
+        const prefill = JSON.parse(raw);
+        sessionStorage.removeItem('rf_compose_prefill');
+        if (prefill.subject) setSubject(prefill.subject);
+        if (prefill.body_html) setBody(prefill.body_html);
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Slash menu
   useEffect(() => {
@@ -366,6 +381,20 @@ export default function ComposePage() {
 
   function resetComposeState() { setRecipients([]); setSubject(''); setBody(''); setDraftId(null); setErrors({ recipients: {} }); setGroupImports([]); setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]); }
 
+  async function doRewrite() {
+    if (!strip(body)) { setNotice({ type: 'error', message: 'Write a body first before rewriting' }); return; }
+    setIsRewriting(true);
+    try {
+      const res = await authedFetch(`${API_BASE}/api/campaigns/rewrite-body`, { method: 'POST', headers: hdrs, body: JSON.stringify({ subject, body_html: body }) });
+      const d = await res.json();
+      if (!res.ok) {
+        if (res.status === 402) { setNotice({ type: 'error', message: 'Configure AI in Settings first' }); return; }
+        throw new Error(d.error || 'Rewrite failed');
+      }
+      if (d.body_html) { setBody(d.body_html); setNotice({ type: 'success', message: 'Body rewritten' }); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsRewriting(false); }
+  }
+
   // Min datetime for schedule picker (now + 1 minute)
   const minDateTime = useMemo(() => {
     const d = new Date(); d.setMinutes(d.getMinutes() + 1);
@@ -389,11 +418,15 @@ export default function ComposePage() {
           <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadHistory(); loadDrafts(); loadScheduled(); setHistoryDrawerOpen(true); }}><History size={13} />History</button>
         </div>
         <div className="rf-compose__toolbar-right">
-          <div className="rf-name-toggle">
-            <span>Use {nameFormat === 'full' ? 'full name' : 'first name'}</span>
-            <label className={`rf-name-toggle__switch ${nameFormat === 'full' ? 'rf-name-toggle__switch--on' : ''}`}>
-              <input type="checkbox" checked={nameFormat === 'full'} onChange={e => setNameFormat(e.target.checked ? 'full' : 'first')} />
-              <span className="rf-name-toggle__thumb" />
+          <div className="rf-name-format">
+            <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginRight: 6 }}>Name:</span>
+            <label className="rf-radio-label">
+              <input type="radio" name="nameFormat" value="first" checked={nameFormat === 'first'} onChange={() => setNameFormat('first')} />
+              First only
+            </label>
+            <label className="rf-radio-label">
+              <input type="radio" name="nameFormat" value="full" checked={nameFormat === 'full'} onChange={() => setNameFormat('full')} />
+              Full name
             </label>
           </div>
         </div>
@@ -457,6 +490,11 @@ export default function ComposePage() {
             ))}
           </div>
         )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--rf-sp-2)' }}>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={doRewrite} disabled={isRewriting || !strip(body)} title="Rewrite body with AI (requires AI configured in Settings)">
+            {isRewriting ? <><Loader size={13} className="rf-spin" />Rewriting…</> : <><Sparkles size={13} />Rewrite with AI</>}
+          </button>
+        </div>
         {errors.body && <span className="rf-field-error">{errors.body}</span>}
       </div>
 

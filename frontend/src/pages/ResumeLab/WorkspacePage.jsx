@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
+import { useApp } from '../../contexts/AppContext.jsx';
+import { useRouter } from '../../router.jsx';
 import {
   Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle,
   Lightbulb, ChevronDown, ChevronUp, Sparkles, Download, CheckCheck,
-  CheckCircle2, Code2, Copy, FileText, Zap,
+  CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink,
 } from 'lucide-react';
 
 const OUTPUT_FORMAT_OPTIONS = [
@@ -404,16 +406,27 @@ export default function WorkspacePage() {
     jdText, setJdText,
     activeGenerated, setActiveGenerated,
   } = useResumeLab();
+  const { API_BASE, authedFetch, setNotice } = useApp();
+  const { navigateTo } = useRouter();
 
   const [jobTitle, setJobTitle] = useState('');
   const [company, setCompany] = useState('');
   const [baseResumeId, setBaseResumeId] = useState('');
   const [showStrategyModal, setShowStrategyModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [coverLetterText, setCoverLetterText] = useState('');
+  const [coverLetterLoading, setCoverLetterLoading] = useState(false);
+  const [hrEmailDraft, setHrEmailDraft] = useState(null);
+  const [hrEmailLoading, setHrEmailLoading] = useState(false);
 
   useEffect(() => {
     loadResumes();
   }, [loadResumes]);
+
+  useEffect(() => {
+    setCoverLetterText('');
+    setHrEmailDraft(null);
+  }, [activeAnalysis?.analysisId]);
 
   async function handleAnalyze() {
     if (!jdText.trim()) return;
@@ -433,6 +446,55 @@ export default function WorkspacePage() {
   async function handleDownload(id, filename) {
     setDownloading(true);
     try { await downloadPdf(id, filename); } finally { setDownloading(false); }
+  }
+
+  async function handleGenerateCoverLetter() {
+    if (!activeAnalysis?.analysisId) return;
+    setCoverLetterLoading(true);
+    try {
+      const res = await authedFetch(`${API_BASE}/api/resumelab/generate-cover-letter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysisId: activeAnalysis.analysisId }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setNotice({ type: 'error', message: d.error || 'Cover letter generation failed' }); return; }
+      setCoverLetterText(d.coverLetterText || '');
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    } finally {
+      setCoverLetterLoading(false);
+    }
+  }
+
+  async function handleGenerateHrEmail() {
+    if (!activeAnalysis?.analysisId) return;
+    setHrEmailLoading(true);
+    try {
+      const res = await authedFetch(`${API_BASE}/api/resumelab/generate-hr-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysisId: activeAnalysis.analysisId }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setNotice({ type: 'error', message: d.error || 'HR email generation failed' }); return; }
+      setHrEmailDraft({ subject: d.subject || '', body: d.body || '' });
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message });
+    } finally {
+      setHrEmailLoading(false);
+    }
+  }
+
+  function handleOpenInCompose() {
+    if (!hrEmailDraft) return;
+    try {
+      sessionStorage.setItem('rf_compose_prefill', JSON.stringify({
+        subject: hrEmailDraft.subject,
+        body_html: `<p>${hrEmailDraft.body.replace(/\n/g, '</p><p>')}</p>`,
+      }));
+    } catch {}
+    navigateTo('/');
   }
 
   const canAnalyze = jdText.trim().length > 20 && !analyzeLoading;
@@ -587,6 +649,55 @@ export default function WorkspacePage() {
                 <Sparkles size={14} /> Regenerate
               </button>
             )}
+
+            {/* Cover Letter + HR Email */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                style={{ width: '100%' }}
+                onClick={handleGenerateCoverLetter}
+                disabled={coverLetterLoading}
+              >
+                {coverLetterLoading ? <><Loader size={13} className="rf-spin" /> Generating…</> : <><FileText size={13} /> Generate Cover Letter</>}
+              </button>
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                style={{ width: '100%' }}
+                onClick={handleGenerateHrEmail}
+                disabled={hrEmailLoading}
+              >
+                {hrEmailLoading ? <><Loader size={13} className="rf-spin" /> Generating…</> : <><Mail size={13} /> Generate HR Email</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cover letter result */}
+      {coverLetterText && (
+        <div className="rl-panel" style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)' }}>Cover Letter</span>
+            <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => navigator.clipboard?.writeText(coverLetterText)}><Copy size={12} /> Copy</button>
+          </div>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--rf-font-body)', fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)', lineHeight: 1.6, margin: 0 }}>{coverLetterText}</pre>
+        </div>
+      )}
+
+      {/* HR email result */}
+      {hrEmailDraft && (
+        <div className="rl-panel" style={{ marginTop: coverLetterText ? 0 : 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)' }}>HR Outreach Email</span>
+            <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={handleOpenInCompose}><ExternalLink size={12} /> Open in Compose</button>
+          </div>
+          <div style={{ marginBottom: 4 }}>
+            <span className="rf-label">Subject</span>
+            <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)', margin: '4px 0 12px' }}>{hrEmailDraft.subject}</p>
+          </div>
+          <div>
+            <span className="rf-label">Body</span>
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--rf-font-body)', fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)', lineHeight: 1.6, margin: '4px 0 0' }}>{hrEmailDraft.body}</pre>
           </div>
         </div>
       )}

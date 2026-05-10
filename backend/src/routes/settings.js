@@ -57,6 +57,7 @@ router.get('/ai', async (req, res) => {
       isValid: doc.isValid,
       validatedAt: doc.validatedAt,
       supportedModels: PROVIDER_MODELS,
+      personalizationPrefs: doc.personalizationPrefs || null,
     });
   } catch (err) {
     console.error('[settings] GET /ai failed:', err.message);
@@ -215,6 +216,45 @@ router.post('/ai/test', async (req, res) => {
   } catch (err) {
     console.error('[settings] POST /ai/test failed:', err.message);
     res.status(500).json({ ok: false, error: err.message, steps });
+  }
+});
+
+// ── PUT /api/settings/ai/personalization ────────────────────────────────────
+const VALID_TONES = new Set(['professional', 'casual', 'concise']);
+const VALID_VERBOSITY = new Set(['brief', 'standard', 'detailed']);
+const VALID_FORMAT = new Set(['bullet_heavy', 'prose', 'mixed']);
+
+router.put('/ai/personalization', async (req, res) => {
+  try {
+    const { tone, verbosity, formatPreference } = req.body || {};
+
+    if (tone !== undefined && !VALID_TONES.has(tone)) {
+      return res.status(400).json({ error: `Invalid tone. Must be one of: ${[...VALID_TONES].join(', ')}` });
+    }
+    if (verbosity !== undefined && !VALID_VERBOSITY.has(verbosity)) {
+      return res.status(400).json({ error: `Invalid verbosity. Must be one of: ${[...VALID_VERBOSITY].join(', ')}` });
+    }
+    if (formatPreference !== undefined && !VALID_FORMAT.has(formatPreference)) {
+      return res.status(400).json({ error: `Invalid formatPreference. Must be one of: ${[...VALID_FORMAT].join(', ')}` });
+    }
+
+    const userId = req.user._id;
+    let doc = await AISettings.findOne({ userId });
+    if (!doc) doc = new AISettings({ userId });
+
+    doc.personalizationPrefs = {
+      ...(doc.personalizationPrefs || {}),
+      ...(tone !== undefined ? { tone } : {}),
+      ...(verbosity !== undefined ? { verbosity } : {}),
+      ...(formatPreference !== undefined ? { formatPreference } : {}),
+    };
+
+    await doc.save();
+    console.log(`[settings] PUT /ai/personalization — userId: ${userId}`);
+    return res.json({ ok: true, personalizationPrefs: doc.personalizationPrefs });
+  } catch (err) {
+    console.error('[settings] PUT /ai/personalization failed:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

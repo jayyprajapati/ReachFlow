@@ -203,4 +203,41 @@ async function generateOptimizedResume({
   return withRetry(() => cortexFetch('POST', '/generate/document', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
 }
 
-module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, CortexError, cortexDetail };
+/**
+ * Generate a cover letter via Cortex /cover-letter.
+ * Expects: { userId, jobDescription, canonicalProfile, llm, personalization? }
+ * Returns: { cover_letter_text: string, word_count?: number }
+ */
+async function generateCoverLetter({ userId, jobDescription, canonicalProfile, llm, personalization }) {
+  const label = `POST /cover-letter (user: ${userId})`;
+  const body = {
+    app_name: CORTEX_APP_NAME,
+    user_id: String(userId),
+    job_description: jobDescription,
+    canonical_profile: canonicalProfile,
+  };
+  if (llm) body.llm = llm;
+  if (personalization) body.personalization = personalization;
+  return withRetry(() => cortexFetch('POST', '/cover-letter', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+}
+
+/**
+ * Generate an HR outreach email via Cortex /hr-email.
+ * Expects: { userId, jobDescription, canonicalProfile, recipientName?, llm, personalization? }
+ * Returns: { subject: string, body: string, word_count?: number }
+ */
+async function generateHrEmail({ userId, jobDescription, canonicalProfile, recipientName, llm, personalization }) {
+  const label = `POST /hr-email (user: ${userId})`;
+  const body = {
+    app_name: CORTEX_APP_NAME,
+    user_id: String(userId),
+    job_description: jobDescription,
+    canonical_profile: canonicalProfile,
+  };
+  if (recipientName) body.recipient_name = recipientName;
+  if (llm) body.llm = llm;
+  if (personalization) body.personalization = personalization;
+  return withRetry(() => cortexFetch('POST', '/hr-email', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+}
+
+module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, CortexError, cortexDetail };

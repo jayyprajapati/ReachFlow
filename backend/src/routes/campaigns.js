@@ -1,6 +1,6 @@
 const express = require('express');
 const { Types } = require('mongoose');
-const { Campaign, Group, SendLog, Variable } = require('../db');
+const { Campaign, Group, SendLog, Variable, AISettings } = require('../db');
 const { renderTemplate, validateVariables } = require('../services/templateService');
 const { sendMimeEmail, validateAttachments } = require('../gmail');
 const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail, computeEmailHash } = require('../utils/dataSecurity');
@@ -866,6 +866,79 @@ async function processScheduledCampaigns(User) {
     console.error('[scheduler] Worker error:', err.message);
   }
 }
+
+router.post('/rewrite-body', async (req, res) => {
+  try {
+    const { subject, body_html, context: userContext } = req.body || {};
+    if (!body_html || !String(body_html).trim()) {
+      return res.status(400).json({ error: 'body_html is required' });
+    }
+
+    const userId = req.user._id;
+    const doc = await AISettings.findOne({ userId });
+    if (!doc) {
+      return res.status(402).json({ error: 'AI provider not configured. Go to Settings → AI · Resume Lab to add and test your API key.', code: 'LLM_NOT_CONFIGURED' });
+    }
+    if (!doc.isValid) {
+      return res.status(402).json({ error: 'AI provider connection not verified. Go to Settings and click "Test Connection".', code: 'LLM_NOT_VALIDATED' });
+    }
+
+    const llm = { provider: doc.provider };
+    if (doc.selectedModel) llm.model = doc.selectedModel;
+    if (doc.provider === 'ollama_local' && doc.localEndpoint) llm.base_url = doc.localEndpoint;
+    if (doc.apiKeyEncrypted) {
+      try {
+        const raw = decryptJson(doc.apiKeyEncrypted);
+        const key = typeof raw === 'string' ? raw : (raw?.key || '');
+        if (key) llm.api_key = key;
+      } catch {
+        return res.status(500).json({ error: 'API key decryption failed. Please re-save your API key in Settings.' });
+      }
+    }
+
+    const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60_000);
+
+    let rewriteResult;
+    try {
+      const response = await fetch(`${CORTEX_BASE_URL}/compose/rewrite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: subject || '',
+          body_html: sanitizeBody(body_html),
+          context: userContext || '',
+          llm,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const text = await response.text();
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { parsed = { detail: text }; }
+      if (!response.ok) {
+        const detail = parsed?.detail || parsed?.error || `HTTP ${response.status}`;
+        return res.status(502).json({ error: `Rewrite failed: ${detail}` });
+      }
+      rewriteResult = parsed;
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      if (fetchErr.name === 'AbortError') {
+        return res.status(504).json({ error: 'Rewrite timed out. Try again.' });
+      }
+      return res.status(502).json({ error: `Cannot reach AI service: ${fetchErr.message}` });
+    }
+
+    const rewrittenHtml = sanitizeBody(rewriteResult.body_html || rewriteResult.html || '');
+    if (!rewrittenHtml) {
+      return res.status(502).json({ error: 'AI returned an empty rewrite. Try again.' });
+    }
+    return res.json({ body_html: rewrittenHtml });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Rewrite failed' });
+  }
+});
 
 module.exports = {
   router,

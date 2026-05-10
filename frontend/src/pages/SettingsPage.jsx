@@ -4,7 +4,7 @@ import { useResumeLab } from '../contexts/ResumeLabContext.jsx';
 import { makeResumeLabApi } from '../services/resumeLabApi.js';
 import {
   CheckCircle2, XCircle, Save, AlertCircle, CheckCheck, Loader,
-  Wifi, WifiOff, Eye, EyeOff, Mail, Brain, LogOut, Trash2, ShieldAlert,
+  Wifi, WifiOff, Eye, EyeOff, Mail, Brain, LogOut, Trash2, ShieldAlert, Sliders,
 } from 'lucide-react';
 
 const PROVIDER_LABELS = {
@@ -249,6 +249,85 @@ function AISettingsSection({ authedFetch, cachedSettings, cachedLoading }) {
   );
 }
 
+// ── AI Personalization section ────────────────────────────────────────────────
+
+const TONE_OPTIONS = [
+  { value: 'professional', label: 'Professional' },
+  { value: 'casual',       label: 'Casual' },
+  { value: 'concise',      label: 'Concise' },
+];
+const VERBOSITY_OPTIONS = [
+  { value: 'brief',    label: 'Brief' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'detailed', label: 'Detailed' },
+];
+const FORMAT_OPTIONS = [
+  { value: 'bullet_heavy', label: 'Bullet-heavy' },
+  { value: 'prose',        label: 'Prose' },
+  { value: 'mixed',        label: 'Mixed' },
+];
+
+function RadioGroup({ label, options, value, onChange }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="rf-label">{label}</div>
+      <div style={{ display: 'flex', gap: 'var(--rf-sp-3)', flexWrap: 'wrap' }}>
+        {options.map(opt => (
+          <label key={opt.value} className="rf-radio-label" style={{ fontSize: 'var(--rf-text-sm)' }}>
+            <input type="radio" name={label} value={opt.value} checked={value === opt.value} onChange={() => onChange(opt.value)} />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AIPersonalizationSection({ authedFetch, initialPrefs }) {
+  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+  const [tone, setTone] = useState(initialPrefs?.tone || 'professional');
+  const [verbosity, setVerbosity] = useState(initialPrefs?.verbosity || 'standard');
+  const [formatPreference, setFormatPreference] = useState(initialPrefs?.formatPreference || 'mixed');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await authedFetch(`${API_BASE}/api/settings/ai/personalization`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tone, verbosity, formatPreference }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Save failed');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      // error shown inline
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-4)' }}>
+      <RadioGroup label="Tone" options={TONE_OPTIONS} value={tone} onChange={setTone} />
+      <RadioGroup label="Verbosity" options={VERBOSITY_OPTIONS} value={verbosity} onChange={setVerbosity} />
+      <RadioGroup label="Format preference" options={FORMAT_OPTIONS} value={formatPreference} onChange={setFormatPreference} />
+      <div>
+        <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={handleSave} disabled={saving}>
+          {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : saved ? <><CheckCheck size={13} /> Saved</> : <><Save size={13} /> Save Preferences</>}
+        </button>
+        <p className="rf-settings__help" style={{ marginTop: 'var(--rf-sp-2)' }}>
+          These preferences are passed to the AI when generating resumes, cover letters, and HR emails.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -362,6 +441,16 @@ export default function SettingsPage() {
           <Divider />
           <AISettingsSection authedFetch={authedFetch} cachedSettings={aiSettings} cachedLoading={aiSettingsLoading} />
         </div>
+      </div>
+
+      {/* ── AI Personalization row ── */}
+      <div style={{ ...card, marginTop: 'var(--rf-sp-5)' }}>
+        <SectionTitle icon={Sliders}>AI Personalization</SectionTitle>
+        <p className="rf-settings__help" style={{ marginTop: -8 }}>
+          Control the tone and style of AI-generated content across Resume Lab.
+        </p>
+        <Divider />
+        <AIPersonalizationSection authedFetch={authedFetch} initialPrefs={aiSettings?.personalizationPrefs} />
       </div>
 
       {/* ── Bottom row: session + danger ── */}
