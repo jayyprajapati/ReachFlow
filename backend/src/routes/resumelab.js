@@ -172,6 +172,7 @@ async function resolveUserLlm(userId) {
     }
   }
   override._personalizationPrefs = doc.personalizationPrefs || null;
+  override._userSystemPrompt = (doc.systemPrompt || '').trim() || null;
   return override;
 }
 
@@ -496,6 +497,41 @@ router.get('/profile', async (req, res) => {
   }
 });
 
+// ── PATCH /api/resumelab/profile/item-note ──────────────────────────────────
+// Set the showcase_prompt on a specific experience or project in the canonical profile.
+
+router.patch('/profile/item-note', async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { section, canonical_key, showcase_prompt } = req.body || {};
+    if (!['experience', 'projects'].includes(section)) {
+      return res.status(400).json({ error: 'section must be "experience" or "projects"' });
+    }
+    if (!canonical_key) return res.status(400).json({ error: 'canonical_key is required' });
+
+    const doc = await CanonicalProfile.findOne({ userId });
+    if (!doc?.canonicalProfile) return res.status(404).json({ error: 'No canonical profile found' });
+
+    const profile = doc.canonicalProfile;
+    const items = profile[section] || [];
+    const idx = items.findIndex(it => it.canonical_key === canonical_key);
+    if (idx === -1) return res.status(404).json({ error: `Item not found in ${section}` });
+
+    const sanitized = String(showcase_prompt || '').trim().slice(0, 800);
+    items[idx] = { ...items[idx], showcase_prompt: sanitized || null };
+    profile[section] = items;
+    doc.canonicalProfile = profile;
+    doc.markModified('canonicalProfile');
+    await doc.save();
+
+    console.log(`[resumelab] PATCH /profile/item-note — userId: ${userId}, section: ${section}, key: ${canonical_key}`);
+    res.json({ ok: true, canonical_key, showcase_prompt: sanitized || null });
+  } catch (err) {
+    console.error('[resumelab] PATCH /profile/item-note failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/resumelab/profile/rebuild ─────────────────────────────────────
 
 router.post('/profile/rebuild', async (req, res) => {
@@ -612,6 +648,7 @@ const TEMPLATE_TYPES = new Set(['frontend', 'backend', 'fullstack', 'custom']);
 function toAnalysisSummary(doc) {
   return {
     id: doc._id.toString(),
+    flowId: doc.flowId || null,
     matchScore: doc.matchScore || 0,
     jobTitle: doc.extractedJobMetadata?.title || '',
     company: doc.extractedJobMetadata?.company || '',
@@ -650,6 +687,7 @@ function toAnalysisFull(doc) {
 function toGeneratedSummary(doc) {
   return {
     id: doc._id.toString(),
+    flowId: doc.flowId || null,
     analysisId: doc.analysisId?.toString() || null,
     baseResumeId: doc.baseResumeId?.toString() || null,
     outputFormat: doc.templateType,
@@ -752,12 +790,18 @@ router.post('/analyze', async (req, res) => {
   } else {
     const _ta1 = Date.now();
     try {
+      const analyseLlm = { ...llm };
+      const analyseUserSystemPrompt = analyseLlm._userSystemPrompt || undefined;
+      delete analyseLlm._personalizationPrefs;
+      delete analyseLlm._userSystemPrompt;
+
       matchAnalysis = await analyzeResumeMatch({
         userId: userId.toString(),
         jobDescription: jd,
         canonicalProfile: profileDoc.canonicalProfile,
         baseResume: baseResumeResult?.extractedContent || undefined,
-        llm,
+        llm: analyseLlm,
+        userSystemPrompt: analyseUserSystemPrompt,
       });
       console.log(`[resumelab] [latency] analyze.llm=${Date.now() - _ta1}ms userId:${userId}`);
     } catch (err) {
@@ -782,6 +826,7 @@ router.post('/analyze', async (req, res) => {
     matchAnalysis,
     matchScore: matchAnalysis.match_score || 0,
     status: 'analyzed',
+    flowId: crypto.randomUUID(),
   });
 
   console.log(`[resumelab] Analyze complete — userId: ${userId}, analysisId: ${analysisDoc._id}, score: ${analysisDoc.matchScore}`);
@@ -889,13 +934,24 @@ router.post('/generate', async (req, res) => {
   const baseResumeResult = await resolveBaseResume(userId, resolvedStartingId || analysisDoc.baseResumeId?.toString());
   console.log(`[resumelab] [latency] generate.fetch=${Date.now() - _tg0}ms userId:${userId}`);
 
-  // For modify_existing, pass the sectioned resume dict (not raw text) so Cortex can rewrite sections
+  // For modify_existing, pass the sectioned resume dict AND the original raw text
   let sourceResumeContent;
+  let originalResumeText;
   if (generationMode === 'modify_existing' && baseResumeResult?.resume) {
     sourceResumeContent = baseResumeResult.resume.sectionedResumeSource
       || baseResumeResult.extractedContent?.sectioned_resume_source
       || undefined;
+    originalResumeText = baseResumeResult.resume.normalizedResumeText || undefined;
   }
+
+  // Attach flowId to this generation (link it to the parent analysis)
+  const flowId = analysisDoc.flowId || null;
+
+  // Strip internal-only fields before sending llm to Cortex
+  const cortexLlm = { ...llm };
+  const _userSystemPromptForGen = cortexLlm._userSystemPrompt || undefined;
+  delete cortexLlm._personalizationPrefs;
+  delete cortexLlm._userSystemPrompt;
 
   // ── Step 1: Generate structured content via Cortex ─────────────────────
   const _cortexArgs = () => ({
@@ -904,11 +960,13 @@ router.post('/generate', async (req, res) => {
     canonicalProfile: profileDoc.canonicalProfile,
     baseResume: baseResumeResult?.extractedContent || undefined,
     templateType: outputFormat,
-    llm,
+    llm: cortexLlm,
     mode: generationMode,
     sourceResumeContent,
+    originalResumeText,
     userTweakPrompt: userPrompt ? String(userPrompt).slice(0, 1000) : undefined,
     aggressiveness,
+    userSystemPrompt: _userSystemPromptForGen,
   });
 
   let generatedContent;
@@ -1004,6 +1062,7 @@ router.post('/generate', async (req, res) => {
     matchScoreBefore: analysisDoc.matchScore,
     matchScoreAfter: generatedContent.match_score_improved || 0,
     status: 'generated',
+    flowId,
   });
 
   console.log(`[resumelab] Generate complete — userId: ${userId}, genId: ${genDoc._id}, hasPdf: ${!!pdfPath}`);
@@ -1083,7 +1142,7 @@ router.get('/generated/:id/pdf', async (req, res) => {
 });
 
 // ── GET /api/resumelab/history ───────────────────────────────────────────────
-// Returns a merged, time-sorted feed of analyses and generated resumes (max 100 items).
+// Returns flow-grouped history. Rows with a shared flowId are grouped; standalone items appear alone.
 
 router.get('/history', async (req, res) => {
   try {
@@ -1091,20 +1150,79 @@ router.get('/history', async (req, res) => {
     console.log(`[resumelab] GET /history — userId: ${userId}`);
 
     const [analyses, generated] = await Promise.all([
-      ResumeAnalysis.find({ userId }).sort({ createdAt: -1 }).limit(50),
-      GeneratedResume.find({ userId }).sort({ createdAt: -1 }).limit(50),
+      ResumeAnalysis.find({ userId }).sort({ createdAt: -1 }).limit(100),
+      GeneratedResume.find({ userId }).sort({ createdAt: -1 }).limit(100),
     ]);
 
-    const items = [
-      ...analyses.map(doc => ({ kind: 'analysis', ...toAnalysisSummary(doc) })),
-      ...generated.map(doc => ({ kind: 'generated', ...toGeneratedSummary(doc) })),
-    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100);
+    // Group by flowId
+    const flowMap = new Map(); // flowId → { analysis, generations[], createdAt }
 
-    console.log(`[resumelab] GET /history — userId: ${userId}, items: ${items.length}`);
-    res.json({ history: items });
+    for (const doc of analyses) {
+      const fid = doc.flowId || null;
+      if (fid) {
+        if (!flowMap.has(fid)) flowMap.set(fid, { flowId: fid, analysis: null, generations: [], createdAt: doc.createdAt });
+        flowMap.get(fid).analysis = { kind: 'analysis', ...toAnalysisSummary(doc), jobDescriptionRaw: doc.jobDescriptionRaw || '' };
+      } else {
+        // Standalone analysis — no flowId
+        flowMap.set(`a_${doc._id}`, { flowId: null, analysis: { kind: 'analysis', ...toAnalysisSummary(doc), jobDescriptionRaw: doc.jobDescriptionRaw || '' }, generations: [], createdAt: doc.createdAt });
+      }
+    }
+
+    for (const doc of generated) {
+      const fid = doc.flowId || null;
+      const entry = { kind: 'generated', ...toGeneratedSummary(doc) };
+      if (fid && flowMap.has(fid)) {
+        flowMap.get(fid).generations.push(entry);
+      } else if (fid) {
+        // flowId present but no matching analysis yet
+        flowMap.set(fid, { flowId: fid, analysis: null, generations: [entry], createdAt: doc.createdAt });
+      } else {
+        flowMap.set(`g_${doc._id}`, { flowId: null, analysis: null, generations: [entry], createdAt: doc.createdAt });
+      }
+    }
+
+    const rows = Array.from(flowMap.values())
+      .map(row => ({
+        ...row,
+        kind: row.analysis && row.generations.length ? 'flow' : row.analysis ? 'analysis-only' : 'generation-only',
+        matchScore: row.analysis?.matchScore || (row.generations[0]?.matchScoreAfter || 0),
+        updatedAt: row.generations[0]?.createdAt || row.createdAt,
+      }))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 100);
+
+    console.log(`[resumelab] GET /history — userId: ${userId}, flows: ${rows.length}`);
+    res.json({ history: rows });
   } catch (err) {
     console.error('[resumelab] GET /history failed:', err.message);
     res.status(500).json({ error: err.message || 'Failed to load history' });
+  }
+});
+
+// ── GET /api/resumelab/flow/:flowId ─────────────────────────────────────────
+// Returns the full analysis + latest generation for a given flowId.
+
+router.get('/flow/:flowId', async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { flowId } = req.params;
+    if (!flowId) return res.status(400).json({ error: 'flowId is required' });
+
+    const [analysis, latestGen] = await Promise.all([
+      ResumeAnalysis.findOne({ userId, flowId }),
+      GeneratedResume.findOne({ userId, flowId }).sort({ createdAt: -1 }),
+    ]);
+
+    if (!analysis && !latestGen) return res.status(404).json({ error: 'Flow not found' });
+
+    res.json({
+      flowId,
+      analysis: analysis ? { ...toAnalysisFull(analysis), jobDescriptionRaw: analysis.jobDescriptionRaw || '' } : null,
+      generation: latestGen ? toGeneratedFull(latestGen) : null,
+    });
+  } catch (err) {
+    console.error('[resumelab] GET /flow/:flowId failed:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to load flow' });
   }
 });
 
@@ -1248,17 +1366,19 @@ router.post('/generate-cover-letter', async (req, res) => {
     const profile = await CanonicalProfile.findOne({ userId });
     const canonicalProfile = profile?.canonicalProfile || {};
 
-    const personalization = llm._personalizationPrefs || null;
     const cleanLlm = { ...llm };
+    const userSystemPrompt = cleanLlm._userSystemPrompt || undefined;
     delete cleanLlm._personalizationPrefs;
+    delete cleanLlm._userSystemPrompt;
 
     const result = await generateCoverLetter({
       userId: userId.toString(),
-      jobDescription: analysis.jobDescription || '',
+      jobDescription: analysis.jobDescriptionRaw || '',
       canonicalProfile,
       llm: cleanLlm,
-      ...(personalization ? { personalization } : {}),
-      ...(userPrompt ? { userPrompt } : {}),
+      analysisSummary: analysis.matchAnalysis || undefined,
+      userPrompt: userPrompt || undefined,
+      userSystemPrompt,
     });
 
     const coverLetterText = result.cover_letter_text || result.text || '';
@@ -1307,17 +1427,19 @@ router.post('/generate-hr-email', async (req, res) => {
     const profile = await CanonicalProfile.findOne({ userId });
     const canonicalProfile = profile?.canonicalProfile || {};
 
-    const personalization = llm._personalizationPrefs || null;
     const cleanLlm = { ...llm };
+    const userSystemPrompt = cleanLlm._userSystemPrompt || undefined;
     delete cleanLlm._personalizationPrefs;
+    delete cleanLlm._userSystemPrompt;
 
     const result = await generateHrEmail({
       userId: userId.toString(),
-      jobDescription: analysis.jobDescription || '',
+      jobDescription: analysis.jobDescriptionRaw || '',
       canonicalProfile,
       recipientName: recipientName || null,
       llm: cleanLlm,
-      ...(personalization ? { personalization } : {}),
+      analysisSummary: analysis.matchAnalysis || undefined,
+      userSystemPrompt,
     });
 
     const subject = result.subject || '';

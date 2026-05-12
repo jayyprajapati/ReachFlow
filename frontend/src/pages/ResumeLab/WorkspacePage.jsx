@@ -398,6 +398,7 @@ function LatexPreviewSection({ result, compileLatex, fetchPdfBlob }) {
 
 export default function WorkspacePage() {
   const {
+    api,
     resumes, loadResumes,
     activeAnalysis, analyzeLoading,
     analyzeJD, setActiveAnalysis,
@@ -418,6 +419,45 @@ export default function WorkspacePage() {
   const [coverLetterLoading, setCoverLetterLoading] = useState(false);
   const [hrEmailDraft, setHrEmailDraft] = useState(null);
   const [hrEmailLoading, setHrEmailLoading] = useState(false);
+  const [flowRestoring, setFlowRestoring] = useState(false);
+
+  // Prefill workspace from a history flow when ?flow=<id> is in the URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const flowId = params.get('flow');
+    if (!flowId || !api) return;
+
+    setFlowRestoring(true);
+    api.getFlow(flowId)
+      .then(data => {
+        if (data.analysis?.jobDescriptionRaw) setJdText(data.analysis.jobDescriptionRaw);
+        if (data.analysis) {
+          setActiveAnalysis({
+            analysisId: data.analysis.id,
+            matchScore: data.analysis.matchScore,
+            jobTitle: data.analysis.jobTitle || '',
+            company: data.analysis.company || '',
+            missingKeywords: data.analysis.missingKeywords || [],
+            existingButMissingFromResume: data.analysis.existingButMissingFromResume || [],
+            recommendedAdditions: data.analysis.recommendedAdditions || [],
+            recommendedRemovals: data.analysis.recommendedRemovals || [],
+            sectionRewrites: data.analysis.sectionRewrites || {},
+            atsKeywordClusters: data.analysis.atsKeywordClusters || {},
+          });
+        }
+        if (data.generation?.generatedContent) {
+          setActiveGenerated(data.generation);
+        }
+        // Clear the flow param from the URL without reloading
+        const clean = window.location.pathname;
+        window.history.replaceState({}, '', clean);
+      })
+      .catch(err => {
+        console.warn('[workspace] Flow restore failed:', err.message);
+      })
+      .finally(() => setFlowRestoring(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount only
 
   useEffect(() => {
     loadResumes();

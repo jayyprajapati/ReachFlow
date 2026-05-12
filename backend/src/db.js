@@ -201,7 +201,7 @@ templateSchema.index({ userId: 1, updatedAt: -1 });
 
 const resumeSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     title: { type: String, trim: true, default: '' },
     type: { type: String, enum: ['frontend', 'backend', 'fullstack', 'custom'], default: 'custom' },
     fileName: { type: String, trim: true, default: '' },
@@ -241,7 +241,7 @@ const canonicalProfileSchema = new mongoose.Schema(
 
 const resumeAnalysisSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     baseResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
     canonicalProfileVersion: { type: Number, default: 0 },
     jobDescriptionRaw: { type: String, trim: true, default: '' },
@@ -254,6 +254,7 @@ const resumeAnalysisSchema = new mongoose.Schema(
     matchAnalysis: { type: mongoose.Schema.Types.Mixed, default: null },
     matchScore: { type: Number, min: 0, max: 100, default: 0 },
     status: { type: String, enum: ['analyzed', 'failed'], default: 'analyzed' },
+    flowId: { type: String, default: null, index: true },
   },
   { timestamps: true, versionKey: false }
 );
@@ -261,10 +262,11 @@ const resumeAnalysisSchema = new mongoose.Schema(
 resumeAnalysisSchema.index({ userId: 1 });
 resumeAnalysisSchema.index({ userId: 1, createdAt: -1 });
 resumeAnalysisSchema.index({ userId: 1, matchScore: -1 });
+resumeAnalysisSchema.index({ userId: 1, flowId: 1 });
 
 const generatedResumeSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     analysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'ResumeAnalysis', required: true, index: true },
     baseResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
     templateType: {
@@ -287,6 +289,7 @@ const generatedResumeSchema = new mongoose.Schema(
     // B7: Output type — allows cover letter and HR email to share the history collection
     outputType: { type: String, enum: ['resume', 'cover_letter', 'hr_email'], default: 'resume' },
     textContent: { type: String, default: '' },
+    flowId: { type: String, default: null, index: true },
   },
   { timestamps: true, versionKey: false }
 );
@@ -294,6 +297,7 @@ const generatedResumeSchema = new mongoose.Schema(
 generatedResumeSchema.index({ userId: 1 });
 generatedResumeSchema.index({ userId: 1, analysisId: 1 });
 generatedResumeSchema.index({ userId: 1, templateType: 1 });
+generatedResumeSchema.index({ userId: 1, flowId: 1 });
 
 const roadmapSchema = new mongoose.Schema(
   {
@@ -370,10 +374,10 @@ const aiSettingsSchema = new mongoose.Schema(
     isValid: { type: Boolean, default: false },
     validatedAt: { type: Date, default: null },
     personalizationPrefs: { type: mongoose.Schema.Types.Mixed, default: null },
+    systemPrompt: { type: String, default: '', maxlength: 2000 },
   },
   { timestamps: true, versionKey: false }
 );
-aiSettingsSchema.index({ userId: 1 });
 
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');

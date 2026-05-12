@@ -123,6 +123,11 @@
   border-color: var(--rf-border-hover);
 }
 
+textarea.rf-input {
+  height: auto;
+  min-height: 36px;
+}
+
 .rf-input--lg {
   height: 42px;
   font-size: var(--rf-text-base);

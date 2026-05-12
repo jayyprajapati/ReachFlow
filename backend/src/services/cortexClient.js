@@ -151,7 +151,7 @@ async function mergeCanonicalProfile({ userId, existingProfile, incomingProfile,
  * Analyze a job description against a canonical profile via Cortex /analyze/match.
  * Pass llm to use a BYOK provider override.
  */
-async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, baseResume, llm }) {
+async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, baseResume, llm, userSystemPrompt }) {
   const label = `POST /analyze/match (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
@@ -161,6 +161,7 @@ async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, ba
   };
   if (baseResume) body.base_resume = baseResume;
   if (llm) body.llm = llm;
+  if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
   return withRetry(() => cortexFetch('POST', '/analyze/match', body), label);
 }
 
@@ -177,8 +178,10 @@ async function generateOptimizedResume({
   llm,
   mode,
   sourceResumeContent,
+  originalResumeText,
   userTweakPrompt,
   aggressiveness,
+  userSystemPrompt,
   includeExternalKeywords,
   includeMissingProfileKeywords,
   removeIrrelevantKeywords,
@@ -195,8 +198,10 @@ async function generateOptimizedResume({
   if (llm) body.llm = llm;
   if (mode) body.mode = mode;
   if (sourceResumeContent) body.source_resume_content = sourceResumeContent;
+  if (originalResumeText) body.original_resume_text = originalResumeText;
   if (userTweakPrompt) body.user_tweak_prompt = userTweakPrompt;
   if (aggressiveness) body.aggressiveness = aggressiveness;
+  if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
   if (includeExternalKeywords !== undefined) body.include_external_keywords = includeExternalKeywords;
   if (includeMissingProfileKeywords !== undefined) body.include_missing_profile_keywords = includeMissingProfileKeywords;
   if (removeIrrelevantKeywords !== undefined) body.remove_irrelevant_keywords = removeIrrelevantKeywords;
@@ -205,10 +210,8 @@ async function generateOptimizedResume({
 
 /**
  * Generate a cover letter via Cortex /cover-letter.
- * Expects: { userId, jobDescription, canonicalProfile, llm, personalization? }
- * Returns: { cover_letter_text: string, word_count?: number }
  */
-async function generateCoverLetter({ userId, jobDescription, canonicalProfile, llm, personalization }) {
+async function generateCoverLetter({ userId, jobDescription, canonicalProfile, llm, analysisSummary, userPrompt, userSystemPrompt }) {
   const label = `POST /cover-letter (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
@@ -217,16 +220,16 @@ async function generateCoverLetter({ userId, jobDescription, canonicalProfile, l
     canonical_profile: canonicalProfile,
   };
   if (llm) body.llm = llm;
-  if (personalization) body.personalization = personalization;
+  if (analysisSummary) body.analysis_summary = analysisSummary;
+  if (userPrompt) body.user_prompt = userPrompt;
+  if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
   return withRetry(() => cortexFetch('POST', '/cover-letter', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
 }
 
 /**
  * Generate an HR outreach email via Cortex /hr-email.
- * Expects: { userId, jobDescription, canonicalProfile, recipientName?, llm, personalization? }
- * Returns: { subject: string, body: string, word_count?: number }
  */
-async function generateHrEmail({ userId, jobDescription, canonicalProfile, recipientName, llm, personalization }) {
+async function generateHrEmail({ userId, jobDescription, canonicalProfile, recipientName, llm, analysisSummary, userPrompt, userSystemPrompt }) {
   const label = `POST /hr-email (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
@@ -236,8 +239,28 @@ async function generateHrEmail({ userId, jobDescription, canonicalProfile, recip
   };
   if (recipientName) body.recipient_name = recipientName;
   if (llm) body.llm = llm;
-  if (personalization) body.personalization = personalization;
+  if (analysisSummary) body.analysis_summary = analysisSummary;
+  if (userPrompt) body.user_prompt = userPrompt;
+  if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
   return withRetry(() => cortexFetch('POST', '/hr-email', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
 }
 
-module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, CortexError, cortexDetail };
+/**
+ * Rewrite an email via Cortex /compose/rewrite.
+ */
+async function composeRewrite({ userId, appName, instruction, bodyHtml, bodyText, subject, llm, userSystemPrompt }) {
+  const label = `POST /compose/rewrite (user: ${userId})`;
+  const body = {
+    app_name: appName || CORTEX_APP_NAME,
+    user_id: String(userId),
+    instruction,
+  };
+  if (bodyHtml) body.body_html = bodyHtml;
+  if (bodyText) body.body_text = bodyText;
+  if (subject) body.subject = subject;
+  if (llm) body.llm = llm;
+  if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
+  return withRetry(() => cortexFetch('POST', '/compose/rewrite', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+}
+
+module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, composeRewrite, CortexError, cortexDetail };

@@ -58,6 +58,7 @@ router.get('/ai', async (req, res) => {
       validatedAt: doc.validatedAt,
       supportedModels: PROVIDER_MODELS,
       personalizationPrefs: doc.personalizationPrefs || null,
+      systemPrompt: doc.systemPrompt || '',
     });
   } catch (err) {
     console.error('[settings] GET /ai failed:', err.message);
@@ -68,7 +69,7 @@ router.get('/ai', async (req, res) => {
 // ── PUT /api/settings/ai ────────────────────────────────────────────────────
 router.put('/ai', async (req, res) => {
   try {
-    const { provider, apiKey, model, localEndpoint } = req.body || {};
+    const { provider, apiKey, model, localEndpoint, systemPrompt } = req.body || {};
 
     if (provider && !VALID_PROVIDERS.has(provider)) {
       return res.status(400).json({ error: `Invalid provider. Must be one of: ${[...VALID_PROVIDERS].join(', ')}` });
@@ -81,6 +82,10 @@ router.put('/ai', async (req, res) => {
     if (provider) doc.provider = provider;
     if (model !== undefined) doc.selectedModel = String(model || '');
     if (localEndpoint !== undefined) doc.localEndpoint = String(localEndpoint || '');
+    if (systemPrompt !== undefined) {
+      const trimmed = String(systemPrompt || '').trim().slice(0, 2000);
+      doc.systemPrompt = trimmed;
+    }
 
     // Encrypt API key if provided and non-empty
     if (apiKey !== undefined) {

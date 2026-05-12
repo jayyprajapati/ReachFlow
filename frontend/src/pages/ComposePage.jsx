@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles } from 'lucide-react';
+import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CUSTOM_VARIABLES = 2;
@@ -12,7 +12,7 @@ const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.j
 
 // Register Quill fonts
 const Font = Quill.import('formats/font');
-Font.whitelist = ['arial', 'verdana', 'georgia', 'times-new-roman', 'tahoma', 'trebuchet-ms'];
+Font.whitelist = ['arial', 'verdana', 'georgia', 'times-new-roman', 'calibri', 'tahoma', 'trebuchet-ms'];
 try { Quill.register(Font, true); } catch (e) {}
 
 const Size = Quill.import('formats/size');
@@ -30,7 +30,7 @@ try { Quill.register(VariableBlot, true); } catch (e) {}
 
 const QUILL_MODULES = {
   toolbar: [
-    [{ font: ['', 'arial', 'verdana', 'georgia', 'times-new-roman', 'tahoma', 'trebuchet-ms'] }],
+    [{ font: ['', 'arial', 'verdana', 'georgia', 'times-new-roman', 'calibri', 'tahoma', 'trebuchet-ms'] }],
     [{ size: ['small', false, 'large', 'huge'] }],
     ['bold', 'italic', 'underline'],
     [{ list: 'ordered' }, { list: 'bullet' }],
@@ -403,6 +403,9 @@ export default function ComposePage() {
 
   return (
     <div className="rf-compose" ref={dropRef} style={isDragging ? { outline: '2px dashed var(--rf-accent)', outlineOffset: '4px' } : {}}>
+      <div className="rf-page-header">
+        <div><h1 className="rf-page-header__title">Compose</h1><p className="rf-page-header__subtitle">Draft and send personalized outreach emails</p></div>
+      </div>
       {/* Subject */}
       <input className="rf-compose__subject" value={subject} onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }} placeholder="Subject line…" />
       {errors.subject && <span className="rf-field-error">{errors.subject}</span>}
@@ -410,7 +413,7 @@ export default function ComposePage() {
       {/* Toolbar */}
       <div className="rf-compose__toolbar">
         <div className="rf-compose__toolbar-left">
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setBulkMode(!bulkMode)}>{bulkMode ? 'Manual' : 'Paste Bulk'}</button>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setBulkMode(!bulkMode)}><ClipboardPaste size={13} />{bulkMode ? 'Manual' : 'Paste Bulk'}</button>
           <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}><UserPlus size={13} />Import Group</button>
           <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={resetComposeState}><RotateCcw size={13} />Reset</button>
           <span style={{ width: 1, background: 'var(--rf-border-subtle)', alignSelf: 'stretch', margin: '0 4px' }} />

@@ -5,6 +5,7 @@ const { renderTemplate, validateVariables } = require('../services/templateServi
 const { sendMimeEmail, validateAttachments } = require('../gmail');
 const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail, computeEmailHash } = require('../utils/dataSecurity');
 const { sanitizeEmailHtml } = require('../utils/sanitizeEmailHtml');
+const { composeRewrite, CortexError } = require('../services/cortexClient');
 
 const router = express.Router();
 
@@ -873,6 +874,9 @@ router.post('/rewrite-body', async (req, res) => {
     if (!body_html || !String(body_html).trim()) {
       return res.status(400).json({ error: 'body_html is required' });
     }
+    if (!userContext || !String(userContext).trim()) {
+      return res.status(400).json({ error: 'context (instruction) is required' });
+    }
 
     const userId = req.user._id;
     const doc = await AISettings.findOne({ userId });
@@ -896,41 +900,29 @@ router.post('/rewrite-body', async (req, res) => {
       }
     }
 
-    const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60_000);
+    const userSystemPrompt = (doc.systemPrompt || '').trim() || undefined;
 
     let rewriteResult;
     try {
-      const response = await fetch(`${CORTEX_BASE_URL}/compose/rewrite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject: subject || '',
-          body_html: sanitizeBody(body_html),
-          context: userContext || '',
-          llm,
-        }),
-        signal: controller.signal,
+      rewriteResult = await composeRewrite({
+        userId: userId.toString(),
+        instruction: String(userContext).trim(),
+        bodyHtml: sanitizeBody(body_html),
+        subject: subject || undefined,
+        llm,
+        userSystemPrompt,
       });
-      clearTimeout(timer);
-      const text = await response.text();
-      let parsed;
-      try { parsed = JSON.parse(text); } catch { parsed = { detail: text }; }
-      if (!response.ok) {
-        const detail = parsed?.detail || parsed?.error || `HTTP ${response.status}`;
-        return res.status(502).json({ error: `Rewrite failed: ${detail}` });
+    } catch (err) {
+      if (err instanceof CortexError) {
+        return res.status(502).json({ error: `Rewrite failed: ${err.message}` });
       }
-      rewriteResult = parsed;
-    } catch (fetchErr) {
-      clearTimeout(timer);
-      if (fetchErr.name === 'AbortError') {
+      if (err.name === 'AbortError') {
         return res.status(504).json({ error: 'Rewrite timed out. Try again.' });
       }
-      return res.status(502).json({ error: `Cannot reach AI service: ${fetchErr.message}` });
+      return res.status(502).json({ error: `Cannot reach AI service: ${err.message}` });
     }
 
-    const rewrittenHtml = sanitizeBody(rewriteResult.body_html || rewriteResult.html || '');
+    const rewrittenHtml = sanitizeBody(rewriteResult.rewritten_html || '');
     if (!rewrittenHtml) {
       return res.status(502).json({ error: 'AI returned an empty rewrite. Try again.' });
     }

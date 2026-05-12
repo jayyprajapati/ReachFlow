@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import { useRouter } from '../../router.jsx';
-import { Clock, Microscope, Sparkles, Loader, AlertCircle, TrendingUp } from 'lucide-react';
+import {
+  Clock, Microscope, Sparkles, Loader, TrendingUp, Link2, BarChart2,
+} from 'lucide-react';
 
 function fmt(iso) {
   if (!iso) return '';
@@ -17,24 +19,29 @@ function ScoreBadge({ score }) {
   return <span style={{ fontWeight: 700, color, fontSize: 'var(--rf-text-sm)' }}>{Math.round(score || 0)}%</span>;
 }
 
-function KindBadge({ kind }) {
-  if (kind === 'analysis') {
-    return (
-      <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <Microscope size={10} /> Analysis
-      </span>
-    );
-  }
-  return (
-    <span className="rl-badge" style={{ background: 'var(--rf-accent-faint)', color: 'var(--rf-accent)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <Sparkles size={10} /> Generated
-    </span>
-  );
-}
+// A single row for a history entry (flow, analysis-only, or generation-only)
+function FlowRow({ row, onRestore, restoring }) {
+  const isFlow = row.kind === 'flow';
+  const isAnalysisOnly = row.kind === 'analysis-only';
+  const isGenerationOnly = row.kind === 'generation-only';
 
-function HistoryRow({ item, onRestore, restoring }) {
-  const score = item.kind === 'analysis' ? item.matchScore : item.matchScoreAfter;
-  const label = item.jobTitle || item.company || (item.kind === 'analysis' ? 'Analysis' : 'Generated Resume');
+  const analysis = row.analysis;
+  const generations = row.generations || [];
+  const latestGen = generations[0];
+
+  const label = analysis?.jobTitle || analysis?.company
+    ? [analysis.jobTitle, analysis.company].filter(Boolean).join(' · ')
+    : latestGen?.outputFormat
+    ? `Generated (${latestGen.outputFormat})`
+    : 'History entry';
+
+  const matchScore = isFlow
+    ? (analysis?.matchScore || latestGen?.matchScoreAfter || 0)
+    : isAnalysisOnly
+    ? (analysis?.matchScore || 0)
+    : (latestGen?.matchScoreAfter || 0);
+
+  const isRestoring = restoring === (row.flowId || row.analysis?.id || latestGen?.id);
 
   return (
     <div
@@ -46,57 +53,89 @@ function HistoryRow({ item, onRestore, restoring }) {
         cursor: 'pointer',
         transition: 'background var(--rf-duration-fast)',
       }}
-      onClick={() => onRestore(item)}
+      onClick={() => onRestore(row)}
       onMouseEnter={e => e.currentTarget.style.background = 'var(--rf-bg-hover)'}
       onMouseLeave={e => e.currentTarget.style.background = 'var(--rf-bg-canvas)'}
-      title="Click to restore in Workspace"
+      title={row.flowId ? 'Click to restore full workspace' : 'Click to restore in Workspace'}
     >
-      <KindBadge kind={item.kind} />
+      {/* Kind indicator */}
+      {isFlow ? (
+        <span className="rl-badge" style={{ background: 'var(--rf-accent-faint)', color: 'var(--rf-accent)', display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <Link2 size={10} /> Flow
+        </span>
+      ) : isAnalysisOnly ? (
+        <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <Microscope size={10} /> Analysis
+        </span>
+      ) : (
+        <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <Sparkles size={10} /> Generated
+        </span>
+      )}
 
+      {/* Label + sub-info */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 500, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {label}
         </div>
-        {item.kind === 'generated' && item.generationMode === 'modify_existing' && (
-          <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', marginTop: 1 }}>Modified existing resume</div>
+        {isFlow && generations.length > 0 && (
+          <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', marginTop: 1 }}>
+            {generations.length} generation{generations.length !== 1 ? 's' : ''}
+          </div>
+        )}
+        {isGenerationOnly && latestGen?.generationMode === 'modify_existing' && (
+          <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', marginTop: 1 }}>Modified existing</div>
         )}
       </div>
 
+      {/* Score + arrows + date */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-        {item.kind === 'generated' && (
+        {isFlow && latestGen && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>
             <TrendingUp size={11} />
-            <span>{Math.round(item.matchScoreBefore || 0)}% → <strong style={{ color: 'var(--rf-text)' }}>{Math.round(item.matchScoreAfter || 0)}%</strong></span>
+            <span>{Math.round(latestGen.matchScoreBefore || 0)}% → <strong style={{ color: 'var(--rf-text)' }}>{Math.round(latestGen.matchScoreAfter || 0)}%</strong></span>
           </div>
         )}
-        {item.kind === 'analysis' && <ScoreBadge score={score} />}
-        <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', minWidth: 70, textAlign: 'right' }}>{fmt(item.createdAt)}</span>
+        {!isFlow && <ScoreBadge score={matchScore} />}
+        <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', minWidth: 70, textAlign: 'right' }}>{fmt(row.createdAt)}</span>
+        {isRestoring && <Loader size={13} className="rf-spin" style={{ color: 'var(--rf-accent)' }} />}
       </div>
     </div>
   );
 }
 
 export default function HistoryPage() {
-  const { history, historyLoading, loadHistory, loadAnalysis, loadGeneratedById, setActiveGenerated } = useResumeLab();
+  const { history, historyLoading, loadHistory, loadAnalysis, loadGeneratedById, setActiveGenerated, api } = useResumeLab();
   const { navigateTo } = useRouter();
   const [filter, setFilter] = useState('all');
   const [restoring, setRestoring] = useState(null);
 
-  useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
-  const filtered = history.filter(item => filter === 'all' || item.kind === filter);
+  const filtered = history.filter(row => {
+    if (filter === 'all') return true;
+    if (filter === 'flow') return row.kind === 'flow';
+    if (filter === 'analysis') return row.kind === 'analysis-only' || (row.kind === 'flow' && row.analysis);
+    if (filter === 'generated') return row.kind === 'generation-only' || (row.kind === 'flow' && (row.generations || []).length > 0);
+    return true;
+  });
 
-  async function handleRestore(item) {
+  async function handleRestore(row) {
     if (restoring) return;
-    setRestoring(item.id);
+    const key = row.flowId || row.analysis?.id || (row.generations || [])[0]?.id;
+    setRestoring(key);
     try {
-      if (item.kind === 'analysis') {
-        await loadAnalysis(item.id);
+      if (row.flowId) {
+        // Navigate to workspace with flow= param; WorkspacePage will prefill from API
+        navigateTo(`/resume-lab/workspace?flow=${encodeURIComponent(row.flowId)}`);
+        return;
+      }
+      // Standalone analysis or generation
+      if (row.kind === 'analysis-only' && row.analysis?.id) {
+        await loadAnalysis(row.analysis.id);
         navigateTo('/resume-lab/workspace');
-      } else if (item.kind === 'generated') {
-        const data = await loadGeneratedById(item.id);
+      } else if (row.kind === 'generation-only' && row.generations?.[0]?.id) {
+        const data = await loadGeneratedById(row.generations[0].id);
         if (data) setActiveGenerated(data);
         navigateTo('/resume-lab/workspace');
       }
@@ -110,14 +149,14 @@ export default function HistoryPage() {
       <div className="rl-page__header">
         <div className="rl-page__header-left">
           <h1 className="rl-page__title">History</h1>
-          <p className="rl-page__subtitle">Past JD analyses and generated resumes, newest first.</p>
+          <p className="rl-page__subtitle">Past JD analyses and generated resumes — linked by flow.</p>
         </div>
       </div>
 
-      {/* Filter tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {[
           { value: 'all', label: 'All' },
+          { value: 'flow', label: 'Flows' },
           { value: 'analysis', label: 'Analyses' },
           { value: 'generated', label: 'Generated' },
         ].map(opt => (
@@ -140,14 +179,19 @@ export default function HistoryPage() {
           <div className="rl-empty__icon"><Clock size={22} /></div>
           <p className="rl-empty__title">No history yet</p>
           <p className="rl-empty__body">
-            {filter === 'all'
-              ? 'Run a JD analysis or generate a resume from the Workspace tab to see your history here.'
-              : `No ${filter === 'analysis' ? 'analyses' : 'generated resumes'} found.`}
+            Run a JD analysis or generate a resume from the Workspace tab to see history here.
           </p>
         </div>
       ) : (
         <div style={{ border: '1px solid var(--rf-border-subtle)', borderRadius: 'var(--rf-radius-lg)', overflow: 'hidden' }}>
-          {filtered.map((item, i) => <HistoryRow key={`${item.kind}-${item.id}-${i}`} item={item} onRestore={handleRestore} restoring={restoring === item.id} />)}
+          {filtered.map((row, i) => (
+            <FlowRow
+              key={row.flowId || `${row.kind}-${row.analysis?.id || ''}-${i}`}
+              row={row}
+              onRestore={handleRestore}
+              restoring={restoring}
+            />
+          ))}
         </div>
       )}
     </div>

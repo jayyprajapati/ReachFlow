@@ -269,11 +269,22 @@ const FORMAT_OPTIONS = [
 
 function RadioGroup({ label, options, value, onChange }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div className="rf-label">{label}</div>
-      <div style={{ display: 'flex', gap: 'var(--rf-sp-3)', flexWrap: 'wrap' }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 'var(--rf-sp-3)',
+      padding: 'var(--rf-sp-4)',
+      background: 'var(--rf-bg-root)',
+      borderRadius: 'var(--rf-radius-md)',
+      border: '1px solid var(--rf-border-subtle)',
+    }}>
+      <div className="rf-label" style={{ marginBottom: 0 }}>{label}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-2)' }}>
         {options.map(opt => (
-          <label key={opt.value} className="rf-radio-label" style={{ fontSize: 'var(--rf-text-sm)' }}>
+          <label key={opt.value} className="rf-radio-label" style={{
+            fontSize: 'var(--rf-text-sm)',
+            color: value === opt.value ? 'var(--rf-text)' : 'var(--rf-text-secondary)',
+          }}>
             <input type="radio" name={label} value={opt.value} checked={value === opt.value} onChange={() => onChange(opt.value)} />
             {opt.label}
           </label>
@@ -283,11 +294,12 @@ function RadioGroup({ label, options, value, onChange }) {
   );
 }
 
-function AIPersonalizationSection({ authedFetch, initialPrefs }) {
+function AIPersonalizationSection({ authedFetch, initialPrefs, initialSystemPrompt }) {
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
   const [tone, setTone] = useState(initialPrefs?.tone || 'professional');
   const [verbosity, setVerbosity] = useState(initialPrefs?.verbosity || 'standard');
   const [formatPreference, setFormatPreference] = useState(initialPrefs?.formatPreference || 'mixed');
+  const [systemPrompt, setSystemPrompt] = useState(initialSystemPrompt || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -295,13 +307,19 @@ function AIPersonalizationSection({ authedFetch, initialPrefs }) {
     setSaving(true);
     setSaved(false);
     try {
-      const res = await authedFetch(`${API_BASE}/api/settings/ai/personalization`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tone, verbosity, formatPreference }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Save failed');
+      const [prefRes, spRes] = await Promise.all([
+        authedFetch(`${API_BASE}/api/settings/ai/personalization`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tone, verbosity, formatPreference }),
+        }),
+        authedFetch(`${API_BASE}/api/settings/ai`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ systemPrompt: systemPrompt.trim().slice(0, 2000) }),
+        }),
+      ]);
+      if (!prefRes.ok || !spRes.ok) throw new Error('Save failed');
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -311,11 +329,34 @@ function AIPersonalizationSection({ authedFetch, initialPrefs }) {
     }
   }
 
+  const charCount = systemPrompt.length;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-4)' }}>
-      <RadioGroup label="Tone" options={TONE_OPTIONS} value={tone} onChange={setTone} />
-      <RadioGroup label="Verbosity" options={VERBOSITY_OPTIONS} value={verbosity} onChange={setVerbosity} />
-      <RadioGroup label="Format preference" options={FORMAT_OPTIONS} value={formatPreference} onChange={setFormatPreference} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-5)' }}>
+      {/* Radio groups in a 3-column grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--rf-sp-4)' }}>
+        <RadioGroup label="Tone" options={TONE_OPTIONS} value={tone} onChange={setTone} />
+        <RadioGroup label="Verbosity" options={VERBOSITY_OPTIONS} value={verbosity} onChange={setVerbosity} />
+        <RadioGroup label="Format" options={FORMAT_OPTIONS} value={formatPreference} onChange={setFormatPreference} />
+      </div>
+
+      {/* System prompt — narrower width */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 480 }}>
+        <div className="rf-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>AI System Prompt <span style={{ fontWeight: 400, color: 'var(--rf-text-secondary)' }}>(optional)</span></span>
+          <span style={{ fontSize: 'var(--rf-text-xs)', color: charCount > 1800 ? 'var(--rf-error-text)' : 'var(--rf-text-secondary)' }}>{charCount}/2000</span>
+        </div>
+        <textarea
+          className="rf-input"
+          rows={4}
+          maxLength={2000}
+          placeholder="Optional. Style or tone guidance the AI should follow. Avoid instructions that override grounding or accuracy rules."
+          value={systemPrompt}
+          onChange={e => setSystemPrompt(e.target.value)}
+          style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'var(--rf-text-sm)' }}
+        />
+      </div>
+
       <div>
         <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={handleSave} disabled={saving}>
           {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : saved ? <><CheckCheck size={13} /> Saved</> : <><Save size={13} /> Save Preferences</>}
@@ -356,7 +397,7 @@ export default function SettingsPage() {
     // Override the max-width: 640px from .rf-settings so it fills the page
     <div className="rf-settings" style={{ maxWidth: 'none', width: '100%' }}>
       <div className="rf-page-header">
-        <div><h1 className="rf-page-header__title">Settings</h1></div>
+        <div><h1 className="rf-page-header__title">Settings</h1><p className="rf-page-header__subtitle">Configure Gmail, AI provider, and account preferences</p></div>
       </div>
 
       {/* Two-column grid */}
@@ -450,7 +491,7 @@ export default function SettingsPage() {
           Control the tone and style of AI-generated content across Resume Lab.
         </p>
         <Divider />
-        <AIPersonalizationSection authedFetch={authedFetch} initialPrefs={aiSettings?.personalizationPrefs} />
+        <AIPersonalizationSection authedFetch={authedFetch} initialPrefs={aiSettings?.personalizationPrefs} initialSystemPrompt={aiSettings?.systemPrompt} />
       </div>
 
       {/* ── Bottom row: session + danger ── */}

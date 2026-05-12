@@ -296,6 +296,8 @@ export function ResumeLabProvider({ children }) {
   }, [api, setNotice]);
 
   const value = useMemo(() => ({
+    // Raw API (for ad-hoc calls like getFlow)
+    api,
     // AI Settings (BYOK gate)
     aiSettings, aiSettingsLoading, loadAiSettings,
     // Vault
@@ -318,6 +320,7 @@ export function ResumeLabProvider({ children }) {
     // History
     history, historyLoading, loadHistory,
   }), [
+    api,
     aiSettings, aiSettingsLoading, loadAiSettings,
     resumes, resumesLoading, uploadState,
     loadResumes, uploadResume, resetUploadState, updateResume, deleteResume,

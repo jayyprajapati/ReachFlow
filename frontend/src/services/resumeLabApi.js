@@ -85,9 +85,17 @@ export function makeResumeLabApi(authedFetch) {
     generateHrEmail: (body) =>
       call('/api/resumelab/generate-hr-email', json(body)),
 
-    // ── History ───────────────────────────────────────────────────────────
+    // ── History + Flow ────────────────────────────────────────────────────
     getHistory: () =>
       call('/api/resumelab/history'),
+    getFlow: (flowId) =>
+      call(`/api/resumelab/flow/${encodeURIComponent(flowId)}`),
+    setItemNote: (section, canonicalKey, showcasePrompt) =>
+      call('/api/resumelab/profile/item-note', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section, canonical_key: canonicalKey, showcase_prompt: showcasePrompt }),
+      }),
 
     // ── AI Settings ───────────────────────────────────────────────────────
     getAISettings: () =>

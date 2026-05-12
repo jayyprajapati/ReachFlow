@@ -3,7 +3,7 @@
    ═══════════════════════════════════════ */
 
 /* ── Compose Page ── */
-.rf-compose { display: flex; flex-direction: column; height: 100%; gap: var(--rf-sp-4); }
+.rf-compose { display: flex; flex-direction: column; gap: var(--rf-sp-4); }
 .rf-compose__subject { width: 100%; font-family: var(--rf-font-display); font-size: var(--rf-text-xl); font-weight: 600; background: transparent; border: none; color: var(--rf-text); padding: var(--rf-sp-2) 0; border-bottom: 1px solid var(--rf-border-subtle); letter-spacing: var(--rf-tracking-tight); }
 .rf-compose__subject::placeholder { color: var(--rf-text-faint); }
 .rf-compose__subject:focus { outline: none; border-bottom-color: var(--rf-accent); }
@@ -337,28 +337,35 @@
 .rf-bulk-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--rf-sp-3); }
 
 /* ── Quill Font Classes (editor display) ── */
-.ql-font-arial       { font-family: Arial, sans-serif !important; }
-.ql-font-verdana     { font-family: Verdana, sans-serif !important; }
-.ql-font-georgia     { font-family: Georgia, serif !important; }
-.ql-font-times-new-roman { font-family: 'Times New Roman', serif !important; }
-.ql-font-tahoma      { font-family: Tahoma, sans-serif !important; }
-.ql-font-trebuchet-ms { font-family: 'Trebuchet MS', sans-serif !important; }
+.ql-font-arial           { font-family: Arial, Helvetica, sans-serif !important; }
+.ql-font-verdana         { font-family: Verdana, Geneva, sans-serif !important; }
+.ql-font-georgia         { font-family: Georgia, serif !important; }
+.ql-font-times-new-roman { font-family: 'Times New Roman', Times, serif !important; }
+.ql-font-calibri         { font-family: Calibri, 'Gill Sans', Optima, sans-serif !important; }
+.ql-font-tahoma          { font-family: Tahoma, Geneva, sans-serif !important; }
+.ql-font-trebuchet-ms    { font-family: 'Trebuchet MS', Helvetica, sans-serif !important; }
 
-/* Quill font picker labels */
-.ql-picker.ql-font .ql-picker-label::before,
-.ql-picker.ql-font .ql-picker-item::before { content: 'Default'; }
-.ql-picker.ql-font .ql-picker-label[data-value='arial']::before,
-.ql-picker.ql-font .ql-picker-item[data-value='arial']::before { content: 'Arial'; font-family: Arial, sans-serif; }
-.ql-picker.ql-font .ql-picker-label[data-value='verdana']::before,
-.ql-picker.ql-font .ql-picker-item[data-value='verdana']::before { content: 'Verdana'; font-family: Verdana, sans-serif; }
-.ql-picker.ql-font .ql-picker-label[data-value='georgia']::before,
-.ql-picker.ql-font .ql-picker-item[data-value='georgia']::before { content: 'Georgia'; font-family: Georgia, serif; }
-.ql-picker.ql-font .ql-picker-label[data-value='times-new-roman']::before,
-.ql-picker.ql-font .ql-picker-item[data-value='times-new-roman']::before { content: 'Times New Roman'; font-family: 'Times New Roman', serif; }
-.ql-picker.ql-font .ql-picker-label[data-value='tahoma']::before,
-.ql-picker.ql-font .ql-picker-item[data-value='tahoma']::before { content: 'Tahoma'; font-family: Tahoma, sans-serif; }
-.ql-picker.ql-font .ql-picker-label[data-value='trebuchet-ms']::before,
-.ql-picker.ql-font .ql-picker-item[data-value='trebuchet-ms']::before { content: 'Trebuchet MS'; font-family: 'Trebuchet MS', sans-serif; }
+/* Quill font picker labels — .ql-snow prefix matches Quill's own specificity so these win */
+.ql-snow .ql-picker.ql-font .ql-picker-label::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item::before { content: 'Default'; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='arial']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='arial']::before { content: 'Arial'; font-family: Arial, sans-serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='verdana']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='verdana']::before { content: 'Verdana'; font-family: Verdana, sans-serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='georgia']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='georgia']::before { content: 'Georgia'; font-family: Georgia, serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='times-new-roman']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='times-new-roman']::before { content: 'Times New Roman'; font-family: 'Times New Roman', serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='calibri']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='calibri']::before { content: 'Calibri'; font-family: Calibri, sans-serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='tahoma']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='tahoma']::before { content: 'Tahoma'; font-family: Tahoma, sans-serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value='trebuchet-ms']::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value='trebuchet-ms']::before { content: 'Trebuchet MS'; font-family: 'Trebuchet MS', sans-serif; }
+
+/* Quill clean button — ensure ql-thin strokes are visible */
+.rf-compose__editor-wrap .ql-toolbar .ql-thin { stroke-width: 0.5 !important; stroke: var(--rf-text-muted) !important; }
+.rf-compose__editor-wrap .ql-toolbar button:hover .ql-thin { stroke: var(--rf-accent-text) !important; }
 
 /* Quill size picker labels */
 .ql-picker.ql-size .ql-picker-label::before { content: 'Normal'; }

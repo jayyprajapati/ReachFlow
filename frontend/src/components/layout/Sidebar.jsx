@@ -4,7 +4,7 @@ import { useRouter } from '../../router.jsx';
 import {
   Send, Users, Kanban, Settings, Search,
   ChevronsLeft, ChevronsRight, LogOut, XCircle, CheckCircle2,
-  Waypoints, Sun, Moon, Brain, Info, Shield, FileText, Map,
+  Waypoints, Sun, Moon, Brain, Map,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -16,9 +16,9 @@ const NAV_ITEMS = [
 ];
 
 const LEGAL_ITEMS = [
-  { path: '/about',          label: 'About',   icon: Info },
-  { path: '/privacy-policy', label: 'Privacy', icon: Shield },
-  { path: '/terms-of-use',   label: 'Terms',   icon: FileText },
+  { path: '/about',          label: 'About' },
+  { path: '/privacy-policy', label: 'Privacy' },
+  { path: '/terms-of-use',   label: 'Terms' },
 ];
 
 export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) {
@@ -118,10 +118,18 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
         </button>
 
         {/* Theme toggle */}
-        <button className="rf-sidebar__theme" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-          <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-        </button>
+        <div className="rf-sidebar__theme-row">
+          <Sun size={13} className={`rf-sidebar__theme-icon${theme !== 'dark' ? ' rf-sidebar__theme-icon--active' : ''}`} />
+          <button
+            role="switch"
+            aria-checked={theme === 'dark'}
+            className={`rf-theme-switch${theme === 'dark' ? ' rf-theme-switch--on' : ''}`}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          />
+          <Moon size={13} className={`rf-sidebar__theme-icon${theme === 'dark' ? ' rf-sidebar__theme-icon--active' : ''}`} />
+          <span className="rf-sidebar__theme-label">{theme === 'dark' ? 'Dark' : 'Light'}</span>
+        </div>
 
         {/* User menu */}
         <div ref={menuRef} style={{ position: 'relative' }}>
@@ -153,22 +161,19 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
         </div>
 
         {/* Legal links — below user, at very bottom */}
+        <div style={{ height: 1, background: 'var(--rf-border-subtle)', margin: '2px 0' }} />
         <nav className="rf-sidebar__legal" aria-label="Legal pages">
-          {LEGAL_ITEMS.map(item => {
-            const Icon = item.icon;
-            return (
+          {LEGAL_ITEMS.map((item, i) => (
+            <React.Fragment key={item.path}>
+              {i > 0 && <span className="rf-sidebar__legal-dot" aria-hidden="true">·</span>}
               <a
-                key={item.path}
                 href={item.path}
                 onClick={(e) => { e.preventDefault(); navigateTo(item.path); }}
-                title={item.label}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
               >
-                <Icon size={11} />
-                <span className="rf-sidebar__link-label">{item.label}</span>
+                {item.label}
               </a>
-            );
-          })}
+            </React.Fragment>
+          ))}
         </nav>
 
         {/* Collapse toggle */}

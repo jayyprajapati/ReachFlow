@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
+import { useApp } from '../../contexts/AppContext.jsx';
 import {
   RefreshCw, Loader, ChevronDown, Search, X,
-  Cpu, Briefcase, FolderKanban, GraduationCap, Award,
+  Cpu, Briefcase, FolderKanban, GraduationCap, Award, StickyNote, Check,
 } from 'lucide-react';
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
 const SECTIONS = [
   { key: 'skills',         label: 'Skills',         icon: Cpu },
@@ -43,6 +46,66 @@ function SkillsSection({ skills, query }) {
   );
 }
 
+// ── Showcase note editor (inline) ────────────────────────────────────────────
+
+function ShowcaseNoteEditor({ section, canonicalKey, initialNote }) {
+  const { authedFetch } = useApp();
+  const [showEditor, setShowEditor] = useState(false);
+  const [note, setNote] = useState(initialNote || '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave(e) {
+    e.stopPropagation();
+    setSaving(true);
+    try {
+      const res = await authedFetch(`${API_BASE}/api/resumelab/profile/item-note`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section, canonical_key: canonicalKey, showcase_prompt: note }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // error silently ignored for now
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 6 }} onClick={e => e.stopPropagation()}>
+      <button
+        className="rf-btn rf-btn--ghost rf-btn--xs"
+        style={{ fontSize: 11, color: note ? 'var(--rf-accent)' : 'var(--rf-text-muted)', gap: 4 }}
+        onClick={() => setShowEditor(v => !v)}
+      >
+        <StickyNote size={11} /> {note ? 'Edit note' : 'Add showcase note'}
+      </button>
+      {showEditor && (
+        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <textarea
+            className="rf-input"
+            rows={3}
+            maxLength={800}
+            placeholder="AI guidance for this item — e.g. 'Treat this as my flagship project; emphasize the A* path-finding algorithm.'"
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            style={{ fontSize: 12, resize: 'vertical' }}
+          />
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button className="rf-btn rf-btn--primary rf-btn--xs" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader size={11} className="rf-spin" /> : saved ? <><Check size={11} /> Saved</> : 'Save note'}
+            </button>
+            <span style={{ fontSize: 11, color: 'var(--rf-text-muted)' }}>{note.length}/800</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Expandable experience row ─────────────────────────────────────────────────
 
 function ExperienceItem({ item }) {
@@ -61,11 +124,14 @@ function ExperienceItem({ item }) {
         </div>
         <ChevronDown size={14} className="rl-profile-item__expand-icon" />
       </div>
-      {open && bullets.length > 0 && (
+      {open && (
         <div className="rl-profile-item__detail">
-          <ul className="rl-profile-item__bullets">
-            {bullets.map((b, i) => <li key={i}>{b}</li>)}
-          </ul>
+          {bullets.length > 0 && (
+            <ul className="rl-profile-item__bullets">
+              {bullets.map((b, i) => <li key={i}>{b}</li>)}
+            </ul>
+          )}
+          <ShowcaseNoteEditor section="experience" canonicalKey={item.canonical_key} initialNote={item.showcase_prompt} />
         </div>
       )}
     </div>
@@ -87,10 +153,13 @@ function ProjectItem({ item }) {
           <div className="rl-profile-item__name">{name}</div>
           {techs && <div className="rl-profile-item__meta" style={{ fontFamily: 'var(--rf-font-mono)', fontSize: '11px' }}>{techs}</div>}
         </div>
-        {desc && <ChevronDown size={14} className="rl-profile-item__expand-icon" />}
+        <ChevronDown size={14} className="rl-profile-item__expand-icon" />
       </div>
-      {open && desc && (
-        <div className="rl-profile-item__detail">{desc}</div>
+      {open && (
+        <div className="rl-profile-item__detail">
+          {desc && <p style={{ margin: '0 0 8px 0', fontSize: 'var(--rf-text-sm)' }}>{desc}</p>}
+          <ShowcaseNoteEditor section="projects" canonicalKey={item.canonical_key} initialNote={item.showcase_prompt} />
+        </div>
       )}
     </div>
   );
