@@ -2,9 +2,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 const CORTEX_APP_NAME = process.env.CORTEX_APP_NAME || 'resumelab';
+const CORTEX_JWT_SECRET = process.env.CORTEX_JWT_SECRET || 'dev-secret';
 
 // /extract makes up to 4 sequential LLM calls — give it enough time.
 // /generate/document is a complex single LLM call that can exceed 60s.
@@ -40,6 +42,11 @@ function cortexDetail(err) {
   return err.message || String(err);
 }
 
+// userId becomes the JWT sub — Cortex uses it for data isolation.
+function makeCortexJwt(userId) {
+  return jwt.sign({ sub: String(userId) }, CORTEX_JWT_SECRET, { expiresIn: '1h' });
+}
+
 function isRetryable(err) {
   if (err.name === 'AbortError') return true;
   // 4xx errors (except 408/429) are client-side failures — no point retrying.
@@ -52,27 +59,36 @@ function isRetryable(err) {
   return true;
 }
 
-async function cortexFetch(method, endpoint, body, { isFormData = false, timeoutMs = CORTEX_TIMEOUT_MS } = {}) {
+// userId is required — it becomes the JWT sub for Cortex data isolation.
+// Do NOT set Content-Type for FormData; Node fetch sets it with the correct boundary.
+async function cortexFetch(method, endpoint, body, { isFormData = false, timeoutMs = CORTEX_TIMEOUT_MS, userId } = {}) {
   const url = `${CORTEX_BASE_URL}${endpoint}`;
+  const token = makeCortexJwt(userId);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const options = { method, signal: controller.signal };
     if (isFormData) {
+      options.headers = { Authorization: `Bearer ${token}` };
       options.body = body;
     } else {
-      options.headers = { 'Content-Type': 'application/json' };
+      options.headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
       options.body = JSON.stringify(body);
     }
 
     const res = await fetch(url, options);
+    const requestId = res.headers.get('x-request-id');
     const text = await res.text();
     let parsed;
     try { parsed = JSON.parse(text); } catch { parsed = { detail: text }; }
 
     if (!res.ok) {
       const detail = parsed?.detail || parsed?.error || res.statusText;
+      if (requestId) console.error(`[cortex] request-id: ${requestId}`);
       throw new CortexError(
         `Cortex ${method} ${endpoint} failed (${res.status}): ${detail}`,
         { status: res.status, body: parsed },
@@ -97,7 +113,10 @@ async function withRetry(fn, label) {
         console.error(`[cortex] ${label} — failed: ${cortexDetail(err)}`);
         throw err;
       }
-      const delay = 500 * (attempt + 1);
+      // 429 rate-limit: back off longer than generic 5xx retries
+      const delay = err instanceof CortexError && err.status === 429
+        ? 8000 * (attempt + 1)
+        : 500 * (attempt + 1);
       console.warn(`[cortex] ${label} — attempt ${attempt + 1} failed (${cortexDetail(err)}), retrying in ${delay}ms`);
       await new Promise(r => setTimeout(r, delay));
     }
@@ -120,7 +139,6 @@ async function extractResume({ filePath, userId, docId, llm }) {
     const formData = new FormData();
     formData.append('file', blob, path.basename(filePath));
     formData.append('app_name', CORTEX_APP_NAME);
-    formData.append('user_id', String(userId));
     if (docId) formData.append('doc_id', String(docId));
     formData.append('extraction_type', 'resume');
     if (llm) formData.append('llm', JSON.stringify(llm));
@@ -128,6 +146,7 @@ async function extractResume({ filePath, userId, docId, llm }) {
     return cortexFetch('POST', '/extract', formData, {
       isFormData: true,
       timeoutMs: CORTEX_EXTRACT_TIMEOUT_MS,
+      userId,
     });
   }, label);
 }
@@ -140,11 +159,10 @@ async function mergeCanonicalProfile({ userId, existingProfile, incomingProfile,
   const label = `POST /profile/merge (user: ${userId})`;
   return withRetry(() => cortexFetch('POST', '/profile/merge', {
     app_name: CORTEX_APP_NAME,
-    user_id: String(userId),
     existing_profile: existingProfile || {},
     incoming_profile: incomingProfile,
     similarity_threshold: similarityThreshold,
-  }), label);
+  }, { userId }), label);
 }
 
 /**
@@ -155,14 +173,13 @@ async function analyzeResumeMatch({ userId, jobDescription, canonicalProfile, ba
   const label = `POST /analyze/match (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
-    user_id: String(userId),
     job_description: jobDescription,
     canonical_profile: canonicalProfile,
   };
   if (baseResume) body.base_resume = baseResume;
   if (llm) body.llm = llm;
   if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
-  return withRetry(() => cortexFetch('POST', '/analyze/match', body), label);
+  return withRetry(() => cortexFetch('POST', '/analyze/match', body, { userId }), label);
 }
 
 /**
@@ -189,7 +206,6 @@ async function generateOptimizedResume({
   const label = `POST /generate/document (user: ${userId}, template: ${templateType}, mode: ${mode || 'canonical_only'})`;
   const body = {
     app_name: CORTEX_APP_NAME,
-    user_id: String(userId),
     job_description: jobDescription,
     canonical_profile: canonicalProfile,
     template_type: templateType,
@@ -205,7 +221,10 @@ async function generateOptimizedResume({
   if (includeExternalKeywords !== undefined) body.include_external_keywords = includeExternalKeywords;
   if (includeMissingProfileKeywords !== undefined) body.include_missing_profile_keywords = includeMissingProfileKeywords;
   if (removeIrrelevantKeywords !== undefined) body.remove_irrelevant_keywords = removeIrrelevantKeywords;
-  return withRetry(() => cortexFetch('POST', '/generate/document', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+  return withRetry(
+    () => cortexFetch('POST', '/generate/document', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS, userId }),
+    label,
+  );
 }
 
 /**
@@ -215,7 +234,6 @@ async function generateCoverLetter({ userId, jobDescription, canonicalProfile, l
   const label = `POST /cover-letter (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
-    user_id: String(userId),
     job_description: jobDescription,
     canonical_profile: canonicalProfile,
   };
@@ -223,7 +241,10 @@ async function generateCoverLetter({ userId, jobDescription, canonicalProfile, l
   if (analysisSummary) body.analysis_summary = analysisSummary;
   if (userPrompt) body.user_prompt = userPrompt;
   if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
-  return withRetry(() => cortexFetch('POST', '/cover-letter', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+  return withRetry(
+    () => cortexFetch('POST', '/cover-letter', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS, userId }),
+    label,
+  );
 }
 
 /**
@@ -233,7 +254,6 @@ async function generateHrEmail({ userId, jobDescription, canonicalProfile, recip
   const label = `POST /hr-email (user: ${userId})`;
   const body = {
     app_name: CORTEX_APP_NAME,
-    user_id: String(userId),
     job_description: jobDescription,
     canonical_profile: canonicalProfile,
   };
@@ -242,7 +262,10 @@ async function generateHrEmail({ userId, jobDescription, canonicalProfile, recip
   if (analysisSummary) body.analysis_summary = analysisSummary;
   if (userPrompt) body.user_prompt = userPrompt;
   if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
-  return withRetry(() => cortexFetch('POST', '/hr-email', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+  return withRetry(
+    () => cortexFetch('POST', '/hr-email', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS, userId }),
+    label,
+  );
 }
 
 /**
@@ -252,7 +275,6 @@ async function composeRewrite({ userId, appName, instruction, bodyHtml, bodyText
   const label = `POST /compose/rewrite (user: ${userId})`;
   const body = {
     app_name: appName || CORTEX_APP_NAME,
-    user_id: String(userId),
     instruction,
   };
   if (bodyHtml) body.body_html = bodyHtml;
@@ -260,7 +282,10 @@ async function composeRewrite({ userId, appName, instruction, bodyHtml, bodyText
   if (subject) body.subject = subject;
   if (llm) body.llm = llm;
   if (userSystemPrompt) body.user_system_prompt = userSystemPrompt;
-  return withRetry(() => cortexFetch('POST', '/compose/rewrite', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS }), label);
+  return withRetry(
+    () => cortexFetch('POST', '/compose/rewrite', body, { timeoutMs: CORTEX_GENERATE_TIMEOUT_MS, userId }),
+    label,
+  );
 }
 
 module.exports = { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, composeRewrite, CortexError, cortexDetail };
