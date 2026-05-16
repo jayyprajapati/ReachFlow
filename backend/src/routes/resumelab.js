@@ -9,7 +9,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume, AISettings } = require('../db');
 const { decryptJson } = require('../utils/dataSecurity');
-const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, cortexDetail } = require('../services/cortexClient');
+const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, CortexError, cortexDetail } = require('../services/cortexClient');
 const { injectTemplate, compileToPdf, validateLatex } = require('../services/latexCompiler');
 
 const router = express.Router();
@@ -286,6 +286,9 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     console.error(`[resumelab] Extraction failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
     resumeDoc.status = 'failed';
     await resumeDoc.save();
+    if (extractErr instanceof CortexError && [400, 413, 415, 422, 429].includes(extractErr.status)) {
+      return res.status(extractErr.status).json({ error: detail });
+    }
     return res.status(502).json({
       error: 'Resume parsing failed.',
       detail,
@@ -310,6 +313,9 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     // Extraction succeeded — mark parsed so the user can trigger /profile/rebuild later.
     resumeDoc.status = 'parsed';
     await resumeDoc.save();
+    if (mergeErr instanceof CortexError && [400, 413, 415, 422, 429].includes(mergeErr.status)) {
+      return res.status(mergeErr.status).json({ error: detail });
+    }
     return res.status(502).json({
       error: 'Profile merge failed. Resume was parsed but the canonical profile was not updated. Use /profile/rebuild to retry.',
       detail,
