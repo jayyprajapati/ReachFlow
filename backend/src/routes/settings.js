@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { AISettings } = require('../db');
 const { encryptJson, decryptJson } = require('../utils/dataSecurity');
 
@@ -14,6 +15,11 @@ const PROVIDER_MODELS = {
 };
 
 const VALID_PROVIDERS = new Set(Object.keys(PROVIDER_MODELS));
+
+function makeCortexJwt(userId) {
+  const secret = process.env.CORTEX_JWT_SECRET || 'dev-secret';
+  return jwt.sign({ sub: String(userId) }, secret, { expiresIn: '1h' });
+}
 
 function maskKey(key) {
   if (!key || key.length < 8) return '••••••••';
@@ -169,9 +175,13 @@ router.post('/ai/test', async (req, res) => {
     let testError = '';
 
     try {
+      const cortexToken = makeCortexJwt(userId);
       const pingRes = await fetch(`${CORTEX_BASE_URL}/llm/ping`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cortexToken}`,
+        },
         body: JSON.stringify({ llm: llmOverride }),
         signal: controller.signal,
       });
