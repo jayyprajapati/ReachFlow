@@ -38,9 +38,10 @@ const AppContext = createContext(null);
 const THEME_STORAGE_KEY = 'reachflow-theme';
 
 function getInitialTheme() {
-  if (typeof window === 'undefined') return 'light';
+  if (typeof window === 'undefined') return 'dark';
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === 'dark' ? 'dark' : 'light';
+  if (stored === 'dark' || stored === 'light') return stored;
+  return 'dark';
 }
 
 export function useApp() {

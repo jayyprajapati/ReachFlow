@@ -1,87 +1,92 @@
 import React from 'react';
-import { useRouter } from '../router.jsx';
+import InfoPageLayout, { InfoSection, InfoList } from './InfoPageLayout.jsx';
+import {
+  Info, UserCheck, CheckCircle2, Mail, KeyRound,
+  AlertTriangle, Ban, RefreshCw, AtSign,
+} from 'lucide-react';
 
 export default function TermsOfUsePage() {
-  const { navigateTo } = useRouter();
-
   return (
-    <div className="info-page-wrap">
-      <div className="info-page-head">
-        <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => navigateTo('/')}>Back to app</button>
-        <h1>Terms of Use</h1>
-        <p>
-          Last updated: March 2026. These terms explain the rules for using ReachFlow.
-        </p>
-      </div>
-
-      <section className="info-section">
-        <h2>1. Introduction</h2>
+    <InfoPageLayout
+      eyebrow="Terms of Use"
+      title="The rules for"
+      accent="using ReachFlow."
+      subtitle="A short, plain-language summary of how ReachFlow may be used and what each side is responsible for."
+      lastUpdated="March 2026"
+    >
+      <InfoSection num="01" icon={Info} title="Introduction">
         <p>
           ReachFlow is an outreach tool that helps users organize contacts and send personalized emails using Gmail.
         </p>
-      </section>
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>2. User Responsibilities</h2>
-        <ul>
-          <li>You are responsible for the emails you send through ReachFlow.</li>
-          <li>You are responsible for complying with anti-spam and email marketing laws in your region.</li>
-          <li>You are responsible for the accuracy and lawfulness of your contact data.</li>
-        </ul>
-      </section>
+      <InfoSection num="02" icon={UserCheck} title="User responsibilities">
+        <InfoList
+          items={[
+            'You are responsible for the emails you send through ReachFlow.',
+            'You are responsible for complying with anti-spam and email marketing laws in your region.',
+            'You are responsible for the accuracy and lawfulness of your contact data.',
+          ]}
+        />
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>3. Acceptable Use</h2>
-        <ul>
-          <li>Do not use ReachFlow for spam campaigns.</li>
-          <li>Do not use ReachFlow for harassment, abuse, or threatening communication.</li>
-          <li>Do not use ReachFlow for illegal or fraudulent activity.</li>
-        </ul>
-      </section>
+      <InfoSection num="03" icon={CheckCircle2} title="Acceptable use">
+        <InfoList
+          items={[
+            'Do not use ReachFlow for spam campaigns.',
+            'Do not use ReachFlow for harassment, abuse, or threatening communication.',
+            'Do not use ReachFlow for illegal or fraudulent activity.',
+          ]}
+        />
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>4. Gmail Usage Disclaimer</h2>
-        <ul>
-          <li>ReachFlow uses the Gmail API to send emails from your connected account.</li>
-          <li>ReachFlow is not affiliated with or endorsed by Google.</li>
-          <li>You must comply with Google policies when using Gmail through ReachFlow.</li>
-        </ul>
-      </section>
+      <InfoSection num="04" icon={Mail} title="Gmail usage disclaimer">
+        <InfoList
+          items={[
+            'ReachFlow uses the Gmail API to send emails from your connected account.',
+            'ReachFlow is not affiliated with or endorsed by Google.',
+            'You must comply with Google policies when using Gmail through ReachFlow.',
+          ]}
+        />
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>5. Account and Access</h2>
-        <ul>
-          <li>You are responsible for keeping your account access secure.</li>
-          <li>Access to ReachFlow can be limited or revoked if misuse is detected.</li>
-        </ul>
-      </section>
+      <InfoSection num="05" icon={KeyRound} title="Account and access">
+        <InfoList
+          items={[
+            'You are responsible for keeping your account access secure.',
+            'Access to ReachFlow can be limited or revoked if misuse is detected.',
+          ]}
+        />
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>6. Limitation of Liability</h2>
-        <ul>
-          <li>ReachFlow is provided on an "as is" and "as available" basis.</li>
-          <li>We are not liable for email delivery issues, third-party outages, or user misuse of the platform.</li>
-        </ul>
-      </section>
+      <InfoSection num="06" icon={AlertTriangle} title="Limitation of liability">
+        <InfoList
+          items={[
+            <>ReachFlow is provided on an <em>&ldquo;as is&rdquo;</em> and <em>&ldquo;as available&rdquo;</em> basis.</>,
+            'We are not liable for email delivery issues, third-party outages, or user misuse of the platform.',
+          ]}
+        />
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>7. Termination</h2>
+      <InfoSection num="07" icon={Ban} title="Termination">
         <p>
           We may suspend or terminate accounts that violate these terms or use ReachFlow in abusive ways.
         </p>
-      </section>
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>8. Changes to Terms</h2>
+      <InfoSection num="08" icon={RefreshCw} title="Changes to terms">
         <p>
-          We may update these Terms of Use from time to time. Continued use of ReachFlow after updates means you accept the revised terms.
+          We may update these Terms of Use from time to time. Continued use of ReachFlow after updates means you accept
+          the revised terms.
         </p>
-      </section>
+      </InfoSection>
 
-      <section className="info-section">
-        <h2>9. Contact</h2>
-        <p>For questions about these terms, contact: jay.prajapati5717@gmail.com.</p>
-      </section>
-    </div>
+      <InfoSection num="09" icon={AtSign} title="Contact">
+        <p>
+          For questions about these terms, reach out at{' '}
+          <a className="rf-info-link" href="mailto:jay.prajapati5717@gmail.com">jay.prajapati5717@gmail.com</a>.
+        </p>
+      </InfoSection>
+    </InfoPageLayout>
   );
 }

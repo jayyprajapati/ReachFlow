@@ -267,7 +267,7 @@ export default function ContactsPage() {
   const csvValid = (csvParsed || []).filter(p => p.name && !isDupe(p));
 
   return (
-    <div className="rf-contacts">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Bulk paste modal */}
       {bulkPasteOpen && (
         <div className="rf-drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => !bulkAdding && setBulkPasteOpen(false)}>
@@ -352,6 +352,10 @@ export default function ContactsPage() {
         </div>
       )}
 
+      <div className="rf-page-header">
+        <div><h1 className="rf-page-header__title">Contacts</h1><p className="rf-page-header__subtitle">Manage companies and contacts for your outreach</p></div>
+      </div>
+      <div className="rf-contacts" style={{ flex: 1, minHeight: 0, height: 'auto' }}>
       {/* Left - Company list */}
       <div className="rf-contacts__list">
         <div className="rf-contacts__list-header">
@@ -581,6 +585,7 @@ export default function ContactsPage() {
             <div className="rf-empty__desc">Choose a company from the left panel to view and manage contacts.</div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

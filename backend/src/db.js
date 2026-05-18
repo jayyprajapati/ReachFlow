@@ -199,6 +199,186 @@ const templateSchema = new mongoose.Schema(
 
 templateSchema.index({ userId: 1, updatedAt: -1 });
 
+const resumeSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    title: { type: String, trim: true, default: '' },
+    type: { type: String, enum: ['frontend', 'backend', 'fullstack', 'custom'], default: 'custom' },
+    fileName: { type: String, trim: true, default: '' },
+    fileUrl: { type: String, trim: true, default: '' },
+    storagePath: { type: String, trim: true, default: '' },
+    mimeType: { type: String, trim: true, default: '' },
+    fileSize: { type: Number, min: 0, default: 0 },
+    parsedDocId: { type: String, trim: true, default: '' },
+    tags: { type: [String], default: [] },
+    isBaseResume: { type: Boolean, default: false },
+    uploadSource: { type: String, trim: true, default: 'manual' },
+    status: { type: String, enum: ['uploaded', 'parsed', 'failed'], default: 'uploaded' },
+    uploadedAt: { type: Date, default: Date.now },
+    extractedContent: { type: mongoose.Schema.Types.Mixed, default: null },
+    // B1: Source-preservation fields from Cortex /extract (A1)
+    normalizedResumeText: { type: String, default: '' },
+    sectionedResumeSource: { type: mongoose.Schema.Types.Mixed, default: null },
+    extractVersion: { type: Number, default: 1 },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+resumeSchema.index({ userId: 1 });
+resumeSchema.index({ userId: 1, type: 1 });
+resumeSchema.index({ userId: 1, isBaseResume: 1 });
+
+const canonicalProfileSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    profileVersion: { type: Number, default: 1 },
+    canonicalProfile: { type: mongoose.Schema.Types.Mixed, default: null },
+    sourceResumeIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resume' }],
+    lastMergedResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+const resumeAnalysisSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    baseResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+    canonicalProfileVersion: { type: Number, default: 0 },
+    jobDescriptionRaw: { type: String, trim: true, default: '' },
+    extractedJobMetadata: {
+      title: { type: String, trim: true, default: '' },
+      company: { type: String, trim: true, default: '' },
+      seniority: { type: String, trim: true, default: '' },
+      domain: { type: String, trim: true, default: '' },
+    },
+    matchAnalysis: { type: mongoose.Schema.Types.Mixed, default: null },
+    matchScore: { type: Number, min: 0, max: 100, default: 0 },
+    status: { type: String, enum: ['analyzed', 'failed'], default: 'analyzed' },
+    flowId: { type: String, default: null, index: true },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+resumeAnalysisSchema.index({ userId: 1 });
+resumeAnalysisSchema.index({ userId: 1, createdAt: -1 });
+resumeAnalysisSchema.index({ userId: 1, matchScore: -1 });
+resumeAnalysisSchema.index({ userId: 1, flowId: 1 });
+
+const generatedResumeSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    analysisId: { type: mongoose.Schema.Types.ObjectId, ref: 'ResumeAnalysis', required: true, index: true },
+    baseResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+    templateType: {
+      type: String,
+      enum: ['frontend', 'backend', 'fullstack', 'custom'],
+      default: 'fullstack',
+    },
+    generatedContent: { type: mongoose.Schema.Types.Mixed, default: null },
+    latexSource: { type: String, default: '' },
+    pdfPath: { type: String, trim: true, default: '' },
+    pdfError: { type: String, trim: true, default: '' },
+    matchScoreBefore: { type: Number, min: 0, max: 100, default: 0 },
+    matchScoreAfter: { type: Number, min: 0, max: 100, default: 0 },
+    status: { type: String, enum: ['generated', 'failed'], default: 'generated' },
+    // B6: Generation strategy fields
+    generationMode: { type: String, enum: ['canonical_only', 'modify_existing'], default: 'canonical_only' },
+    startingResumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume', default: null },
+    userPrompt: { type: String, trim: true, default: '' },
+    aggressiveness: { type: String, enum: ['conservative', 'balanced', 'aggressive'], default: 'balanced' },
+    // B7: Output type — allows cover letter and HR email to share the history collection
+    outputType: { type: String, enum: ['resume', 'cover_letter', 'hr_email'], default: 'resume' },
+    textContent: { type: String, default: '' },
+    flowId: { type: String, default: null, index: true },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+generatedResumeSchema.index({ userId: 1 });
+generatedResumeSchema.index({ userId: 1, analysisId: 1 });
+generatedResumeSchema.index({ userId: 1, templateType: 1 });
+generatedResumeSchema.index({ userId: 1, flowId: 1 });
+
+const roadmapSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, default: '', trim: true },
+    domain: { type: String, default: '', trim: true },
+    icon: { type: String, default: '', trim: true },
+    colorTheme: { type: String, default: '', trim: true },
+    status: { type: String, enum: ['active', 'paused', 'completed'], default: 'active', index: true },
+    progressPercent: { type: Number, default: 0, min: 0, max: 100 },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+roadmapSchema.index({ userId: 1, updatedAt: -1 });
+roadmapSchema.index({ userId: 1, status: 1 });
+
+const roadmapStageSchema = new mongoose.Schema(
+  {
+    roadmapId: { type: mongoose.Schema.Types.ObjectId, ref: 'Roadmap', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    order: { type: Number, required: true, default: 0 },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+roadmapStageSchema.index({ roadmapId: 1, order: 1 });
+roadmapStageSchema.index({ userId: 1, roadmapId: 1 });
+
+const roadmapItemSchema = new mongoose.Schema(
+  {
+    roadmapId: { type: mongoose.Schema.Types.ObjectId, ref: 'Roadmap', required: true, index: true },
+    stageId: { type: mongoose.Schema.Types.ObjectId, ref: 'RoadmapStage', default: null, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, default: '', trim: true },
+    resourceType: {
+      type: String,
+      enum: ['youtube_playlist', 'youtube_video', 'course', 'article', 'book', 'github', 'custom'],
+      default: 'custom',
+    },
+    url: { type: String, default: '', trim: true },
+    platform: { type: String, default: '', trim: true },
+    order: { type: Number, required: true, default: 0 },
+    status: { type: String, enum: ['planned', 'active', 'completed', 'skipped'], default: 'planned', index: true },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    estimatedHours: { type: Number, default: null, min: 0 },
+    completedAt: { type: Date, default: null },
+    notes: { type: String, default: '', trim: true },
+    tags: { type: [String], default: [] },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+roadmapItemSchema.index({ roadmapId: 1, order: 1 });
+roadmapItemSchema.index({ stageId: 1, order: 1 });
+roadmapItemSchema.index({ userId: 1, roadmapId: 1 });
+roadmapItemSchema.index({ userId: 1, status: 1 });
+
+// B4: AI provider settings (BYOK — API key stored encrypted via dataSecurity.js)
+const aiSettingsSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    provider: {
+      type: String,
+      enum: ['openai', 'ollama_cloud', 'ollama_local'],
+      default: 'ollama_cloud',
+    },
+    apiKeyEncrypted: { type: mongoose.Schema.Types.Mixed, default: '' },
+    localEndpoint: { type: String, trim: true, default: '' },
+    selectedModel: { type: String, trim: true, default: '' },
+    isValid: { type: Boolean, default: false },
+    validatedAt: { type: Date, default: null },
+    personalizationPrefs: { type: mongoose.Schema.Types.Mixed, default: null },
+    systemPrompt: { type: String, default: '', maxlength: 2000 },
+  },
+  { timestamps: true, versionKey: false }
+);
+
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');
 const Campaign = mongoose.model('Campaign', campaignSchema, 'reachflow_outreach_items');
@@ -206,6 +386,14 @@ const SendLog = mongoose.model('SendLog', sendLogSchema, 'reachflow_send_logs');
 const Group = mongoose.model('Group', groupSchema, 'reachflow_groups');
 const Application = mongoose.model('Application', applicationSchema, 'reachflow_applications');
 const Template = mongoose.model('Template', templateSchema, 'reachflow_templates');
+const Resume = mongoose.model('Resume', resumeSchema, 'reachflow_resumes');
+const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSchema, 'reachflow_canonical_profiles');
+const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema, 'reachflow_resume_analyses');
+const GeneratedResume = mongoose.model('GeneratedResume', generatedResumeSchema, 'reachflow_generated_resumes');
+const AISettings = mongoose.model('AISettings', aiSettingsSchema, 'reachflow_ai_settings');
+const Roadmap = mongoose.model('Roadmap', roadmapSchema, 'reachflow_roadmaps');
+const RoadmapStage = mongoose.model('RoadmapStage', roadmapStageSchema, 'reachflow_roadmap_stages');
+const RoadmapItem = mongoose.model('RoadmapItem', roadmapItemSchema, 'reachflow_roadmap_items');
 const UserScopedModelNames = {
   users: 'reachflow_users',
   variables: 'reachflow_variables',
@@ -462,6 +650,14 @@ module.exports = {
   Group,
   Application,
   Template,
+  Resume,
+  CanonicalProfile,
+  ResumeAnalysis,
+  GeneratedResume,
+  AISettings,
+  Roadmap,
+  RoadmapStage,
+  RoadmapItem,
   migrateUserSensitiveFields,
   migrateTemplateSensitiveFields,
   migrateCampaignSensitiveFields,

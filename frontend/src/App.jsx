@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppProvider, useApp } from './contexts/AppContext.jsx';
 import { RouterProvider, useRouter } from './router.jsx';
+import { ResumeLabProvider } from './contexts/ResumeLabContext.jsx';
 import AppShell from './components/layout/AppShell.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import ComposePage from './pages/ComposePage.jsx';
@@ -9,6 +10,8 @@ import ContactsPage from './pages/ContactsPage.jsx';
 import TemplatesPage from './pages/TemplatesPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import ResumeLabPage from './pages/ResumeLab/index.jsx';
+import RoadmapLabPage from './pages/RoadmapLab/index.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './components/TermsOfUsePage.jsx';
@@ -24,6 +27,8 @@ function PageRouter() {
     case path === '/templates': return <TemplatesPage />;
     case path === '/history': return <HistoryPage />;
     case path === '/settings': return <SettingsPage />;
+    case path.startsWith('/resume-lab'): return <ResumeLabPage />;
+    case path.startsWith('/roadmaps'):   return <RoadmapLabPage />;
     default: return <ComposePage />;
   }
 }
@@ -51,9 +56,11 @@ function AuthGate() {
 
   // Logged in — show shell + router
   return (
-    <AppShell>
-      <PageRouter />
-    </AppShell>
+    <ResumeLabProvider>
+      <AppShell>
+        <PageRouter />
+      </AppShell>
+    </ResumeLabProvider>
   );
 }
 

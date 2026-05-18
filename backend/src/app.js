@@ -13,6 +13,9 @@ const groupRoutes = require('./routes/groups');
 const applicationRoutes = require('./routes/applications');
 const templateRoutes = require('./routes/templates');
 const variableRoutes = require('./routes/variables');
+const resumelabRoutes = require('./routes/resumelab');
+const settingsRoutes = require('./routes/settings');
+const roadmapRoutes = require('./routes/roadmaps');
 const {
   connectMongo,
   User,
@@ -22,6 +25,11 @@ const {
   Campaign,
   SendLog,
   Application,
+  Resume,
+  CanonicalProfile,
+  ResumeAnalysis,
+  GeneratedResume,
+  AISettings,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -30,6 +38,13 @@ const PORT = process.env.PORT || 4000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/jobhunt';
 const isProd = process.env.NODE_ENV === 'production';
+
+function buildAllowedOrigins() {
+  const raw = process.env.FRONTEND_ORIGINS || FRONTEND_ORIGIN;
+  return String(raw || '').split(',').map(origin => origin.trim()).filter(Boolean);
+}
+
+const allowedOrigins = buildAllowedOrigins();
 
 function initFirebase() {
   if (admin.apps.length) return;
@@ -91,13 +106,18 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs, applications] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes, aiSettings] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
       Variable.deleteMany({ userId }, opts),
       SendLog.deleteMany({ userId }, opts),
       Application.deleteMany({ userId }, opts),
+      Resume.deleteMany({ userId }, opts),
+      CanonicalProfile.deleteMany({ userId }, opts),
+      ResumeAnalysis.deleteMany({ userId }, opts),
+      GeneratedResume.deleteMany({ userId }, opts),
+      AISettings.deleteMany({ userId }, opts),
     ]);
 
     const userDeletion = await User.deleteOne({ _id: userId }, opts);
@@ -110,6 +130,11 @@ async function deleteCurrentUserAppData(user) {
       variables: variables.deletedCount || 0,
       sendLogs: sendLogs.deletedCount || 0,
       applications: applications.deletedCount || 0,
+      resumes: resumes.deletedCount || 0,
+      canonicalProfiles: canonicalProfiles.deletedCount || 0,
+      resumeAnalyses: resumeAnalyses.deletedCount || 0,
+      generatedResumes: generatedResumes.deletedCount || 0,
+      aiSettings: aiSettings.deletedCount || 0,
     };
     console.log('[data] Deletion summary:', JSON.stringify(summary));
     return summary;
@@ -138,7 +163,11 @@ app.use(helmet());
 app.use(express.json({ limit: '30mb' }));
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   })
 );
@@ -392,6 +421,9 @@ app.use('/api/groups', requireAuth, groupRoutes);
 app.use('/api/applications', requireAuth, applicationRoutes);
 app.use('/api/templates', requireAuth, templateRoutes);
 app.use('/api/variables', requireAuth, variableRoutes);
+app.use('/api/resumelab', requireAuth, resumelabRoutes);
+app.use('/api/settings', requireAuth, settingsRoutes);
+app.use('/api/roadmaps', requireAuth, roadmapRoutes);
 
 connectMongo()
   .then(() => {

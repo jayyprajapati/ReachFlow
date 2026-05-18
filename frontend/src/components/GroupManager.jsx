@@ -1200,7 +1200,14 @@ export default function GroupManager({ open = false, onClose, authedFetch, stand
 
                         {/* Contacts section */}
                         <div className="gm-contacts-head">
-                            <span className="gm-subtitle">People from {activeGroup.companyName} ({activeGroup.contacts.length})</span>
+                            <span className="gm-subtitle">
+                              People from {activeGroup.companyName} ({activeGroup.contacts.length} / 300)
+                              {activeGroup.contacts.length >= 300 && (
+                                <span style={{ marginLeft: 6, color: 'var(--rf-error-text)', fontSize: 'var(--rf-text-xs)', fontWeight: 600 }}>
+                                  · Limit reached
+                                </span>
+                              )}
+                            </span>
                             <div className="gm-action-group">
                                 {!standalone && <button className="gm-text-btn" onClick={startAddContact}><Plus size={14} /> Add Person</button>}
                                 {!standalone && <span className="gm-dot-sep" aria-hidden="true">•</span>}

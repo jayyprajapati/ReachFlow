@@ -123,6 +123,11 @@
   border-color: var(--rf-border-hover);
 }
 
+textarea.rf-input {
+  height: auto;
+  min-height: 36px;
+}
+
 .rf-input--lg {
   height: 42px;
   font-size: var(--rf-text-base);
@@ -648,4 +653,45 @@
   font-weight: 500;
   border: 1px solid rgba(99, 102, 241, 0.2);
   user-select: none;
+}
+
+/* ── Responsive shared components ── */
+
+@media (max-width: 640px) {
+  .rf-btn {
+    min-height: 34px;
+    max-width: 100%;
+  }
+
+  .rf-dialog-overlay {
+    align-items: flex-end;
+    padding: var(--rf-sp-3);
+  }
+
+  .rf-dialog {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100vh - var(--rf-sp-6));
+    overflow-y: auto;
+    padding: var(--rf-sp-5);
+  }
+
+  .rf-dialog__actions {
+    flex-wrap: wrap;
+  }
+
+  .rf-toast-container {
+    left: var(--rf-sp-3);
+    right: var(--rf-sp-3);
+    bottom: var(--rf-sp-3);
+  }
+
+  .rf-toast {
+    max-width: none;
+    width: 100%;
+  }
+
+  .rf-tabs {
+    overflow-x: auto;
+  }
 }
