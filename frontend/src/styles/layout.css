@@ -519,14 +519,56 @@
 
 /* ── Responsive ── */
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .rf-shell__sidebar {
     position: fixed;
     left: 0;
     top: 0;
+    width: min(var(--rf-sidebar-width), calc(100vw - 40px));
+    max-width: 320px;
     z-index: var(--rf-z-overlay);
     transform: translateX(-100%);
     transition: transform var(--rf-duration-slow) var(--rf-ease-out);
+  }
+
+  .rf-shell__sidebar--collapsed {
+    width: min(var(--rf-sidebar-width), calc(100vw - 40px));
+  }
+
+  .rf-shell__sidebar--collapsed .rf-sidebar__brand-text {
+    display: flex;
+  }
+
+  .rf-shell__sidebar--collapsed .rf-sidebar__user-info,
+  .rf-shell__sidebar--collapsed .rf-sidebar__cmd-text,
+  .rf-shell__sidebar--collapsed .rf-sidebar__link-label,
+  .rf-shell__sidebar--collapsed .rf-sidebar__link-badge,
+  .rf-shell__sidebar--collapsed .rf-sidebar__section-label,
+  .rf-shell__sidebar--collapsed .rf-sidebar__gmail span,
+  .rf-shell__sidebar--collapsed .rf-sidebar__theme-label {
+    display: block;
+  }
+
+  .rf-shell__sidebar--collapsed .rf-sidebar__cmd-shortcut,
+  .rf-shell__sidebar--collapsed .rf-sidebar__theme-icon {
+    display: inline-flex;
+  }
+
+  .rf-shell__sidebar--collapsed .rf-sidebar__legal {
+    display: flex;
+  }
+
+  .rf-shell__sidebar--collapsed .rf-sidebar__link,
+  .rf-shell__sidebar--collapsed .rf-sidebar__cmd,
+  .rf-shell__sidebar--collapsed .rf-sidebar__brand,
+  .rf-shell__sidebar--collapsed .rf-sidebar__user,
+  .rf-shell__sidebar--collapsed .rf-sidebar__gmail,
+  .rf-shell__sidebar--collapsed .rf-sidebar__theme-row {
+    justify-content: flex-start;
+  }
+
+  .rf-sidebar__collapse {
+    display: none;
   }
 
   .rf-shell__sidebar--mobile-open {
@@ -579,9 +621,39 @@
   .rf-mobile-header__toggle:hover {
     background: var(--rf-bg-hover);
   }
+
+  .rf-page-header {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--rf-sp-3);
+    margin-bottom: var(--rf-sp-4);
+  }
+
+  .rf-page-header__actions {
+    flex-wrap: wrap;
+  }
 }
 
-@media (min-width: 769px) {
+@media (max-width: 640px) {
+  .rf-shell__content {
+    padding: var(--rf-sp-3);
+  }
+
+  .rf-mobile-header {
+    padding: var(--rf-sp-2) var(--rf-sp-3);
+  }
+
+  .rf-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .rf-page-header__actions {
+    width: 100%;
+  }
+}
+
+@media (min-width: 1025px) {
   .rf-mobile-overlay,
   .rf-mobile-header {
     display: none;

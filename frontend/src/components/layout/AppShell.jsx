@@ -38,6 +38,7 @@ export default function AppShell({ children }) {
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed(v => !v)}
           onOpenCommand={() => setCommandOpen(true)}
+          onNavigate={() => setMobileOpen(false)}
         />
       </aside>
 

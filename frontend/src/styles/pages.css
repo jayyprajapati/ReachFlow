@@ -278,16 +278,192 @@
 :root[data-theme="dark"] .rf-badge--failed { color: #f87171; }
 
 /* ── Responsive overrides ── */
+@media (max-width: 1024px) {
+  .rf-compose__toolbar,
+  .rf-compose__toolbar-left,
+  .rf-compose__toolbar-right,
+  .rf-compose__actions-left,
+  .rf-compose__actions-right,
+  .rf-pipeline__input-actions,
+  .rf-attachments__bar,
+  .rf-bulk-actions {
+    flex-wrap: wrap;
+  }
+
+  .rf-compose__toolbar {
+    align-items: flex-start;
+  }
+
+  .rf-compose__editor-wrap .ql-toolbar {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .rf-compose__editor-wrap .ql-formats {
+    white-space: nowrap;
+  }
+
+  .rf-pipeline__board {
+    min-height: 480px;
+  }
+
+  .rf-contact-table {
+    min-width: 720px;
+  }
+
+  .rf-contacts__detail-body {
+    overflow: auto;
+  }
+}
+
 @media (max-width: 900px) {
   .rf-contacts { flex-direction: column; }
-  .rf-contacts__list { width: 100%; height: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--rf-border-subtle); }
+  .rf-contacts__list { width: 100%; height: auto; max-height: 36vh; border-right: none; border-bottom: 1px solid var(--rf-border-subtle); }
+  .rf-contacts__list-scroll { display: flex; overflow-x: auto; overflow-y: hidden; padding: var(--rf-sp-2); }
+  .rf-company-item { min-width: 190px; }
   .rf-pipeline__board { gap: var(--rf-sp-3); }
   .rf-pipeline__column { flex: 0 0 260px; }
 }
 
+@media (max-width: 700px) {
+  .rf-recipient-row {
+    grid-template-columns: 1fr !important;
+    padding: var(--rf-sp-3);
+    background: var(--rf-bg-surface);
+    border: 1px solid var(--rf-border-subtle);
+    border-radius: var(--rf-radius-md);
+  }
+
+  .rf-recipient-row .rf-btn {
+    justify-self: flex-end;
+  }
+
+  .rf-contact-table,
+  .rf-contact-table thead,
+  .rf-contact-table tbody,
+  .rf-contact-table tr,
+  .rf-contact-table td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .rf-contact-table {
+    min-width: 0;
+  }
+
+  .rf-contact-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .rf-contact-table tr {
+    padding: var(--rf-sp-3);
+    margin-bottom: var(--rf-sp-3);
+    background: var(--rf-bg-surface);
+    border: 1px solid var(--rf-border-subtle);
+    border-radius: var(--rf-radius-md);
+  }
+
+  .rf-contact-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--rf-sp-3);
+    padding: var(--rf-sp-2) 0;
+    border-bottom: 1px solid var(--rf-border-subtle);
+    text-align: left !important;
+  }
+
+  .rf-contact-table td:last-child {
+    border-bottom: none;
+  }
+
+  .rf-contact-table td::before {
+    flex: 0 0 82px;
+    content: '';
+    color: var(--rf-text-faint);
+    font-size: var(--rf-text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .rf-contact-table td:nth-child(1)::before { content: 'Name'; }
+  .rf-contact-table td:nth-child(2)::before { content: 'Email'; }
+  .rf-contact-table td:nth-child(3)::before { content: 'Role'; }
+  .rf-contact-table td:nth-child(4)::before { content: 'Status'; }
+  .rf-contact-table td:nth-child(5)::before { content: 'Actions'; }
+
+  .rf-contact-table td[colspan] {
+    display: block;
+    text-align: center !important;
+  }
+
+  .rf-contact-table td[colspan]::before {
+    content: none;
+  }
+
+  .rf-contact-table .rf-input,
+  .rf-contact-table .rf-select {
+    min-width: 0;
+  }
+}
+
 @media (max-width: 640px) {
+  .rf-compose__subject {
+    font-size: var(--rf-text-lg);
+  }
+
+  .rf-compose__toolbar-left,
+  .rf-compose__toolbar-right,
+  .rf-name-format,
+  .rf-attachments__bar,
+  .rf-pipeline__input-actions {
+    width: 100%;
+  }
+
+  .rf-name-format {
+    flex-wrap: wrap;
+  }
+
+  .rf-varbar > span:last-child {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .rf-varbar__add {
+    width: 100%;
+  }
+
+  .rf-varbar__add .rf-input {
+    flex: 1;
+    width: auto !important;
+  }
+
   .rf-compose__actions { flex-direction: column; align-items: stretch; }
   .rf-compose__actions-left, .rf-compose__actions-right { width: 100%; }
+  .rf-compose__actions-left .rf-btn, .rf-compose__actions-right .rf-btn { flex: 1; }
+  .rf-pipeline__input { padding: var(--rf-sp-3); }
+  .rf-pipeline__board { min-height: 420px; }
+  .rf-pipeline__column { flex-basis: min(82vw, 260px); }
+  .rf-pipeline__table { min-width: 760px; }
+  .rf-pipeline__company-add { min-width: 200px; }
+  .rf-contacts__detail-header { padding: var(--rf-sp-4); align-items: flex-start; flex-wrap: wrap; }
+  .rf-contacts__detail-body { padding: var(--rf-sp-4); }
   .rf-templates__grid { grid-template-columns: 1fr; }
+  .rf-history-item { align-items: flex-start; flex-direction: column; gap: var(--rf-sp-2); }
+  .rf-history-item__meta { flex-wrap: wrap; }
+  .rf-settings { gap: var(--rf-sp-4); max-width: none; }
+  .rf-settings__section { padding: var(--rf-sp-4); }
+  .rf-settings__row { align-items: flex-start; flex-direction: column; gap: var(--rf-sp-3); }
+  .rf-drawer { width: 100vw; max-width: none; }
+  .rf-drawer__header, .rf-drawer__body, .rf-drawer__footer { padding-left: var(--rf-sp-4); padding-right: var(--rf-sp-4); }
+  .rf-drawer__footer { flex-wrap: wrap; }
+  .rf-bulk-panel { width: calc(100vw - var(--rf-sp-6)); padding: var(--rf-sp-4); }
+  .rf-bulk-row { align-items: flex-start; flex-direction: column; gap: var(--rf-sp-1); }
   .rf-scope-banner { padding: var(--rf-sp-2) var(--rf-sp-4); }
 }

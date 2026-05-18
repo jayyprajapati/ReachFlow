@@ -21,7 +21,7 @@ const LEGAL_ITEMS = [
   { path: '/terms-of-use',   label: 'Terms' },
 ];
 
-export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) {
+export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, onNavigate }) {
   const {
     API_BASE, authedFetch,
     appUser, gmailConnected,
@@ -53,11 +53,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
 
   const initial = (appUser?.displayName || appUser?.email || 'U').charAt(0).toUpperCase();
   const displayName = appUser?.displayName || appUser?.email?.split('@')[0] || 'User';
+  const goTo = (nextPath) => {
+    navigateTo(nextPath);
+    onNavigate?.();
+  };
 
   return (
     <div className="rf-sidebar">
       {/* Brand */}
-      <button className="rf-sidebar__brand" onClick={() => navigateTo('/')}>
+      <button className="rf-sidebar__brand" onClick={() => goTo('/')}>
         <div className="rf-sidebar__logo">
           <Waypoints size={18} />
         </div>
@@ -86,7 +90,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
             <button
               key={item.path}
               className={`rf-sidebar__link ${isActive ? 'rf-sidebar__link--active' : ''}`}
-              onClick={() => navigateTo(item.path)}
+              onClick={() => goTo(item.path)}
             >
               <span className="rf-sidebar__link-icon"><Icon size={18} /></span>
               <span className="rf-sidebar__link-label">{item.label}</span>
@@ -110,7 +114,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
         {/* Settings link */}
         <button
           className={`rf-sidebar__link${path.startsWith('/settings') ? ' rf-sidebar__link--active' : ''}`}
-          onClick={() => navigateTo('/settings')}
+          onClick={() => goTo('/settings')}
           style={{ width: '100%', justifyContent: 'flex-start' }}
         >
           <span className="rf-sidebar__link-icon"><Settings size={16} /></span>
@@ -168,7 +172,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand }) 
               {i > 0 && <span className="rf-sidebar__legal-dot" aria-hidden="true">·</span>}
               <a
                 href={item.path}
-                onClick={(e) => { e.preventDefault(); navigateTo(item.path); }}
+                onClick={(e) => { e.preventDefault(); goTo(item.path); }}
               >
                 {item.label}
               </a>
