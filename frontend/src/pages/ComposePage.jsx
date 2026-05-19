@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye, Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste } from 'lucide-react';
+import { useRouter } from '../router.jsx';
+import {
+  Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
+  Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste,
+  Info, ChevronRight, AtSign, Variable, Wand2, MailCheck, AlertTriangle, ArrowUpRight,
+} from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_CUSTOM_VARIABLES = 2;
@@ -10,16 +15,14 @@ const MAX_ATTACHMENT_TOTAL_MB = 20;
 const ALLOWED_ATTACH_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/png', 'image/jpeg'];
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg'];
 
-// Register Quill fonts
+/* ── Quill registration (idempotent) ────────────────────── */
 const Font = Quill.import('formats/font');
 Font.whitelist = ['arial', 'verdana', 'georgia', 'times-new-roman', 'calibri', 'tahoma', 'trebuchet-ms'];
 try { Quill.register(Font, true); } catch (e) {}
-
 const Size = Quill.import('formats/size');
 Size.whitelist = ['small', 'large', 'huge'];
 try { Quill.register(Size, true); } catch (e) {}
 
-// Register variable blot
 const Embed = Quill.import('blots/embed');
 class VariableBlot extends Embed {
   static create(v) { const n = super.create(); n.setAttribute('data-key', v); n.setAttribute('contenteditable', 'false'); n.classList.add('var-token'); n.innerText = `{{${v}}}`; return n; }
@@ -41,19 +44,35 @@ const QUILL_MODULES = {
   ],
 };
 
-function uid() { if (crypto?.getRandomValues) { const b = crypto.getRandomValues(new Uint8Array(12)); return Array.from(b, x => x.toString(16).padStart(2, '0')).join(''); } return Math.random().toString(16).slice(2).padEnd(24, '0').slice(0, 24); }
+/* ── Helpers ───────────────────────────────────────────── */
+function uid() {
+  if (crypto?.getRandomValues) {
+    const b = crypto.getRandomValues(new Uint8Array(12));
+    return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  }
+  return Math.random().toString(16).slice(2).padEnd(24, '0').slice(0, 24);
+}
 const strip = h => (h || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const cap = w => w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : '';
-const nameFrom = e => { const p = (e || '').split('@')[0].replace(/[0-9]/g, '').split(/[._-]+/).filter(Boolean); return p.length ? p.map(cap).join(' ') : 'There'; };
-const VAR_REGEX = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+const nameFrom = e => {
+  const p = (e || '').split('@')[0].replace(/[0-9]/g, '').split(/[._-]+/).filter(Boolean);
+  return p.length ? p.map(cap).join(' ') : 'There';
+};
 const findVars = html => { const f = new Set(); let m; const r = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g; while ((m = r.exec(html || '')) !== null) f.add(m[1].toLowerCase()); return Array.from(f); };
-const hasUnmatched = html => { const o = (html.match(/\{\{/g) || []).length; const c = (html.match(/\}\}/g) || []).length; return o !== c; };
-
+const hasUnmatched = html => {
+  const o = (html.match(/\{\{/g) || []).length;
+  const c = (html.match(/\}\}/g) || []).length;
+  return o !== c;
+};
 function formatFileSize(bytes) {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/* ──────────────────────────────────────────────────────────
+   ComposePage
+   ────────────────────────────────────────────────────────── */
 
 export default function ComposePage() {
   const {
@@ -66,6 +85,9 @@ export default function ComposePage() {
     scheduled, scheduledLoading, loadScheduled,
     senderName, hydrateProfile,
   } = useApp();
+  const { navigateTo } = useRouter();
+
+  /* State (unchanged from before — keep all behavior intact) */
   const [recipients, setRecipients] = useState([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -106,7 +128,7 @@ export default function ComposePage() {
   const variableKeys = useMemo(() => ['name', ...variables.map(v => v.variableName)], [variables]);
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
-  // Pre-fill from HR email "Open in Compose" flow
+  /* Pre-fill from HR-email handoff */
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('rf_compose_prefill');
@@ -117,26 +139,50 @@ export default function ComposePage() {
         if (prefill.body_html) setBody(prefill.body_html);
       }
     } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    /* Pre-fill from "Compose to group" handoff (Contacts → Compose) */
+    try {
+      const raw = sessionStorage.getItem('rf_compose_prefill_group');
+      if (raw) {
+        const { groupId, companyName } = JSON.parse(raw);
+        sessionStorage.removeItem('rf_compose_prefill_group');
+        if (groupId) {
+          // Auto-import the group's contacts
+          (async () => {
+            try {
+              const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
+              const d = await r.json();
+              if (r.ok && d.contacts) {
+                handleGroupImport(d.contacts);
+                setNotice({ type: 'info', message: `Loaded contacts from ${companyName || 'group'}` });
+              }
+            } catch { /* silent */ }
+          })();
+        }
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Slash menu
+  /* Slash menu */
   useEffect(() => {
     const quill = quillRef.current?.getEditor(); if (!quill) return;
     const handleKeyDown = e => {
       if (slashMenu.open) {
         if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) e.preventDefault();
         if (e.key === 'ArrowDown') { setSlashHighlight(p => (p + 1) % Math.max(variableKeys.length, 1)); return; }
-        if (e.key === 'ArrowUp') { setSlashHighlight(p => (p - 1 + Math.max(variableKeys.length, 1)) % Math.max(variableKeys.length, 1)); return; }
-        if (e.key === 'Enter') { insertVariable(variableKeys[slashHighlight] || 'name'); return; }
-        if (e.key === 'Escape') { closeSlashMenu(); return; }
+        if (e.key === 'ArrowUp')   { setSlashHighlight(p => (p - 1 + Math.max(variableKeys.length, 1)) % Math.max(variableKeys.length, 1)); return; }
+        if (e.key === 'Enter')     { insertVariable(variableKeys[slashHighlight] || 'name'); return; }
+        if (e.key === 'Escape')    { closeSlashMenu(); return; }
         closeSlashMenu(); return;
       }
       if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const sel = quill.getSelection(true); if (!sel) return;
-        const bounds = quill.getBounds(sel.index); const rect = quill.root.getBoundingClientRect();
+        const bounds = quill.getBounds(sel.index);
+        const rect = quill.root.getBoundingClientRect();
         setSlashMenu({ open: true, left: rect.left + bounds.left, top: rect.top + bounds.top + bounds.height + 4 });
-        setSlashTriggerIdx(sel.index); setSlashHighlight(0);
+        setSlashTriggerIdx(sel.index);
+        setSlashHighlight(0);
       }
     };
     quill.root.addEventListener('keydown', handleKeyDown);
@@ -144,18 +190,57 @@ export default function ComposePage() {
   }, [slashMenu.open, slashHighlight, variableKeys]);
 
   function closeSlashMenu() { setSlashMenu({ open: false, top: 0, left: 0 }); setSlashTriggerIdx(null); }
-  function insertVariable(key) { const q = quillRef.current?.getEditor(); if (!q || slashTriggerIdx === null) return; q.deleteText(slashTriggerIdx, 1); q.insertEmbed(slashTriggerIdx, 'variable', key); q.insertText(slashTriggerIdx + 1, ' '); q.setSelection(slashTriggerIdx + 2, 0); closeSlashMenu(); }
+  function insertVariable(key) {
+    const q = quillRef.current?.getEditor();
+    if (!q || slashTriggerIdx === null) return;
+    q.deleteText(slashTriggerIdx, 1);
+    q.insertEmbed(slashTriggerIdx, 'variable', key);
+    q.insertText(slashTriggerIdx + 1, ' ');
+    q.setSelection(slashTriggerIdx + 2, 0);
+    closeSlashMenu();
+  }
 
-  // Recipients
-  function addRow() { setRecipients(p => [...p, { _id: uid(), email: '', name: '', variables: {}, status: 'pending' }]); if (errors.recipientsGeneral) setErrors(p => ({ ...p, recipientsGeneral: undefined })); }
-  function updateRecipient(idx, field, value) { setRecipients(p => { const n = [...p]; n[idx] = { ...n[idx], [field]: value }; return n; }); }
-  function updateRecipientVariable(idx, key, value) { setRecipients(p => { const n = [...p]; n[idx] = { ...n[idx], variables: { ...(n[idx].variables || {}), [key]: value } }; return n; }); }
+  /* Recipients */
+  function addRow() {
+    setRecipients(p => [...p, { _id: uid(), email: '', name: '', variables: {}, status: 'pending' }]);
+    if (errors.recipientsGeneral) setErrors(p => ({ ...p, recipientsGeneral: undefined }));
+  }
+  function updateRecipient(idx, field, value) {
+    setRecipients(p => { const n = [...p]; n[idx] = { ...n[idx], [field]: value }; return n; });
+  }
+  function updateRecipientVariable(idx, key, value) {
+    setRecipients(p => { const n = [...p]; n[idx] = { ...n[idx], variables: { ...(n[idx].variables || {}), [key]: value } }; return n; });
+  }
   function deleteRecipient(idx) { setRecipients(p => p.filter((_, i) => i !== idx)); }
-  function onEmailBlur(idx) { setRecipients(p => { const n = [...p], r = n[idx]; if (!r || !emailRegex.test(r.email || '')) return p; n[idx] = { ...r, name: r.name?.trim() ? r.name : nameFrom(r.email) }; return n; }); }
-  function doBulkPaste(text) { const parsed = parseBulk(text); if (!parsed.length) return; setRecipients(parsed); setBulkMode(false); setBulkInput(''); }
-  function parseBulk(raw) { if (!raw) return []; const seen = new Set(), list = []; for (const t of raw.split(/[\n,\s]+/).map(s => s.trim()).filter(Boolean)) { if (!emailRegex.test(t)) continue; const e = t.toLowerCase(); if (seen.has(e)) continue; seen.add(e); list.push({ email: e, name: nameFrom(e), variables: {}, _id: uid(), status: 'pending' }); } return list; }
+  function onEmailBlur(idx) {
+    setRecipients(p => {
+      const n = [...p], r = n[idx];
+      if (!r || !emailRegex.test(r.email || '')) return p;
+      n[idx] = { ...r, name: r.name?.trim() ? r.name : nameFrom(r.email) };
+      return n;
+    });
+  }
+  function doBulkPaste(text) {
+    const parsed = parseBulk(text);
+    if (!parsed.length) return;
+    setRecipients(parsed);
+    setBulkMode(false);
+    setBulkInput('');
+  }
+  function parseBulk(raw) {
+    if (!raw) return [];
+    const seen = new Set(), list = [];
+    for (const t of raw.split(/[\n,\s]+/).map(s => s.trim()).filter(Boolean)) {
+      if (!emailRegex.test(t)) continue;
+      const e = t.toLowerCase();
+      if (seen.has(e)) continue;
+      seen.add(e);
+      list.push({ email: e, name: nameFrom(e), variables: {}, _id: uid(), status: 'pending' });
+    }
+    return list;
+  }
 
-  // Attachments
+  /* Attachments */
   function validateAndAddFiles(files) {
     const existing = [...attachments];
     const remaining = MAX_ATTACHMENTS - existing.length;
@@ -186,10 +271,9 @@ export default function ComposePage() {
       reader.readAsDataURL(file);
     });
   }
-
   function removeAttachment(id) { setAttachments(p => p.filter(a => a.id !== id)); }
 
-  // Drag & drop
+  /* Drag & drop */
   useEffect(() => {
     const el = dropRef.current; if (!el) return;
     const onDragOver = e => { e.preventDefault(); setIsDragging(true); };
@@ -201,11 +285,27 @@ export default function ComposePage() {
     return () => { el.removeEventListener('dragover', onDragOver); el.removeEventListener('dragleave', onDragLeave); el.removeEventListener('drop', onDrop); };
   }, [attachments]);
 
-  // Validation
-  function validate() { const e = { recipients: {} }; if (!subject.trim()) e.subject = 'Required'; if (!strip(body)) e.body = 'Required'; if (!recipients.length) e.recipientsGeneral = 'Add at least one recipient'; if (recipients.length > 50) e.recipientsGeneral = 'Max 50 recipients per send'; if (hasUnmatched(body)) e.body = 'Invalid variable syntax.'; recipients.forEach(r => { const re = {}; if (!emailRegex.test(r.email || '')) re.email = 'Invalid'; if (!r.name?.trim()) re.name = 'Required'; if (Object.keys(re).length) e.recipients[r._id] = re; }); return e; }
-  const hasErr = e => { const rr = Object.values(e.recipients || {}).some(o => Object.keys(o || {}).length); return !!(e.subject || e.body || e.recipientsGeneral || rr); };
+  /* Validation */
+  function validate() {
+    const e = { recipients: {} };
+    if (!subject.trim()) e.subject = 'Subject is required';
+    if (!strip(body)) e.body = 'Message body is required';
+    if (!recipients.length) e.recipientsGeneral = 'Add at least one recipient';
+    if (recipients.length > 50) e.recipientsGeneral = 'Max 50 recipients per send';
+    if (hasUnmatched(body)) e.body = 'Invalid variable syntax — check {{ }} pairs.';
+    recipients.forEach(r => {
+      const re = {};
+      if (!emailRegex.test(r.email || '')) re.email = 'Invalid email';
+      if (!r.name?.trim()) re.name = 'Required';
+      if (Object.keys(re).length) e.recipients[r._id] = re;
+    });
+    return e;
+  }
+  const hasErr = e => {
+    const rr = Object.values(e.recipients || {}).some(o => Object.keys(o || {}).length);
+    return !!(e.subject || e.body || e.recipientsGeneral || rr);
+  };
 
-  // Campaign payload
   function buildPayload() {
     return {
       subject,
@@ -221,17 +321,22 @@ export default function ComposePage() {
 
   async function saveDraft(toast = false) {
     const p = buildPayload();
-    if (!p.subject || !p.body_html || !p.recipients.length) { if (toast) setNotice({ type: 'error', message: 'Need subject, body & recipients' }); return; }
+    if (!p.subject || !p.body_html || !p.recipients.length) {
+      if (toast) setNotice({ type: 'error', message: 'Need subject, body & recipients' });
+      return;
+    }
     setSaving(true);
     try {
       let res;
-      if (draftId) { res = await authedFetch(`${API_BASE}/api/campaigns/${draftId}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify(p) }); }
-      else { res = await authedFetch(`${API_BASE}/api/campaigns`, { method: 'POST', headers: hdrs, body: JSON.stringify(p) }); }
-      const d = await res.json(); if (!res.ok) throw new Error(d.error || 'Save failed');
+      if (draftId) res = await authedFetch(`${API_BASE}/api/campaigns/${draftId}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify(p) });
+      else         res = await authedFetch(`${API_BASE}/api/campaigns`,            { method: 'POST',  headers: hdrs, body: JSON.stringify(p) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Save failed');
       if (!draftId && d.id) setDraftId(d.id);
       if (toast) setNotice({ type: 'info', message: 'Draft saved' });
       loadDrafts();
-    } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setSaving(false); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setSaving(false); }
   }
 
   async function doPreview(recipientId = null) {
@@ -244,22 +349,21 @@ export default function ComposePage() {
       if (!tgt) throw new Error('No recipients');
       const payload = buildPayload();
       const res = await authedFetch(`${API_BASE}/api/campaigns/preview`, { method: 'POST', headers: hdrs, body: JSON.stringify({ ...payload, recipient_id: tgt._id }) });
-      const d = await res.json(); if (!res.ok) throw new Error(d.error || 'Preview failed');
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Preview failed');
       if (d.warnings?.length) setNotice({ type: 'info', message: d.warnings[0] });
       setPreviewMeta(tgt); setPreviewRecipientId(tgt._id); setPreviewHtml(d.html || ''); setPreviewOpen(true);
-    } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsPreviewing(false); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setIsPreviewing(false); }
   }
 
   async function doShuffle() {
     if (!recipients.length || isPreviewing) return;
-    // Pick a different recipient than current
     let tgt;
     if (recipients.length > 1) {
       const others = recipients.filter(r => r._id !== previewRecipientId);
       tgt = others[Math.floor(Math.random() * others.length)];
-    } else {
-      tgt = recipients[0];
-    }
+    } else tgt = recipients[0];
     await doPreview(tgt._id);
   }
 
@@ -271,11 +375,15 @@ export default function ComposePage() {
       const payload = buildPayload();
       const res = await authedFetch(`${API_BASE}/api/campaigns/send-now`, { method: 'POST', headers: hdrs, body: JSON.stringify({ ...payload, confirm_bulk_send: recipients.length > 5 }) });
       const d = await res.json();
-      if (!res.ok) { if (res.status === 401 || d.authError) { setNotice({ type: 'error', message: 'Gmail authorization expired. Please reconnect.' }); hydrateProfile(); return; } throw new Error(d.error || 'Send failed'); }
+      if (!res.ok) {
+        if (res.status === 401 || d.authError) { setNotice({ type: 'error', message: 'Gmail authorization expired. Please reconnect.' }); hydrateProfile(); return; }
+        throw new Error(d.error || 'Send failed');
+      }
       setNotice({ type: 'success', message: `Sent to ${recipients.length} recipients` });
       setPreviewOpen(false);
       loadHistory(); loadDrafts();
-    } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsSending(false); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setIsSending(false); }
   }
 
   async function doSchedule() {
@@ -288,11 +396,15 @@ export default function ComposePage() {
       const payload = buildPayload();
       const res = await authedFetch(`${API_BASE}/api/campaigns/schedule-send`, { method: 'POST', headers: hdrs, body: JSON.stringify({ ...payload, scheduledAt: scheduledAt.toISOString() }) });
       const d = await res.json();
-      if (!res.ok) { if (d.authError) { setNotice({ type: 'error', message: 'Gmail authorization expired. Please reconnect.' }); hydrateProfile(); return; } throw new Error(d.error || 'Schedule failed'); }
+      if (!res.ok) {
+        if (d.authError) { setNotice({ type: 'error', message: 'Gmail authorization expired. Please reconnect.' }); hydrateProfile(); return; }
+        throw new Error(d.error || 'Schedule failed');
+      }
       setNotice({ type: 'success', message: `Scheduled for ${scheduledAt.toLocaleString()}` });
       setScheduleOpen(false);
       loadDrafts();
-    } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsScheduling(false); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setIsScheduling(false); }
   }
 
   async function loadCampaign(id) {
@@ -306,34 +418,59 @@ export default function ComposePage() {
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
 
-  // Variables
+  /* Variables */
   async function createVariable() {
     const cleaned = String(varForm.variableName || '').toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (!cleaned) { setNotice({ type: 'error', message: 'Variable name required' }); return; }
     if (variables.length >= MAX_CUSTOM_VARIABLES) { setNotice({ type: 'error', message: 'Max 2 custom variables' }); return; }
     try {
       const res = await authedFetch(`${API_BASE}/api/variables`, { method: 'POST', headers: hdrs, body: JSON.stringify({ variableName: cleaned, description: varForm.description }) });
-      const d = await res.json(); if (!res.ok) throw new Error(d.error);
-      setVariables(p => [...p, d]); setVarForm({ variableName: '', description: '' }); setNotice({ type: 'success', message: 'Variable added' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setVariables(p => [...p, d]);
+      setVarForm({ variableName: '', description: '' });
+      setNotice({ type: 'success', message: 'Variable added' });
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
   async function deleteVariable(id) {
     const target = variables.find(v => v.id === id); if (!target) return;
-    setWarningDialog({ title: 'Delete variable?', message: `Remove {{${target.variableName}}}?`, confirmText: 'Delete', intent: 'danger', onConfirm: async () => { try { if (!String(id).startsWith('local-')) { const res = await authedFetch(`${API_BASE}/api/variables/${id}`, { method: 'DELETE' }); const d = await res.json(); if (!res.ok) throw new Error(d.error); } setVariables(p => p.filter(v => v.id !== id)); setNotice({ type: 'info', message: 'Variable deleted' }); } catch (e) { setNotice({ type: 'error', message: e.message }); } } });
+    setWarningDialog({
+      title: 'Delete variable?',
+      message: `This removes the {{${target.variableName}}} placeholder from your library. Existing campaigns are unaffected.`,
+      confirmText: 'Delete', intent: 'danger',
+      onConfirm: async () => {
+        try {
+          if (!String(id).startsWith('local-')) {
+            const res = await authedFetch(`${API_BASE}/api/variables/${id}`, { method: 'DELETE' });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error);
+          }
+          setVariables(p => p.filter(v => v.id !== id));
+          setNotice({ type: 'info', message: 'Variable deleted' });
+        } catch (e) { setNotice({ type: 'error', message: e.message }); }
+      },
+    });
   }
 
-  // Templates
-  function importTemplate(t) { setSubject(t.subject || ''); setBody(t.body_html || ''); setNotice({ type: 'info', message: `Template "${t.title}" applied` }); }
+  /* Templates */
+  function importTemplate(t) {
+    setSubject(t.subject || '');
+    setBody(t.body_html || '');
+    setNotice({ type: 'info', message: `Template "${t.title}" applied` });
+  }
   async function saveTemplate() {
     if (!templateTitle.trim()) { setNotice({ type: 'error', message: 'Title required' }); return; }
     try {
       const res = await authedFetch(`${API_BASE}/api/templates`, { method: 'POST', headers: hdrs, body: JSON.stringify({ title: templateTitle.trim(), subject, body_html: body }) });
-      const d = await res.json(); if (!res.ok) throw new Error(d.error);
-      setNotice({ type: 'success', message: 'Template saved' }); setTemplateDrawer(null); loadTemplates();
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setNotice({ type: 'success', message: 'Template saved' });
+      setTemplateDrawer(null);
+      loadTemplates();
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
 
-  // Group import
+  /* Groups */
   function handleGroupImport(contacts) {
     const incoming = (contacts || []).filter(c => c?.email);
     if (!incoming.length) { setNotice({ type: 'error', message: 'No contacts to import' }); return; }
@@ -358,11 +495,8 @@ export default function ComposePage() {
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
       handleGroupImport(d.contacts || []);
       setImportModalOpen(false);
-    } catch (e) {
-      setNotice({ type: 'error', message: e.message });
-    } finally {
-      setImportingGroupId('');
-    }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setImportingGroupId(''); }
   }
 
   async function cancelScheduled(id) {
@@ -374,12 +508,15 @@ export default function ComposePage() {
       if (!r.ok) throw new Error(d.error || 'Failed to cancel');
       setNotice({ type: 'info', message: 'Scheduled send cancelled' });
       loadScheduled(); loadDrafts();
-    } catch (e) {
-      setNotice({ type: 'error', message: e.message });
-    } finally { setCancellingId(null); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setCancellingId(null); }
   }
 
-  function resetComposeState() { setRecipients([]); setSubject(''); setBody(''); setDraftId(null); setErrors({ recipients: {} }); setGroupImports([]); setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]); }
+  function resetComposeState() {
+    setRecipients([]); setSubject(''); setBody(''); setDraftId(null);
+    setErrors({ recipients: {} }); setGroupImports([]);
+    setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]);
+  }
 
   async function doRewrite() {
     if (!strip(body)) { setNotice({ type: 'error', message: 'Write a body first before rewriting' }); return; }
@@ -392,151 +529,365 @@ export default function ComposePage() {
         throw new Error(d.error || 'Rewrite failed');
       }
       if (d.body_html) { setBody(d.body_html); setNotice({ type: 'success', message: 'Body rewritten' }); }
-    } catch (e) { setNotice({ type: 'error', message: e.message }); } finally { setIsRewriting(false); }
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setIsRewriting(false); }
   }
 
-  // Min datetime for schedule picker (now + 1 minute)
   const minDateTime = useMemo(() => {
     const d = new Date(); d.setMinutes(d.getMinutes() + 1);
     return d.toISOString().slice(0, 16);
   }, []);
 
+  const totalAttachmentBytes = useMemo(() => attachments.reduce((s, a) => s + (a.size || 0), 0), [attachments]);
+  const recipientCount = recipients.length;
+  const canSend = gmailConnected && !isSending && !isPreviewing;
+
+  /* ──────────────────────────────────────────────────────
+     Render
+     ────────────────────────────────────────────────────── */
+
   return (
-    <div className="rf-compose" ref={dropRef} style={isDragging ? { outline: '2px dashed var(--rf-accent)', outlineOffset: '4px' } : {}}>
-      <div className="rf-page-header">
-        <div><h1 className="rf-page-header__title">Compose</h1><p className="rf-page-header__subtitle">Draft and send personalized outreach emails</p></div>
-      </div>
-      {/* Subject */}
-      <input className="rf-compose__subject" value={subject} onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }} placeholder="Subject line…" />
-      {errors.subject && <span className="rf-field-error">{errors.subject}</span>}
-
-      {/* Toolbar */}
-      <div className="rf-compose__toolbar">
-        <div className="rf-compose__toolbar-left">
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setBulkMode(!bulkMode)}><ClipboardPaste size={13} />{bulkMode ? 'Manual' : 'Paste Bulk'}</button>
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}><UserPlus size={13} />Import Group</button>
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={resetComposeState}><RotateCcw size={13} />Reset</button>
-          <span style={{ width: 1, background: 'var(--rf-border-subtle)', alignSelf: 'stretch', margin: '0 4px' }} />
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadTemplates(); setTemplateBrowseOpen(true); }}><FileText size={13} />Templates</button>
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadHistory(); loadDrafts(); loadScheduled(); setHistoryDrawerOpen(true); }}><History size={13} />History</button>
+    <div className="rf-page" ref={dropRef} style={isDragging ? { background: 'var(--rf-accent-subtle)', transition: 'background 120ms' } : undefined}>
+      {/* Header */}
+      <header className="rf-page-header">
+        <div className="rf-page-header__lead">
+          <div className="rf-page-header__eyebrow"><PenLineDot /> Compose</div>
+          <h1 className="rf-page-header__title">New outreach</h1>
+          <p className="rf-page-header__subtitle">
+            Personalized email with variables, AI rewrite, and scheduled delivery. Drafts auto-save when you save.
+          </p>
         </div>
-        <div className="rf-compose__toolbar-right">
-          <div className="rf-name-format">
-            <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginRight: 6 }}>Name:</span>
-            <label className="rf-radio-label">
-              <input type="radio" name="nameFormat" value="first" checked={nameFormat === 'first'} onChange={() => setNameFormat('first')} />
-              First only
-            </label>
-            <label className="rf-radio-label">
-              <input type="radio" name="nameFormat" value="full" checked={nameFormat === 'full'} onChange={() => setNameFormat('full')} />
-              Full name
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* Recipients */}
-      <div className="rf-recipients">
-        <div className="rf-recipients__header">
-          <span style={{ fontSize: 'var(--rf-text-sm)', fontWeight: 600, color: 'var(--rf-text-secondary)' }}><Users size={14} style={{ display: 'inline', verticalAlign: '-2px' }} /> Recipients ({recipients.length})</span>
-          {!bulkMode && <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={addRow}><Plus size={13} />Add</button>}
-        </div>
-        {bulkMode ? (
-          <textarea className="rf-textarea" rows={4} placeholder="Paste emails (comma/newline separated)" value={bulkInput} onChange={e => setBulkInput(e.target.value)} onPaste={e => { e.preventDefault(); doBulkPaste(e.clipboardData?.getData('text') || ''); }} />
-        ) : (
-          <div className="rf-recipients__list">
-            {recipients.map((r, idx) => {
-              const errs = errors.recipients?.[r._id] || {};
-              return (
-                <div className="rf-recipient-row" key={r._id} style={{ gridTemplateColumns: `1fr 1fr ${variables.length ? `repeat(${Math.min(variables.length, 2)},1fr)` : ''} 28px` }}>
-                  <div><input className="rf-input" value={r.email} placeholder="email@example.com" onChange={e => updateRecipient(idx, 'email', e.target.value)} onBlur={() => onEmailBlur(idx)} />{errs.email && <small className="rf-field-error">{errs.email}</small>}</div>
-                  <div><input className="rf-input" value={r.name} placeholder="Name" onChange={e => updateRecipient(idx, 'name', e.target.value)} />{errs.name && <small className="rf-field-error">{errs.name}</small>}</div>
-                  {variables.map(v => <div key={v.variableName}><input className="rf-input" value={r.variables?.[v.variableName] || ''} placeholder={v.variableName} onChange={e => updateRecipientVariable(idx, v.variableName, e.target.value)} /></div>)}
-                  <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => deleteRecipient(idx)} title="Remove">✕</button>
-                </div>
-              );
-            })}
-            {!recipients.length && <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-muted)', padding: 'var(--rf-sp-2) 0' }}>No recipients yet.</p>}
-          </div>
-        )}
-        {errors.recipientsGeneral && <span className="rf-field-error">{errors.recipientsGeneral}</span>}
-      </div>
-
-      {/* Variables */}
-      <div className="rf-varbar">
-        <span className="rf-chip rf-chip--active">{'{{name}}'}</span>
-        {variables.map(v => (
-          <span className="rf-chip" key={v.id}>
-            {`{{${v.variableName}}}`}
-            <button className="rf-chip__remove" onClick={() => deleteVariable(v.id)}><Trash2 size={11} /></button>
-          </span>
-        ))}
-        {variables.length < MAX_CUSTOM_VARIABLES && (
-          <div className="rf-varbar__add">
-            <input className="rf-input" style={{ width: 110, height: 26, fontSize: 'var(--rf-text-xs)' }} placeholder="var name" value={varForm.variableName} onChange={e => setVarForm(f => ({ ...f, variableName: e.target.value }))} />
-            <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={createVariable}><Plus size={12} />Add</button>
-          </div>
-        )}
-        <span style={{ marginLeft: 'auto', fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)' }}>{variables.length}/{MAX_CUSTOM_VARIABLES} custom vars</span>
-      </div>
-
-      {/* Editor */}
-      <div className="rf-compose__body">
-        <p className="rf-compose__hint">Type <b>/</b> to insert variables · Drag files to attach</p>
-        <div className="rf-compose__editor-wrap">
-          <ReactQuill ref={quillRef} theme="snow" value={body} onChange={v => { setBody(v); if (errors.body && strip(v)) setErrors(p => ({ ...p, body: undefined })); }} modules={QUILL_MODULES} placeholder="Write your email…" />
-        </div>
-        {slashMenu.open && (
-          <div className="rf-slash-menu" style={{ position: 'fixed', top: slashMenu.top, left: slashMenu.left, zIndex: 100 }}>
-            {variableKeys.map((opt, idx) => (
-              <button key={opt} className={idx === slashHighlight ? 'active' : ''} onMouseDown={e => { e.preventDefault(); insertVariable(opt); }}>{`{{${opt}}}`}</button>
-            ))}
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--rf-sp-2)' }}>
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={doRewrite} disabled={isRewriting || !strip(body)} title="Rewrite body with AI (requires AI configured in Settings)">
-            {isRewriting ? <><Loader size={13} className="rf-spin" />Rewriting…</> : <><Sparkles size={13} />Rewrite with AI</>}
+        <div className="rf-page-header__actions">
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadTemplates(); setTemplateBrowseOpen(true); }} title="Browse saved templates">
+            <FileText size={14} /> Templates
+            {templates.length > 0 && <span className="rf-num" style={{ color: 'var(--rf-text-faint)', fontSize: 11 }}>{templates.length}</span>}
+          </button>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadHistory(); loadDrafts(); loadScheduled(); setHistoryDrawerOpen(true); }} title="Recent campaigns and drafts">
+            <History size={14} /> History
+          </button>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={resetComposeState} title="Reset to a blank compose">
+            <RotateCcw size={14} /> Reset
           </button>
         </div>
-        {errors.body && <span className="rf-field-error">{errors.body}</span>}
-      </div>
+      </header>
 
-      {/* Attachments */}
-      <div className="rf-attachments">
-        <div className="rf-attachments__bar">
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => fileInputRef.current?.click()} disabled={attachments.length >= MAX_ATTACHMENTS}>
-            <Paperclip size={13} />Attach File
+      {!gmailConnected && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+          padding: '12px 16px', marginBottom: 'var(--rf-sp-5)',
+          background: 'var(--rf-warning-muted)',
+          border: '1px solid rgba(232, 146, 68, 0.32)',
+          borderRadius: 'var(--rf-radius-md)',
+          color: 'var(--rf-warning-text)',
+        }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1, fontSize: 'var(--rf-text-base)' }}>
+            <strong>Gmail is not connected.</strong> Connect your Google account in Settings before you can preview or send.
+          </div>
+          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => navigateTo('/settings')}>
+            Open Settings <ChevronRight size={13} />
           </button>
-          {attachments.length > 0 && (
-            <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>
-              {attachments.length}/{MAX_ATTACHMENTS} · {formatFileSize(attachments.reduce((s, a) => s + a.size, 0))} / {MAX_ATTACHMENT_TOTAL_MB}MB
-            </span>
-          )}
         </div>
-        {attachments.length > 0 && (
-          <div className="rf-attachments__chips">
-            {attachments.map(att => (
-              <div key={att.id} className="rf-attachment-chip">
-                <Paperclip size={11} />
-                <span className="rf-attachment-chip__name">{att.name}</span>
-                <span className="rf-attachment-chip__size">{formatFileSize(att.size)}</span>
-                <button className="rf-attachment-chip__remove" onClick={() => removeAttachment(att.id)} title="Remove"><X size={11} /></button>
+      )}
+
+      <div className="rf-compose">
+        {/* Recipients */}
+        <section className="rf-cp-card">
+          <header className="rf-cp-card__head">
+            <div className="rf-cp-card__title">
+              <Users size={16} />
+              <span>Recipients</span>
+              {recipientCount > 0 && <span className="rf-cp-card__count rf-num">{recipientCount}</span>}
+            </div>
+            <div className="rf-cp-card__toolbar">
+              {!bulkMode && (
+                <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={addRow}>
+                  <Plus size={13} /> Add
+                </button>
+              )}
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setBulkMode(v => !v)}>
+                <ClipboardPaste size={13} /> {bulkMode ? 'Manual' : 'Paste bulk'}
+              </button>
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}>
+                <UserPlus size={13} /> From group
+              </button>
+              <span className="rf-toolbar__divider" />
+              <div className="rf-cp-name-format" title="How {{name}} renders for each recipient">
+                <span style={{ fontSize: 12, color: 'var(--rf-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Name</span>
+                <label className="rf-cp-name-format__opt">
+                  <input type="radio" name="nameFormat" value="first" checked={nameFormat === 'first'} onChange={() => setNameFormat('first')} />
+                  First
+                </label>
+                <label className="rf-cp-name-format__opt">
+                  <input type="radio" name="nameFormat" value="full" checked={nameFormat === 'full'} onChange={() => setNameFormat('full')} />
+                  Full
+                </label>
               </div>
-            ))}
-          </div>
-        )}
-        <input ref={fileInputRef} type="file" multiple accept={ALLOWED_EXTENSIONS.join(',')} style={{ display: 'none' }} onChange={e => { validateAndAddFiles(e.target.files); e.target.value = ''; }} />
-      </div>
+            </div>
+          </header>
 
-      {/* Actions */}
-      <div className="rf-compose__actions">
-        <div className="rf-compose__actions-left">
-          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => saveDraft(true)} disabled={saving}><FileText size={14} />{saving ? 'Saving…' : 'Save Draft'}</button>
-          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => { if (!subject.trim() || !strip(body)) { setNotice({ type: 'error', message: 'Write subject & body first' }); return; } setTemplateTitle(''); setTemplateDrawer('create'); }}><Bookmark size={14} />Save Template</button>
-        </div>
-        <div className="rf-compose__actions-right">
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setScheduleOpen(true)} disabled={!gmailConnected}><Calendar size={14} />Schedule</button>
-          <button className="rf-btn rf-btn--primary" onClick={() => doPreview()} disabled={isPreviewing || !gmailConnected}><Eye size={15} />{isPreviewing ? 'Loading…' : 'Preview & Send'}</button>
+          {bulkMode ? (
+            <div className="rf-cp-bulk">
+              <textarea
+                className="rf-textarea"
+                rows={5}
+                placeholder="Paste emails (comma, space, or newline separated). I'll dedupe and infer names from addresses."
+                value={bulkInput}
+                onChange={e => setBulkInput(e.target.value)}
+                onPaste={e => { e.preventDefault(); doBulkPaste(e.clipboardData?.getData('text') || ''); }}
+              />
+            </div>
+          ) : recipientCount === 0 ? (
+            <div className="rf-cp-recipients__empty">
+              <AtSign size={18} />
+              <p>
+                No recipients yet. Add manually, paste bulk, or import from a contact group.
+                {variables.length === 0 ? '' : ' Custom variables will appear as extra columns per row.'}
+              </p>
+            </div>
+          ) : (
+            <div className="rf-cp-recipients" role="table" aria-label="Recipients">
+              <div className="rf-cp-recipients__row rf-cp-recipients__row--head" style={{ gridTemplateColumns: gridTemplate(variables.length) }}>
+                <div>Email</div>
+                <div>Name</div>
+                {variables.map(v => (
+                  <div key={v.variableName} title={v.description || `Per-recipient {{${v.variableName}}}`}>
+                    {v.variableName}
+                  </div>
+                ))}
+                <div />
+              </div>
+              {recipients.map((r, idx) => {
+                const errs = errors.recipients?.[r._id] || {};
+                return (
+                  <div key={r._id} className="rf-cp-recipients__row" style={{ gridTemplateColumns: gridTemplate(variables.length) }}>
+                    <div>
+                      <input
+                        className={`rf-input rf-input--sm${errs.email ? ' rf-input--err' : ''}`}
+                        value={r.email}
+                        placeholder="email@example.com"
+                        onChange={e => updateRecipient(idx, 'email', e.target.value)}
+                        onBlur={() => onEmailBlur(idx)}
+                      />
+                      {errs.email && <small className="rf-field-error">{errs.email}</small>}
+                    </div>
+                    <div>
+                      <input
+                        className={`rf-input rf-input--sm${errs.name ? ' rf-input--err' : ''}`}
+                        value={r.name}
+                        placeholder="Recipient name"
+                        onChange={e => updateRecipient(idx, 'name', e.target.value)}
+                      />
+                      {errs.name && <small className="rf-field-error">{errs.name}</small>}
+                    </div>
+                    {variables.map(v => (
+                      <div key={v.variableName}>
+                        <input
+                          className="rf-input rf-input--sm"
+                          value={r.variables?.[v.variableName] || ''}
+                          placeholder={v.variableName}
+                          onChange={e => updateRecipientVariable(idx, v.variableName, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                    <button
+                      className="rf-cp-recipients__remove"
+                      onClick={() => deleteRecipient(idx)}
+                      title="Remove recipient"
+                      aria-label="Remove recipient"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {errors.recipientsGeneral && <span className="rf-field-error" style={{ marginTop: 8, display: 'block' }}>{errors.recipientsGeneral}</span>}
+        </section>
+
+        {/* Subject */}
+        <section className="rf-cp-card rf-cp-card--subject">
+          <label className="rf-cp-card__subject-label">Subject</label>
+          <input
+            className="rf-cp-subject-input"
+            value={subject}
+            onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }}
+            placeholder='e.g. "Software Engineer interest — Stripe"'
+          />
+          {errors.subject && <span className="rf-field-error">{errors.subject}</span>}
+        </section>
+
+        {/* Message */}
+        <section className="rf-cp-card">
+          <header className="rf-cp-card__head">
+            <div className="rf-cp-card__title">
+              <Variable size={16} />
+              <span>Message</span>
+              <span className="rf-cp-card__hint">
+                Type <kbd>/</kbd> to insert a variable
+              </span>
+            </div>
+            <div className="rf-cp-card__toolbar">
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                onClick={doRewrite}
+                disabled={isRewriting || !strip(body)}
+                title="Rewrite the body with AI (requires AI configured in Settings)"
+              >
+                {isRewriting ? <><Loader size={13} className="rf-spin" /> Rewriting…</> : <><Wand2 size={13} /> Rewrite with AI</>}
+              </button>
+            </div>
+          </header>
+
+          <div className="rf-cp-vars">
+            <span
+              className={`rf-chip rf-chip--interactive ${variableKeys.includes('name') ? 'rf-chip--active' : ''}`}
+              onClick={() => { const q = quillRef.current?.getEditor(); if (q) { const idx = q.getSelection(true)?.index ?? q.getLength(); q.insertEmbed(idx, 'variable', 'name'); q.insertText(idx + 1, ' '); q.setSelection(idx + 2, 0); }}}
+              title="Click to insert {{name}} at cursor"
+            >
+              {'{{name}}'}
+            </span>
+            {variables.map(v => (
+              <span key={v.id} className="rf-chip rf-chip--interactive" title="Click to insert">
+                <span
+                  onClick={() => { const q = quillRef.current?.getEditor(); if (q) { const idx = q.getSelection(true)?.index ?? q.getLength(); q.insertEmbed(idx, 'variable', v.variableName); q.insertText(idx + 1, ' '); q.setSelection(idx + 2, 0); }}}
+                  style={{ cursor: 'pointer' }}
+                >{`{{${v.variableName}}}`}</span>
+                <button
+                  className="rf-chip__remove"
+                  onClick={(e) => { e.stopPropagation(); deleteVariable(v.id); }}
+                  title="Delete variable"
+                  aria-label="Delete variable"
+                ><Trash2 size={11} /></button>
+              </span>
+            ))}
+            {variables.length < MAX_CUSTOM_VARIABLES && (
+              <div className="rf-cp-vars__add">
+                <input
+                  className="rf-input rf-input--sm"
+                  style={{ width: 140 }}
+                  placeholder="custom var"
+                  value={varForm.variableName}
+                  onChange={e => setVarForm(f => ({ ...f, variableName: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && createVariable()}
+                />
+                <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={createVariable}>
+                  <Plus size={12} /> Add
+                </button>
+              </div>
+            )}
+            <span className="rf-cp-vars__count">{variables.length}/{MAX_CUSTOM_VARIABLES} custom</span>
+          </div>
+
+          <div className="rf-cp-editor">
+            <ReactQuill
+              ref={quillRef}
+              theme="snow"
+              value={body}
+              onChange={v => { setBody(v); if (errors.body && strip(v)) setErrors(p => ({ ...p, body: undefined })); }}
+              modules={QUILL_MODULES}
+              placeholder="Hi {{name}}, …"
+            />
+          </div>
+
+          {slashMenu.open && (
+            <div className="rf-slash-menu" style={{ position: 'fixed', top: slashMenu.top, left: slashMenu.left, zIndex: 100 }}>
+              {variableKeys.map((opt, idx) => (
+                <button
+                  key={opt}
+                  className={idx === slashHighlight ? 'active' : ''}
+                  onMouseDown={e => { e.preventDefault(); insertVariable(opt); }}
+                >{`{{${opt}}}`}</button>
+              ))}
+            </div>
+          )}
+
+          {errors.body && <span className="rf-field-error">{errors.body}</span>}
+        </section>
+
+        {/* Attachments */}
+        <section className="rf-cp-card">
+          <header className="rf-cp-card__head">
+            <div className="rf-cp-card__title">
+              <Paperclip size={16} />
+              <span>Attachments</span>
+              {attachments.length > 0 && <span className="rf-cp-card__count rf-num">{attachments.length}</span>}
+              <span className="rf-cp-card__hint">
+                {attachments.length === 0
+                  ? 'Drag files anywhere on this page, or click attach.'
+                  : `${formatFileSize(totalAttachmentBytes)} of ${MAX_ATTACHMENT_TOTAL_MB} MB · ${MAX_ATTACHMENTS - attachments.length} more allowed`}
+              </span>
+            </div>
+            <div className="rf-cp-card__toolbar">
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={attachments.length >= MAX_ATTACHMENTS}
+              >
+                <Paperclip size={13} /> Attach file
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ALLOWED_EXTENSIONS.join(',')}
+                style={{ display: 'none' }}
+                onChange={e => { validateAndAddFiles(e.target.files); e.target.value = ''; }}
+              />
+            </div>
+          </header>
+          {attachments.length > 0 && (
+            <div className="rf-attachments__chips" style={{ marginTop: 8 }}>
+              {attachments.map(att => (
+                <div key={att.id} className="rf-attachment-chip">
+                  <Paperclip size={11} />
+                  <span className="rf-attachment-chip__name" title={att.name}>{att.name}</span>
+                  <span className="rf-attachment-chip__size">{formatFileSize(att.size)}</span>
+                  <button className="rf-attachment-chip__remove" onClick={() => removeAttachment(att.id)} title="Remove" aria-label="Remove attachment">
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Action bar */}
+        <div className="rf-cp-actions">
+          <div className="rf-cp-actions__group">
+            <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => saveDraft(true)} disabled={saving}>
+              {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : <><FileText size={13} /> Save draft</>}
+            </button>
+            <button
+              className="rf-btn rf-btn--ghost rf-btn--sm"
+              onClick={() => {
+                if (!subject.trim() || !strip(body)) { setNotice({ type: 'error', message: 'Write subject & body first' }); return; }
+                setTemplateTitle('');
+                setTemplateDrawer('create');
+              }}
+            >
+              <Bookmark size={13} /> Save as template
+            </button>
+          </div>
+          <div className="rf-cp-actions__group">
+            <button
+              className="rf-btn rf-btn--ghost rf-btn--sm"
+              onClick={() => setScheduleOpen(true)}
+              disabled={!canSend}
+              title={canSend ? 'Schedule send' : 'Connect Gmail in Settings first'}
+            >
+              <Calendar size={13} /> Schedule
+            </button>
+            <button
+              className="rf-btn rf-btn--primary"
+              onClick={() => doPreview()}
+              disabled={!canSend}
+              title={canSend ? 'Preview as a recipient, then send' : 'Connect Gmail in Settings first'}
+            >
+              <Eye size={15} /> {isPreviewing ? 'Loading…' : 'Preview & send'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -546,34 +897,46 @@ export default function ComposePage() {
           <div className="rf-drawer-overlay" onClick={() => setPreviewOpen(false)} />
           <div className="rf-drawer">
             <div className="rf-drawer__header">
-              <span className="rf-drawer__title">Preview & Send</span>
-              <div style={{ display: 'flex', gap: 'var(--rf-sp-2)' }}>
+              <span className="rf-drawer__title"><MailCheck size={16} /> Preview & send</span>
+              <div style={{ display: 'flex', gap: 8 }}>
                 {recipients.length > 1 && (
-                  <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={doShuffle} disabled={isPreviewing} title="Preview different recipient">
-                    <Shuffle size={13} />{isPreviewing ? '…' : 'Shuffle'}
+                  <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={doShuffle} disabled={isPreviewing} title="Preview a different recipient">
+                    <Shuffle size={13} /> {isPreviewing ? '…' : 'Shuffle'}
                   </button>
                 )}
-                <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setPreviewOpen(false)}>✕</button>
+                <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setPreviewOpen(false)} aria-label="Close preview">
+                  <X size={14} />
+                </button>
               </div>
             </div>
             <div className="rf-drawer__body">
               {previewMeta && (
-                <div style={{ marginBottom: 'var(--rf-sp-4)', fontSize: 'var(--rf-text-sm)', display: 'flex', alignItems: 'center', gap: 'var(--rf-sp-2)' }}>
-                  <b>{previewMeta.name}</b>
-                  <span className="rf-text-muted">({previewMeta.email})</span>
-                  {recipients.length > 1 && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)' }}>{recipients.indexOf(previewMeta) + 1} of {recipients.length}</span>}
+                <div style={{ marginBottom: 'var(--rf-sp-4)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)' }}>
+                  <strong style={{ color: 'var(--rf-text)' }}>{previewMeta.name}</strong>
+                  <span style={{ color: 'var(--rf-text-muted)' }}>· {previewMeta.email}</span>
+                  {recipients.length > 1 && (
+                    <span style={{ marginLeft: 'auto', color: 'var(--rf-text-faint)', fontVariantNumeric: 'tabular-nums' }}>
+                      {recipients.indexOf(previewMeta) + 1} of {recipients.length}
+                    </span>
+                  )}
                 </div>
               )}
               {attachments.length > 0 && (
-                <div style={{ marginBottom: 'var(--rf-sp-3)', display: 'flex', gap: 'var(--rf-sp-2)', flexWrap: 'wrap' }}>
-                  {attachments.map(a => <span key={a.id} className="rf-attachment-chip rf-attachment-chip--preview"><Paperclip size={10} />{a.name}</span>)}
+                <div style={{ marginBottom: 'var(--rf-sp-3)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {attachments.map(a => (
+                    <span key={a.id} className="rf-attachment-chip rf-attachment-chip--preview">
+                      <Paperclip size={10} /> {a.name}
+                    </span>
+                  ))}
                 </div>
               )}
               <div className="rf-preview-frame" dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
             <div className="rf-drawer__footer">
               <button className="rf-btn rf-btn--ghost" onClick={() => setPreviewOpen(false)}>Cancel</button>
-              <button className="rf-btn rf-btn--primary" onClick={doSend} disabled={isSending}><Send size={14} />{isSending ? 'Sending…' : `Send to ${recipients.length}`}</button>
+              <button className="rf-btn rf-btn--primary" onClick={doSend} disabled={isSending}>
+                {isSending ? <><Loader size={14} className="rf-spin" /> Sending…</> : <><Send size={14} /> Send to {recipients.length}</>}
+              </button>
             </div>
           </div>
         </>
@@ -582,84 +945,103 @@ export default function ComposePage() {
       {/* Schedule modal */}
       {scheduleOpen && (
         <div className="rf-dialog-overlay" onClick={() => setScheduleOpen(false)}>
-          <div className="rf-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <div className="rf-dialog__title"><Calendar size={18} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 8 }} />Schedule Send</div>
-            <div className="rf-dialog__body" style={{ marginBottom: 'var(--rf-sp-4)' }}>
-              <label className="rf-label">Send Date & Time</label>
+          <div className="rf-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="rf-dialog__title"><Calendar size={18} style={{ verticalAlign: '-3px', marginRight: 8 }} /> Schedule send</div>
+            <div className="rf-dialog__body">
+              <label className="rf-label">Send at</label>
               <input
                 type="datetime-local"
                 className="rf-input"
                 min={minDateTime}
                 value={scheduleDate}
                 onChange={e => setScheduleDate(e.target.value)}
-                style={{ marginTop: 'var(--rf-sp-2)' }}
               />
-              <p style={{ marginTop: 'var(--rf-sp-3)', fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>
-                Campaign will be sent automatically at the scheduled time. You can cancel it from History before it sends.
-              </p>
+              <p className="rf-help">Sends automatically at the scheduled time. Cancel anytime from History before it sends.</p>
             </div>
             <div className="rf-dialog__actions">
               <button className="rf-btn rf-btn--ghost" onClick={() => setScheduleOpen(false)}>Cancel</button>
               <button className="rf-btn rf-btn--primary" onClick={doSchedule} disabled={isScheduling || !scheduleDate}>
-                <Clock size={14} />{isScheduling ? 'Scheduling…' : 'Schedule Send'}
+                {isScheduling ? <><Loader size={14} className="rf-spin" /> Scheduling…</> : <><Clock size={14} /> Schedule</>}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Template create drawer */}
+      {/* Save-as-template drawer */}
       {templateDrawer === 'create' && (
         <>
           <div className="rf-drawer-overlay" onClick={() => setTemplateDrawer(null)} />
-          <div className="rf-drawer" style={{ width: 'min(420px,90vw)' }}>
+          <div className="rf-drawer" style={{ width: 'min(440px, 92vw)' }}>
             <div className="rf-drawer__header">
-              <span className="rf-drawer__title">Save as Template</span>
-              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setTemplateDrawer(null)}>✕</button>
+              <span className="rf-drawer__title"><Bookmark size={16} /> Save as template</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setTemplateDrawer(null)} aria-label="Close">
+                <X size={14} />
+              </button>
             </div>
             <div className="rf-drawer__body">
-              <input className="rf-input rf-input--lg" placeholder="Template name" value={templateTitle} onChange={e => setTemplateTitle(e.target.value)} style={{ marginBottom: 'var(--rf-sp-4)' }} />
-              <div className="rf-label">Subject</div>
-              <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)', marginBottom: 'var(--rf-sp-3)' }}>{subject || '(empty)'}</p>
-              <div className="rf-label">Body Preview</div>
-              <div className="rf-preview-frame" style={{ minHeight: 80 }} dangerouslySetInnerHTML={{ __html: body || '<em>Empty</em>' }} />
+              <label className="rf-label">Template name</label>
+              <input className="rf-input rf-input--lg" placeholder="e.g. Cold outreach v3" value={templateTitle} onChange={e => setTemplateTitle(e.target.value)} />
+              <p className="rf-help">Templates save the subject and body. Variables and attachments aren't stored.</p>
+
+              <div style={{ marginTop: 'var(--rf-sp-5)' }}>
+                <label className="rf-label">Subject</label>
+                <p style={{ fontSize: 'var(--rf-text-base)', color: 'var(--rf-text-secondary)' }}>{subject || <em>(empty)</em>}</p>
+              </div>
+              <div style={{ marginTop: 'var(--rf-sp-5)' }}>
+                <label className="rf-label">Body preview</label>
+                <div className="rf-preview-frame" style={{ minHeight: 100 }} dangerouslySetInnerHTML={{ __html: body || '<em>Empty</em>' }} />
+              </div>
             </div>
             <div className="rf-drawer__footer">
-              <button className="rf-btn rf-btn--primary" onClick={saveTemplate}>Save Template</button>
+              <button className="rf-btn rf-btn--ghost" onClick={() => setTemplateDrawer(null)}>Cancel</button>
+              <button className="rf-btn rf-btn--primary" onClick={saveTemplate}><CheckCheck size={14} /> Save template</button>
             </div>
           </div>
         </>
       )}
 
-      {/* Template browser drawer */}
+      {/* Template browser */}
       {templateBrowseOpen && (
         <>
           <div className="rf-drawer-overlay" onClick={() => setTemplateBrowseOpen(false)} />
           <div className="rf-drawer">
             <div className="rf-drawer__header">
-              <span className="rf-drawer__title"><FileText size={15} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />Templates ({templates.length})</span>
-              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setTemplateBrowseOpen(false)}>✕</button>
+              <span className="rf-drawer__title">
+                <FileText size={16} /> Templates
+                <span className="rf-num" style={{ color: 'var(--rf-text-muted)', fontWeight: 500, fontSize: 14 }}>{templates.length}</span>
+              </span>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setTemplateBrowseOpen(false)} aria-label="Close">
+                <X size={14} />
+              </button>
             </div>
             <div className="rf-drawer__body">
               {templatesLoading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}><Loader size={18} className="rf-spin" /></div>
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
+                  <Loader size={18} className="rf-spin" />
+                </div>
               ) : templates.length === 0 ? (
-                <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-muted)', textAlign: 'center', padding: '24px 0' }}>No saved templates yet. Write an email and click "Save Template".</p>
+                <div className="rf-empty">
+                  <FileText size={24} className="rf-empty__icon" />
+                  <div className="rf-empty__title">No saved templates yet</div>
+                  <p className="rf-empty__desc">Write a message, then click <strong>Save as template</strong> to reuse it later.</p>
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {templates.map(t => (
-                    <div key={t.id} style={{ border: '1px solid var(--rf-border-subtle)', borderRadius: 'var(--rf-radius-md)', padding: '10px 12px' }}>
-                      <div style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', marginBottom: 2 }}>{t.title || 'Untitled'}</div>
-                      {t.subject && <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginBottom: 6 }}>Subject: {t.subject}</div>}
-                      <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', marginBottom: 8, lineHeight: 1.4 }}>
-                        {(t.body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Empty body'}…
+                    <div key={t.id} className="rf-cp-template-row">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="rf-cp-template-row__title">{t.title || 'Untitled'}</div>
+                        {t.subject && <div className="rf-cp-template-row__subject">Subject: {t.subject}</div>}
+                        <div className="rf-cp-template-row__preview">
+                          {(t.body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) || 'Empty body'}…
+                        </div>
                       </div>
                       <button
                         className="rf-btn rf-btn--secondary rf-btn--sm"
-                        style={{ width: '100%' }}
                         onClick={() => { importTemplate(t); setTemplateBrowseOpen(false); }}
                       >
-                        <CheckCheck size={13} /> Use Template
+                        <CheckCheck size={13} /> Use
                       </button>
                     </div>
                   ))}
@@ -676,99 +1058,157 @@ export default function ComposePage() {
           <div className="rf-drawer-overlay" onClick={() => setHistoryDrawerOpen(false)} />
           <div className="rf-drawer">
             <div className="rf-drawer__header">
-              <span className="rf-drawer__title"><History size={15} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />Campaign History</span>
-              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setHistoryDrawerOpen(false)}>✕</button>
+              <span className="rf-drawer__title"><History size={16} /> Campaign history</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setHistoryDrawerOpen(false)} aria-label="Close">
+                <X size={14} />
+              </button>
             </div>
-            <div className="rf-drawer__body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-5)' }}>
+            <div className="rf-drawer__body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-6)' }}>
+              <HistorySection
+                title="Scheduled"
+                icon={<Calendar size={12} />}
+                loading={scheduledLoading}
+                empty="No scheduled sends."
+                items={scheduled}
+                renderMeta={s => <span>Sends {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : '—'} · {s.recipient_count} recipients</span>}
+                statusBadge={() => <span className="rf-badge rf-badge--scheduled">scheduled</span>}
+                trailing={s => (
+                  <button
+                    className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                    onClick={() => cancelScheduled(s.id)}
+                    disabled={cancellingId === s.id}
+                    title="Cancel scheduled send"
+                  >
+                    {cancellingId === s.id ? <Loader size={12} className="rf-spin" /> : <X size={12} />}
+                  </button>
+                )}
+              />
 
-              {/* Scheduled */}
-              {(scheduled.length > 0 || scheduledLoading) && (
-                <div>
-                  <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Calendar size={12} /> Scheduled
-                  </div>
-                  {scheduledLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader size={14} className="rf-spin" /></div> : scheduled.map(s => (
-                    <div key={s.id} className="rf-history-item" style={{ marginBottom: 6 }}>
-                      <div className="rf-history-item__info">
-                        <div className="rf-history-item__subject">{s.subject || '(No subject)'}</div>
-                        <div className="rf-history-item__date">Sends: {s.scheduledAt ? new Date(s.scheduledAt).toLocaleString() : '—'} · {s.recipient_count} recipients</div>
-                      </div>
-                      <div className="rf-history-item__meta">
-                        <span className="rf-badge rf-badge--scheduled">scheduled</span>
-                        <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" title="Cancel" onClick={() => cancelScheduled(s.id)} disabled={cancellingId === s.id}>
-                          {cancellingId === s.id ? <Loader size={12} className="rf-spin" /> : <X size={12} />}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <HistorySection
+                title="Drafts"
+                loading={draftsLoading}
+                empty="No drafts."
+                items={drafts}
+                renderMeta={d => <span>{new Date(d.updated_at || d.created_at).toLocaleDateString()} · {d.recipient_count} recipients</span>}
+                statusBadge={() => <span className="rf-badge rf-badge--draft">draft</span>}
+                onItemClick={(d) => { loadCampaign(d.id); setHistoryDrawerOpen(false); }}
+              />
 
-              {/* Drafts */}
-              <div>
-                <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                  Drafts
-                </div>
-                {draftsLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader size={14} className="rf-spin" /></div>
-                : drafts.length === 0 ? <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', margin: 0 }}>No drafts.</p>
-                : drafts.map(d => (
-                  <div key={d.id} className="rf-history-item" style={{ marginBottom: 6, cursor: 'pointer' }} onClick={() => { loadCampaign(d.id); setHistoryDrawerOpen(false); }}>
-                    <div className="rf-history-item__info">
-                      <div className="rf-history-item__subject">{d.subject || '(No subject)'}</div>
-                      <div className="rf-history-item__date">{new Date(d.updated_at || d.created_at).toLocaleDateString()} · {d.recipient_count} recipients</div>
-                    </div>
-                    <div className="rf-history-item__meta">
-                      <span className="rf-badge rf-badge--draft">draft</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Sent */}
-              <div>
-                <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                  Sent
-                </div>
-                {historyLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader size={14} className="rf-spin" /></div>
-                : history.length === 0 ? <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', margin: 0 }}>No sent campaigns yet.</p>
-                : history.map(h => (
-                  <div key={h.id} className="rf-history-item" style={{ marginBottom: 6 }}>
-                    <div className="rf-history-item__info">
-                      <div className="rf-history-item__subject">{h.subject || '(No subject)'}</div>
-                      <div className="rf-history-item__date">{new Date(h.updated_at || h.created_at).toLocaleDateString()} · {h.recipient_count} recipients</div>
-                    </div>
-                    <div className="rf-history-item__meta">
-                      <span className={`rf-badge rf-badge--${h.status}`}>{h.status}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
+              <HistorySection
+                title="Sent"
+                loading={historyLoading}
+                empty="No sent campaigns yet."
+                items={history}
+                renderMeta={h => <span>{new Date(h.updated_at || h.created_at).toLocaleDateString()} · {h.recipient_count} recipients</span>}
+                statusBadge={h => <span className={`rf-badge rf-badge--${h.status}`}>{h.status}</span>}
+              />
             </div>
           </div>
         </>
       )}
 
-      {/* Import modal */}
+      {/* Import group dialog */}
       {importModalOpen && (
         <div className="rf-dialog-overlay" onClick={() => { if (!importingGroupId) setImportModalOpen(false); }}>
-          <div className="rf-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <div className="rf-dialog__title">Import from Group</div>
+          <div className="rf-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="rf-dialog__title"><Users size={18} style={{ verticalAlign: '-3px', marginRight: 8 }} /> Import recipients from group</div>
             <div className="rf-dialog__body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-3)' }}>
-                {groups.length ? groups.map(g => (
-                  <button key={g.id} className="rf-btn rf-btn--secondary" style={{ justifyContent: 'flex-start' }} onClick={() => importGroupRecipients(g.id)} disabled={!!importingGroupId}>
-                    {importingGroupId === g.id && <Loader size={13} className="rf-spin" />}
-                    {g.companyName} ({g.contactCount || 0})
-                    {importingGroupId === g.id && <span style={{ marginLeft: 'auto', fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>Importing…</span>}
+              <p className="rf-help" style={{ marginTop: 0, marginBottom: 'var(--rf-sp-4)' }}>
+                Pulls all contacts from the selected company group. Already-added emails are skipped.
+              </p>
+              {groups.length === 0 ? (
+                <div className="rf-empty">
+                  <Users size={20} className="rf-empty__icon" />
+                  <div className="rf-empty__title">No groups yet</div>
+                  <p className="rf-empty__desc">Create a company group in Contacts to import recipients.</p>
+                  <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => { setImportModalOpen(false); navigateTo('/contacts'); }}>
+                    Open Contacts <ArrowUpRight size={13} />
                   </button>
-                )) : <p className="rf-text-muted">No groups yet.</p>}
-              </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {groups.map(g => (
+                    <button
+                      key={g.id}
+                      className="rf-cp-group-row"
+                      onClick={() => importGroupRecipients(g.id)}
+                      disabled={!!importingGroupId}
+                    >
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                        {g.companyName}
+                      </span>
+                      <span style={{ color: 'var(--rf-text-muted)', fontSize: 'var(--rf-text-sm)', fontVariantNumeric: 'tabular-nums' }}>
+                        {g.contactCount || 0} contact{(g.contactCount || 0) === 1 ? '' : 's'}
+                      </span>
+                      {importingGroupId === g.id
+                        ? <Loader size={13} className="rf-spin" />
+                        : <ChevronRight size={14} style={{ color: 'var(--rf-text-faint)' }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="rf-dialog__actions">
               <button className="rf-btn rf-btn--ghost" onClick={() => setImportModalOpen(false)} disabled={!!importingGroupId}>Close</button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Helpers
+   ────────────────────────────────────────────────────────── */
+
+function gridTemplate(varCount) {
+  const vars = varCount > 0 ? ` repeat(${Math.min(varCount, 2)}, minmax(120px, 1fr))` : '';
+  return `minmax(220px, 1.4fr) minmax(160px, 1fr)${vars} 36px`;
+}
+
+// Small dot adornment for the page eyebrow
+function PenLineDot() {
+  return (
+    <span style={{
+      width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)',
+      display: 'inline-block',
+    }} />
+  );
+}
+
+function HistorySection({ title, icon, loading, empty, items, renderMeta, statusBadge, trailing, onItemClick }) {
+  return (
+    <div>
+      <div className="rf-cp-history__head">
+        {icon}<span>{title}</span>
+        {items?.length > 0 && <span className="rf-num" style={{ color: 'var(--rf-text-faint)' }}>{items.length}</span>}
+      </div>
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
+          <Loader size={14} className="rf-spin" />
+        </div>
+      ) : (items?.length || 0) === 0 ? (
+        <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-muted)', margin: 0 }}>{empty}</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {items.map(item => (
+            <div
+              key={item.id}
+              className="rf-history-item"
+              style={onItemClick ? { cursor: 'pointer' } : { cursor: 'default' }}
+              onClick={() => onItemClick && onItemClick(item)}
+            >
+              <div className="rf-history-item__info">
+                <div className="rf-history-item__subject">{item.subject || '(No subject)'}</div>
+                <div className="rf-history-item__date">{renderMeta(item)}</div>
+              </div>
+              <div className="rf-history-item__meta">
+                {statusBadge && statusBadge(item)}
+                {trailing && trailing(item)}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

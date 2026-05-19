@@ -1,45 +1,21 @@
 import React from 'react';
 import { useRouter } from '../../router.jsx';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
-import { Vault, User, LayoutDashboard, Clock, Brain, AlertTriangle, Loader } from 'lucide-react';
+import {
+  Vault, User, LayoutDashboard, Clock,
+  Brain, AlertTriangle, Loader, ArrowUpRight,
+} from 'lucide-react';
 import VaultPage from './VaultPage.jsx';
 import ProfilePage from './ProfilePage.jsx';
 import WorkspacePage from './WorkspacePage.jsx';
 import HistoryPage from './HistoryPage.jsx';
 
 const SUB_ROUTES = [
-  { path: '/resume-lab/vault',     label: 'Resume Vault',  icon: Vault,            desc: 'Upload & manage' },
-  { path: '/resume-lab/profile',   label: 'Career Profile', icon: User,            desc: 'Your merged profile' },
-  { path: '/resume-lab/workspace', label: 'Workspace',     icon: LayoutDashboard,  desc: 'Analyze & generate' },
-  { path: '/resume-lab/history',   label: 'History',       icon: Clock,            desc: 'Past analyses & resumes' },
+  { path: '/resume-lab/vault',     label: 'Vault',     icon: Vault,           desc: 'Upload & manage' },
+  { path: '/resume-lab/profile',   label: 'Profile',   icon: User,            desc: 'Merged career profile' },
+  { path: '/resume-lab/workspace', label: 'Workspace', icon: LayoutDashboard, desc: 'Analyze & generate' },
+  { path: '/resume-lab/history',   label: 'History',   icon: Clock,           desc: 'Past analyses & resumes' },
 ];
-
-function SubNav({ path, navigateTo }) {
-  return (
-    <nav className="rl-sub-nav">
-      <div className="rl-sub-nav__header">
-        <div>
-          <div className="rl-sub-nav__title">Resume Lab</div>
-          <div className="rl-sub-nav__subtitle">Career Intelligence</div>
-        </div>
-      </div>
-      {SUB_ROUTES.map(item => {
-        const Icon = item.icon;
-        const active = path === item.path || (path === '/resume-lab' && item.path === '/resume-lab/vault');
-        return (
-          <button
-            key={item.path}
-            className={`rl-sub-nav__item${active ? ' rl-sub-nav__item--active' : ''}`}
-            onClick={() => navigateTo(item.path)}
-          >
-            <span className="rl-sub-nav__item-icon"><Icon size={16} /></span>
-            <span>{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
 
 function SubRouter({ path }) {
   if (path === '/resume-lab/profile')   return <ProfilePage />;
@@ -53,9 +29,9 @@ function ByokGate({ navigateTo }) {
 
   if (aiSettingsLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, color: 'var(--rf-text-muted)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, color: 'var(--rf-text-muted)', padding: 'var(--rf-sp-10)' }}>
         <Loader size={16} className="rf-spin" />
-        <span style={{ fontSize: 'var(--rf-text-sm)' }}>Checking AI configuration…</span>
+        <span style={{ fontSize: 'var(--rf-text-base)' }}>Checking AI configuration…</span>
       </div>
     );
   }
@@ -63,41 +39,32 @@ function ByokGate({ navigateTo }) {
   if (!aiSettings?.isValid) {
     const isConfigured = aiSettings?.configured;
     return (
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        height: '100%', gap: 'var(--rf-sp-4)', padding: 'var(--rf-sp-6)', textAlign: 'center',
-      }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: '50%',
-          background: 'var(--rf-bg-surface)', border: '1px solid var(--rf-border-subtle)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {isConfigured
-            ? <AlertTriangle size={24} style={{ color: 'var(--rf-warning, #f59e0b)' }} />
-            : <Brain size={24} style={{ color: 'var(--rf-text-muted)' }} />
-          }
-        </div>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 'var(--rf-text-md)', color: 'var(--rf-text)', marginBottom: 8 }}>
-            {isConfigured ? 'AI connection not verified' : 'AI provider not configured'}
-          </div>
-          <p style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-secondary)', maxWidth: 380, margin: '0 auto', lineHeight: 1.6 }}>
-            {isConfigured
-              ? 'Your API key is saved but not tested. Go to Settings and click "Test Connection" to verify it works before using Resume Lab.'
-              : 'Resume Lab requires your own API key to run AI analysis. Add your OpenAI or Ollama key in Settings to get started.'
-            }
-          </p>
-        </div>
-        <button
-          className="rf-btn rf-btn--primary rf-btn--sm"
-          onClick={() => navigateTo('/settings')}
+      <div className="rf-empty" style={{ padding: 'var(--rf-sp-12) var(--rf-sp-6)' }}>
+        <div
+          style={{
+            width: 64, height: 64, borderRadius: '50%',
+            background: isConfigured ? 'var(--rf-warning-muted)' : 'var(--rf-bg-overlay)',
+            color: isConfigured ? 'var(--rf-warning-text)' : 'var(--rf-text-muted)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 'var(--rf-sp-2)',
+          }}
         >
-          <Brain size={13} /> Go to Settings
+          {isConfigured ? <AlertTriangle size={24} /> : <Brain size={24} />}
+        </div>
+        <div className="rf-empty__title">
+          {isConfigured ? 'AI connection not verified' : 'Connect an AI provider'}
+        </div>
+        <p className="rf-empty__desc">
+          {isConfigured
+            ? 'Your API key is saved but not tested. Go to Settings and run "Test connection" to verify it works before using Resume Lab.'
+            : 'Resume Lab needs your own AI key (OpenAI or Ollama) to extract resume content, score against job descriptions, and tailor resumes. Add it in Settings to get started.'}
+        </p>
+        <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => navigateTo('/settings')}>
+          <Brain size={13} /> Open Settings <ArrowUpRight size={13} />
         </button>
       </div>
     );
   }
-
   return null;
 }
 
@@ -108,15 +75,45 @@ export default function ResumeLabPage() {
 
 function ResumeLabPageInner({ path, navigateTo }) {
   const { aiSettings, aiSettingsLoading } = useResumeLab();
-  const gate = <ByokGate navigateTo={navigateTo} />;
   const blocked = aiSettingsLoading || !aiSettings?.isValid;
 
+  const isActive = (itemPath) => path === itemPath || (path === '/resume-lab' && itemPath === '/resume-lab/vault');
+
   return (
-    <div className="rl-shell">
-      <SubNav path={path} navigateTo={navigateTo} />
-      <div className="rl-workspace">
-        {blocked ? gate : <SubRouter path={path} />}
+    <div className="rf-page rf-page--wide rf-rl-page">
+      <header className="rf-page-header">
+        <div className="rf-page-header__lead">
+          <div className="rf-page-header__eyebrow"><DotMark /> Resume Lab</div>
+          <h1 className="rf-page-header__title">Career intelligence</h1>
+          <p className="rf-page-header__subtitle">
+            Upload your resumes once. Tailor them to any job description with AI-scored keyword analysis and one-click PDF generation.
+          </p>
+        </div>
+      </header>
+
+      <nav className="rf-subnav" aria-label="Resume Lab sections">
+        {SUB_ROUTES.map(item => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.path}
+              className={`rf-subnav__item${isActive(item.path) ? ' rf-subnav__item--active' : ''}`}
+              onClick={() => navigateTo(item.path)}
+            >
+              <Icon size={15} strokeWidth={1.8} />
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="rf-rl-workspace">
+        {blocked ? <ByokGate navigateTo={navigateTo} /> : <SubRouter path={path} />}
       </div>
     </div>
   );
+}
+
+function DotMark() {
+  return <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} />;
 }

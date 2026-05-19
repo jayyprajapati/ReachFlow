@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import Sidebar from './Sidebar.jsx';
 import Toast from '../common/Toast.jsx';
 import Dialog from '../common/Dialog.jsx';
 import CommandPalette from './CommandPalette.jsx';
-import { Menu, Waypoints } from 'lucide-react';
+import { Menu, Sparkles } from 'lucide-react';
 
 export default function AppShell({ children }) {
   const { notice, setNotice, warningDialog, setWarningDialog } = useApp();
@@ -12,8 +12,7 @@ export default function AppShell({ children }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Global ⌘K shortcut
-  React.useEffect(() => {
+  useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -29,11 +28,15 @@ export default function AppShell({ children }) {
 
   return (
     <div className="rf-shell">
-      {/* Mobile overlay */}
       {mobileOpen && <div className="rf-mobile-overlay" onClick={() => setMobileOpen(false)} />}
 
-      {/* Sidebar */}
-      <aside className={`rf-shell__sidebar ${collapsed ? 'rf-shell__sidebar--collapsed' : ''} ${mobileOpen ? 'rf-shell__sidebar--mobile-open' : ''}`}>
+      <aside
+        className={[
+          'rf-shell__sidebar',
+          collapsed ? 'rf-shell__sidebar--collapsed' : '',
+          mobileOpen ? 'rf-shell__sidebar--mobile-open' : '',
+        ].filter(Boolean).join(' ')}
+      >
         <Sidebar
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed(v => !v)}
@@ -42,26 +45,24 @@ export default function AppShell({ children }) {
         />
       </aside>
 
-      {/* Main */}
       <div className="rf-shell__main">
-        {/* Mobile header */}
         <div className="rf-mobile-header">
-          <button className="rf-mobile-header__toggle" onClick={() => setMobileOpen(true)}>
+          <button className="rf-mobile-header__toggle" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
             <Menu size={20} />
           </button>
-          <span className="rf-mobile-header__brand"><Waypoints size={18} />ReachFlow</span>
+          <span className="rf-mobile-header__brand">
+            <Sparkles size={16} />
+            ReachFlow
+          </span>
         </div>
 
-        {/* Page content */}
         <div className="rf-shell__content">
           {children}
         </div>
       </div>
 
-      {/* Toast */}
       <Toast notice={notice} onClose={() => setNotice(null)} />
 
-      {/* Warning dialog */}
       <Dialog
         dialog={warningDialog}
         onCancel={() => setWarningDialog(null)}
@@ -72,7 +73,6 @@ export default function AppShell({ children }) {
         }}
       />
 
-      {/* Command palette */}
       {commandOpen && <CommandPalette onClose={() => setCommandOpen(false)} />}
     </div>
   );
