@@ -864,6 +864,36 @@
 /* ── Responsive shared components ────────────────────────── */
 
 @media (max-width: 640px) {
+  .rf-btn {
+    min-height: 40px;
+    white-space: nowrap;
+  }
+
+  .rf-btn--sm {
+    min-height: 36px;
+  }
+
+  .rf-card {
+    padding: var(--rf-sp-4);
+  }
+
+  .rf-card__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rf-tabs {
+    width: 100%;
+  }
+
+  .rf-tab {
+    flex: 1;
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .rf-dialog-overlay {
     align-items: flex-end;
     padding: 0;
@@ -882,5 +912,38 @@
   .rf-drawer {
     width: 100%;
     border-left: none;
+    top: auto;
+    height: min(92vh, 760px);
+    border-radius: var(--rf-radius-xl) var(--rf-radius-xl) 0 0;
+    border-top: 1px solid var(--rf-border-subtle);
+    animation: rf-slideUp var(--rf-duration-slow) var(--rf-ease-out);
+  }
+
+  .rf-drawer__header {
+    padding: var(--rf-sp-4);
+  }
+
+  .rf-drawer__body {
+    padding: var(--rf-sp-4);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .rf-drawer__footer {
+    padding: var(--rf-sp-3) var(--rf-sp-4) calc(env(safe-area-inset-bottom, 0px) + var(--rf-sp-3));
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .rf-drawer__footer .rf-btn {
+    flex: 1;
+  }
+
+  .rf-empty {
+    padding: var(--rf-sp-8) var(--rf-sp-4);
+    gap: var(--rf-sp-3);
+  }
+
+  .rf-empty__desc {
+    font-size: var(--rf-text-sm);
   }
 }
