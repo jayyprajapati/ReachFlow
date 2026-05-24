@@ -1900,6 +1900,42 @@
 .ql-picker.ql-size .ql-picker-item[data-value='large']::before { content: 'Large'; font-size: 1.2em; }
 .ql-picker.ql-size .ql-picker-item[data-value='huge']::before { content: 'Huge'; font-size: 1.5em; }
 
+/* ── Quill dark mode overrides ───────────────────────────── */
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-stroke {
+  stroke: var(--rf-text-secondary);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-fill {
+  fill: var(--rf-text-secondary);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-picker-label {
+  color: var(--rf-text);
+  border-color: var(--rf-border-subtle);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-picker-label .ql-stroke {
+  stroke: var(--rf-text-secondary);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-picker-options {
+  background: var(--rf-bg-surface);
+  border-color: var(--rf-border-subtle);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-picker-item {
+  color: var(--rf-text);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-picker-item:hover,
+:root[data-theme="dark"] .rf-cp-editor .ql-snow .ql-picker-item.ql-selected {
+  color: var(--rf-accent);
+  background: var(--rf-accent-subtle);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow button:hover .ql-stroke,
+:root[data-theme="dark"] .rf-cp-editor .ql-snow button.ql-active .ql-stroke {
+  stroke: var(--rf-accent);
+}
+:root[data-theme="dark"] .rf-cp-editor .ql-snow button:hover .ql-fill,
+:root[data-theme="dark"] .rf-cp-editor .ql-snow button.ql-active .ql-fill {
+  fill: var(--rf-accent);
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 
 @media (max-width: 1100px) {
