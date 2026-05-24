@@ -2,7 +2,7 @@ const sanitizeHtml = require('sanitize-html');
 
 const QUILL_FONT_CLASSES = [
   'ql-font-arial', 'ql-font-verdana', 'ql-font-georgia',
-  'ql-font-times-new-roman', 'ql-font-tahoma', 'ql-font-trebuchet-ms',
+  'ql-font-times-new-roman', 'ql-font-calibri', 'ql-font-tahoma', 'ql-font-trebuchet-ms',
 ];
 const QUILL_SIZE_CLASSES = ['ql-size-small', 'ql-size-large', 'ql-size-huge'];
 const QUILL_ALIGN_CLASSES = [

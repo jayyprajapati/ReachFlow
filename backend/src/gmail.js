@@ -349,6 +349,7 @@ const QUILL_FONT_MAP = {
   verdana: 'Verdana, Geneva, sans-serif',
   georgia: 'Georgia, serif',
   'times-new-roman': '"Times New Roman", Times, serif',
+  calibri: 'Calibri, "Gill Sans", Optima, sans-serif',
   tahoma: 'Tahoma, Geneva, sans-serif',
   'trebuchet-ms': '"Trebuchet MS", Helvetica, sans-serif',
 };
@@ -426,7 +427,7 @@ function normalizeEmailBodyHtml(html) {
 
   processed = processed.replace(/<(p|div)([^>]*)>/g, (match, tag, attrs) => {
     const nextAttrs = mergeInlineStyle(attrs, [
-      'margin:0 0 6px 0',
+      'margin:0',
       'padding:0',
       'line-height:1.45',
     ]);
