@@ -153,8 +153,7 @@ export default function ComposePage() {
               const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
               const d = await r.json();
               if (r.ok && d.contacts) {
-                handleGroupImport(d.contacts);
-                setNotice({ type: 'info', message: `Loaded contacts from ${companyName || 'group'}` });
+                handleGroupImport(d.contacts, companyName || 'group');
               }
             } catch { /* silent */ }
           })();
@@ -471,20 +470,41 @@ export default function ComposePage() {
   }
 
   /* Groups */
-  function handleGroupImport(contacts) {
-    const incoming = (contacts || []).filter(c => c?.email);
+  function handleGroupImport(contacts, groupName = 'group') {
+    const incoming = contacts || [];
     if (!incoming.length) { setNotice({ type: 'error', message: 'No contacts to import' }); return; }
     const existing = new Set(recipients.map(r => (r.email || '').toLowerCase()));
     const adds = [];
+    const invalid = [];
+    let duplicateCount = 0;
     for (const c of incoming) {
       const e = (c.email || '').toLowerCase().trim();
-      if (!emailRegex.test(e) || existing.has(e)) continue;
+      const invalidEmail = !e || !emailRegex.test(e) || c.email_status === 'not_valid';
+      if (invalidEmail) {
+        invalid.push((c.name && e) ? `${c.name} <${e}>` : (e || c.name || 'Unnamed contact'));
+        continue;
+      }
+      if (existing.has(e)) { duplicateCount++; continue; }
       existing.add(e);
       adds.push({ _id: uid(), email: e, name: (c.name || '').trim() || nameFrom(e), variables: {}, status: 'pending' });
     }
-    if (!adds.length) { setNotice({ type: 'info', message: 'All contacts already in recipients.' }); return; }
+    const invalidMsg = invalid.length
+      ? ` Not imported as invalid: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? `, +${invalid.length - 3} more` : ''}.`
+      : '';
+    if (!adds.length) {
+      setNotice({
+        type: invalid.length ? 'warning' : 'info',
+        message: invalid.length
+          ? `No contacts imported from ${groupName}${duplicateCount ? `; ${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''} skipped` : ''}.${invalidMsg}`
+          : 'All contacts already in recipients.',
+      });
+      return;
+    }
     setRecipients(p => [...p, ...adds]);
-    setNotice({ type: 'info', message: `Imported ${adds.length} contacts` });
+    setNotice({
+      type: invalid.length ? 'warning' : 'info',
+      message: `Imported ${adds.length} contact${adds.length !== 1 ? 's' : ''}${duplicateCount ? `, skipped ${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''}` : ''}.${invalidMsg}`,
+    });
   }
 
   async function importGroupRecipients(groupId) {
@@ -493,7 +513,7 @@ export default function ComposePage() {
     try {
       const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
-      handleGroupImport(d.contacts || []);
+      handleGroupImport(d.contacts || [], d.companyName || 'group');
       setImportModalOpen(false);
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setImportingGroupId(''); }
