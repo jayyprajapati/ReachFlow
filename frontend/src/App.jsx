@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AppProvider, useApp } from './contexts/AppContext.jsx';
 import { RouterProvider, useRouter } from './router.jsx';
 import { ResumeLabProvider } from './contexts/ResumeLabContext.jsx';
@@ -17,6 +17,29 @@ import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './components/TermsOfUsePage.jsx';
 import { Loader } from 'lucide-react';
+
+const TITLE_SUFFIX = 'Career Workspace';
+
+function routeTitle(path, appUser, authLoading) {
+  const cleanPath = String(path || '/').split('?')[0];
+  if (authLoading || !appUser) return `ReachFlow - ${TITLE_SUFFIX}`;
+
+  switch (true) {
+    case cleanPath === '/':                    return `Dashboard - ${TITLE_SUFFIX}`;
+    case cleanPath === '/compose':             return `Compose - ${TITLE_SUFFIX}`;
+    case cleanPath === '/pipeline':            return `Applications - ${TITLE_SUFFIX}`;
+    case cleanPath.startsWith('/contacts'):    return `Contacts - ${TITLE_SUFFIX}`;
+    case cleanPath === '/templates':           return `Templates - ${TITLE_SUFFIX}`;
+    case cleanPath === '/history':             return `History - ${TITLE_SUFFIX}`;
+    case cleanPath === '/settings':            return `Settings - ${TITLE_SUFFIX}`;
+    case cleanPath.startsWith('/resume-lab'):  return `Resume Lab - ${TITLE_SUFFIX}`;
+    case cleanPath.startsWith('/roadmaps'):    return `Roadmaps - ${TITLE_SUFFIX}`;
+    case cleanPath === '/about':               return `About - ${TITLE_SUFFIX}`;
+    case cleanPath === '/privacy-policy':      return `Privacy Policy - ${TITLE_SUFFIX}`;
+    case cleanPath === '/terms-of-use':        return `Terms of Use - ${TITLE_SUFFIX}`;
+    default:                                   return `Dashboard - ${TITLE_SUFFIX}`;
+  }
+}
 
 function PageRouter() {
   const { path } = useRouter();
@@ -38,6 +61,10 @@ function PageRouter() {
 function AuthGate() {
   const { appUser, authLoading } = useApp();
   const { path } = useRouter();
+
+  useEffect(() => {
+    document.title = routeTitle(path, appUser, authLoading);
+  }, [path, appUser, authLoading]);
 
   // Static pages — no auth needed
   if (path === '/about')          return <AboutPage />;
