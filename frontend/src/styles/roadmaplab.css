@@ -80,10 +80,11 @@
 .rml-dashboard__hero-right { display: flex; align-items: center; gap: var(--rf-sp-4); }
 
 .rml-hero-icon {
-  width: 48px; height: 48px; border-radius: var(--rf-radius-xl);
-  background: linear-gradient(135deg, var(--rf-accent) 0%, #8b5cf6 100%);
+  width: 48px; height: 48px; border-radius: var(--rf-radius-md);
+  background: var(--rf-accent);
   display: flex; align-items: center; justify-content: center;
-  color: #fff; flex-shrink: 0; box-shadow: var(--rf-shadow-md);
+  color: #fff; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 41, 153, 0.25), inset 0 1px 0 rgba(255,255,255,0.14);
 }
 .rml-hero-title { font-size: var(--rf-text-2xl); font-weight: 700; color: var(--rf-text); font-family: var(--rf-font-display); line-height: 1.2; }
 .rml-hero-sub   { font-size: var(--rf-text-sm); color: var(--rf-text-muted); margin-top: 2px; }

@@ -1,29 +1,34 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
-import { Plus, Trash2, Copy, Loader, LayoutGrid, List, Check, X } from 'lucide-react';
+import { useRouter } from '../router.jsx';
+import {
+  Plus, Trash2, Copy, Loader, LayoutGrid, List, Check, X, Briefcase, Filter,
+  ChevronRight, ChevronDown, Info, Users, Building2, ArrowUpRight, CheckCheck,
+} from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+
 const STATUS_COLS = [
-  { key:'applied', label:'Applied', color:'var(--rf-status-applied)' },
-  { key:'oa', label:'OA', color:'var(--rf-status-oa)' },
-  { key:'interviewing', label:'Interviewing', color:'var(--rf-status-interviewing)' },
-  { key:'offer', label:'Offer', color:'var(--rf-status-offer)' },
-  { key:'rejected', label:'Rejected', color:'var(--rf-status-rejected)' },
-  { key:'ghosted', label:'Ghosted', color:'var(--rf-status-ghosted)' },
-  { key:'on_hold', label:'On Hold', color:'var(--rf-status-onhold)' },
+  { key: 'applied',      label: 'Applied',      color: 'var(--rf-status-applied)' },
+  { key: 'oa',           label: 'OA',           color: 'var(--rf-status-oa)' },
+  { key: 'interviewing', label: 'Interviewing', color: 'var(--rf-status-interviewing)' },
+  { key: 'offer',        label: 'Offer',        color: 'var(--rf-status-offer)' },
+  { key: 'rejected',     label: 'Rejected',     color: 'var(--rf-status-rejected)' },
+  { key: 'ghosted',      label: 'Ghosted',      color: 'var(--rf-status-ghosted)' },
+  { key: 'on_hold',      label: 'On Hold',      color: 'var(--rf-status-onhold)' },
 ];
+
+/* ── Loose-line parsing (unchanged) ──────────────────── */
 
 function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 function cleanupParsedText(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s\-–—|,;:]+|[\s\-–—|,;:]+$/g, '')
     .trim();
 }
-
 function extractKnownCompany(text, groups = []) {
   const sorted = [...groups]
     .filter(g => g?.companyName)
@@ -40,10 +45,8 @@ function extractKnownCompany(text, groups = []) {
       return { group, companyName: group.companyName, text: nextText };
     }
   }
-
   return { group: null, companyName: '', text };
 }
-
 function extractJobId(text) {
   const labeled = text.match(/\b(?:job|req|requisition|opening|posting)?\s*(?:id|no|number|#)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,})\b/i);
   if (labeled) {
@@ -52,7 +55,6 @@ function extractJobId(text) {
       text: cleanupParsedText(text.replace(labeled[0], ' ')),
     };
   }
-
   const tokens = text.split(/\s+/);
   for (let i = tokens.length - 1; i >= 0; i -= 1) {
     const clean = tokens[i].replace(/^[#(]+|[),.;:]+$/g, '');
@@ -61,10 +63,8 @@ function extractJobId(text) {
       return { jobId: clean, text: cleanupParsedText(tokens.join(' ')) };
     }
   }
-
   return { jobId: '', text };
 }
-
 function parseLooseApplicationLine(rawLine, groups = []) {
   let working = cleanupParsedText(rawLine);
   let companyName = '';
@@ -140,17 +140,34 @@ function normalizeCompanyKey(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function relDate(d) {
+  if (!d) return '';
+  const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return '1d ago';
+  if (diff < 14)  return `${diff}d ago`;
+  return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/* ──────────────────────────────────────────────────────────
+   PipelinePage
+   ────────────────────────────────────────────────────────── */
+
 export default function PipelinePage() {
   const { authedFetch, setNotice, setWarningDialog, groups, loadGroups } = useApp();
+  const { navigateTo } = useRouter();
+
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [rawInput, setRawInput] = useState('');
   const [parsing, setParsing] = useState(false);
   const [inputOpen, setInputOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [viewMode, setViewMode] = useState('kanban');
   const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
   const [dragId, setDragId] = useState(null);
+  const [dragOverCol, setDragOverCol] = useState(null);
   const [copiedId, setCopiedId] = useState('');
   const [addingCompanyForId, setAddingCompanyForId] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -186,7 +203,8 @@ export default function PipelinePage() {
         const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
         setApps(p => [d, ...p]);
       }
-      setRawInput(''); setNotice({ type: 'success', message: `Added ${parsed.length} applications` }); setInputOpen(false);
+      setRawInput(''); setInputOpen(false);
+      setNotice({ type: 'success', message: `Added ${parsed.length} application${parsed.length === 1 ? '' : 's'}` });
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setParsing(false); }
   }
@@ -207,11 +225,7 @@ export default function PipelinePage() {
     if (!id || !Object.keys(changes || {}).length) return;
     setFieldBusyId(`${id}:${Object.keys(changes).join(',')}`);
     try {
-      const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
-        method: 'PATCH',
-        headers: hdrs,
-        body: JSON.stringify(changes),
-      });
+      const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify(changes) });
       const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
       setApps(p => p.map(a => a.id === id ? { ...a, ...d } : a));
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
@@ -223,8 +237,7 @@ export default function PipelinePage() {
     setCompanyBusyId(id);
     try {
       const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
-        method: 'PATCH',
-        headers: hdrs,
+        method: 'PATCH', headers: hdrs,
         body: JSON.stringify({ companyGroupId: groupId || null, companyNameSnapshot: groupId ? undefined : '' }),
       });
       const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
@@ -239,45 +252,53 @@ export default function PipelinePage() {
     const existing = findGroupByName(name);
     if (existing) {
       await updateCompany(id, existing.id);
-      setAddingCompanyForId('');
-      setNewCompanyName('');
+      setAddingCompanyForId(''); setNewCompanyName('');
       return;
     }
     setCompanyBusyId(id);
     try {
       const r = await authedFetch(`${API_BASE_URL}/api/groups`, {
-        method: 'POST',
-        headers: hdrs,
-        body: JSON.stringify({ companyName: name }),
+        method: 'POST', headers: hdrs, body: JSON.stringify({ companyName: name }),
       });
       const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed to create company');
       await loadGroups();
       const ar = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
-        method: 'PATCH',
-        headers: hdrs,
-        body: JSON.stringify({ companyGroupId: d.id }),
+        method: 'PATCH', headers: hdrs, body: JSON.stringify({ companyGroupId: d.id }),
       });
       const appData = await ar.json(); if (!ar.ok) throw new Error(appData.error || 'Failed to update application');
       setApps(p => p.map(a => a.id === id ? { ...a, ...appData } : a));
-      setAddingCompanyForId('');
-      setNewCompanyName('');
+      setAddingCompanyForId(''); setNewCompanyName('');
       setNotice({ type: 'success', message: 'Company added to contacts' });
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setCompanyBusyId(''); }
   }
 
   async function deleteApp(id) {
-    setWarningDialog({ title: 'Delete application?', message: 'This cannot be undone.', confirmText: 'Delete', intent: 'danger', onConfirm: async () => {
-      try { const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, { method: 'DELETE' }); const d = await r.json(); if (!r.ok) throw new Error(d.error); setApps(p => p.filter(a => a.id !== id)); setNotice({ type: 'info', message: 'Deleted' }); }
-      catch (e) { setNotice({ type: 'error', message: e.message }); }
-    }});
+    setWarningDialog({
+      title: 'Delete application?',
+      message: 'This removes the application record. Linked contacts and resumes are unaffected. This cannot be undone.',
+      confirmText: 'Delete', intent: 'danger',
+      onConfirm: async () => {
+        try {
+          const r = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, { method: 'DELETE' });
+          const d = await r.json(); if (!r.ok) throw new Error(d.error);
+          setApps(p => p.filter(a => a.id !== id));
+          setNotice({ type: 'info', message: 'Application deleted' });
+        } catch (e) { setNotice({ type: 'error', message: e.message }); }
+      },
+    });
   }
 
   function copyText(text, id) { navigator.clipboard.writeText(text).then(() => setCopiedId(id)); }
 
   function onDragStart(e, id) { setDragId(id); e.dataTransfer.effectAllowed = 'move'; }
-  function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
-  function onDrop(e, status) { e.preventDefault(); if (dragId) { updateStatus(dragId, status); setDragId(null); } }
+  function onDragOver(e, status) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverCol(status); }
+  function onDragLeave() { setDragOverCol(null); }
+  function onDrop(e, status) {
+    e.preventDefault();
+    setDragOverCol(null);
+    if (dragId) { updateStatus(dragId, status); setDragId(null); }
+  }
 
   const companyOptions = useMemo(
     () => [...groups].sort((a, b) => String(a.companyName || '').localeCompare(String(b.companyName || ''))),
@@ -286,22 +307,17 @@ export default function PipelinePage() {
   const groupById = useMemo(() => new Map(groups.map(g => [String(g.id), g])), [groups]);
   const groupByKey = useMemo(() => new Map(groups.map(g => [normalizeCompanyKey(g.companyName), g])), [groups]);
 
-  function findGroupByName(name) {
-    return groupByKey.get(normalizeCompanyKey(name));
-  }
-
+  function findGroupByName(name) { return groupByKey.get(normalizeCompanyKey(name)); }
   function getCompanyName(app) {
     const linked = app?.companyGroupId ? groupById.get(String(app.companyGroupId)) : null;
     return linked?.companyName || app?.companyNameSnapshot || app?.companyName || '';
   }
-
   function getCompanyGroup(app) {
     if (app?.companyGroupId && groupById.has(String(app.companyGroupId))) {
       return groupById.get(String(app.companyGroupId));
     }
     return findGroupByName(app?.companyNameSnapshot || app?.companyName || '');
   }
-
   function getCompanySelectValue(app) {
     if (app?.companyGroupId && groupById.has(String(app.companyGroupId))) return String(app.companyGroupId);
     const name = getCompanyName(app);
@@ -310,7 +326,7 @@ export default function PipelinePage() {
 
   const filtered = useMemo(() => {
     let list = apps;
-    if (statusFilter) list = list.filter(a => a.status === statusFilter);
+    if (statusFilter)  list = list.filter(a => a.status === statusFilter);
     if (companyFilter) list = list.filter(a => getCompanyName(a).toLowerCase().includes(companyFilter.toLowerCase()));
     return list;
   }, [apps, statusFilter, companyFilter, groupById]);
@@ -321,90 +337,256 @@ export default function PipelinePage() {
     return map;
   }, [filtered]);
 
-  const relDate = d => { if (!d) return ''; const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000); if (diff === 0) return 'Today'; if (diff === 1) return '1d ago'; return `${diff}d ago`; };
+  const summary = useMemo(() => {
+    const inFlight = apps.filter(a => ['applied', 'oa', 'interviewing'].includes(a.status)).length;
+    const offers = apps.filter(a => a.status === 'offer').length;
+    const closed = apps.filter(a => ['rejected', 'ghosted'].includes(a.status)).length;
+    return { total: apps.length, inFlight, offers, closed };
+  }, [apps]);
 
-  if (loading) return <div className="rf-empty"><div className="rf-spinner"><Loader size={24} /></div><p className="rf-text-muted">Loading pipeline…</p></div>;
+  /* ── Render ────────────────────────────────────────────── */
 
-  return (
-    <div className="rf-pipeline">
-      <div className="rf-page-header">
-        <div><h1 className="rf-page-header__title">Pipeline</h1><p className="rf-page-header__subtitle">{apps.length} applications tracked</p></div>
-        <div className="rf-page-header__actions">
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setViewMode(v => v === 'kanban' ? 'table' : 'kanban')}>{viewMode === 'kanban' ? <><List size={14} />Table</> : <><LayoutGrid size={14} />Kanban</>}</button>
-          <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setInputOpen(!inputOpen)}><Plus size={14} />Add</button>
+  if (loading) {
+    return (
+      <div className="rf-page">
+        <div className="rf-empty">
+          <Loader size={20} className="rf-spin" />
+          <p className="rf-empty__desc">Loading pipeline…</p>
         </div>
       </div>
+    );
+  }
 
-      {/* Input */}
+  return (
+    <div className="rf-page rf-page--wide rf-pipeline-page">
+      {/* Header */}
+      <header className="rf-page-header">
+        <div className="rf-page-header__lead">
+          <div className="rf-page-header__eyebrow"><DotMark /> Applications</div>
+          <h1 className="rf-page-header__title">Pipeline</h1>
+          <p className="rf-page-header__subtitle">
+            Every application you've sent, organized by stage. Drag cards between columns to update status, or switch to table for bulk edits.
+          </p>
+        </div>
+        <div className="rf-page-header__actions">
+          <div className="rf-tabs" role="tablist" aria-label="View mode">
+            <button
+              className={`rf-tab${viewMode === 'kanban' ? ' rf-tab--active' : ''}`}
+              onClick={() => setViewMode('kanban')}
+            ><LayoutGrid size={13} /> Board</button>
+            <button
+              className={`rf-tab${viewMode === 'table' ? ' rf-tab--active' : ''}`}
+              onClick={() => setViewMode('table')}
+            ><List size={13} /> Table</button>
+          </div>
+          <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setInputOpen(v => !v)}>
+            <Plus size={14} /> {inputOpen ? 'Close' : 'Add applications'}
+          </button>
+        </div>
+      </header>
+
+      {/* Summary chips */}
+      {apps.length > 0 && (
+        <div className="rf-pl-summary">
+          <SummaryStat label="Total" value={summary.total} active={!statusFilter} onClick={() => setStatusFilter('')} />
+          <SummaryStat label="In-flight" value={summary.inFlight} sub="Applied · OA · Interviewing" />
+          <SummaryStat label="Offers" value={summary.offers} accent onClick={() => setStatusFilter('offer')} active={statusFilter === 'offer'} />
+          <SummaryStat label="Closed" value={summary.closed} sub="Rejected · Ghosted" />
+          <div style={{ flex: 1 }} />
+          <div className="rf-pl-summary__filters">
+            <select className="rf-select rf-input--sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ minWidth: 160 }}>
+              <option value="">All statuses</option>
+              {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+            <div className="rf-search" style={{ width: 200 }}>
+              <Filter size={14} className="rf-search__icon" />
+              <input
+                className="rf-search__input"
+                style={{ height: 32, paddingLeft: 32, fontSize: 'var(--rf-text-sm)' }}
+                placeholder="Filter by company"
+                value={companyFilter}
+                onChange={e => setCompanyFilter(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add input */}
       {inputOpen && (
-        <div className="rf-pipeline__input">
-          <textarea className="rf-textarea" rows={4} value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="Job Title | Job ID | Company is recommended, but loose pasted lines work too" />
-          <div className="rf-pipeline__input-actions">
-            <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={addApplications} disabled={parsing || !rawInput.trim()}>{parsing ? 'Adding…' : 'Add Applications'}</button>
+        <div className="rf-cp-card" style={{ marginTop: 'var(--rf-sp-3)', marginBottom: 'var(--rf-sp-3)' }}>
+          <header className="rf-cp-card__head">
+            <div className="rf-cp-card__title">
+              <Plus size={16} /> Add applications
+              <button
+                className="rf-info-btn"
+                onClick={() => setHelpOpen(v => !v)}
+                title="Show paste format help"
+                aria-label="Help on paste format"
+              ><Info size={14} /></button>
+            </div>
+          </header>
+
+          {helpOpen && (
+            <div className="rf-pl-help">
+              <p>
+                <strong>Best:</strong> one application per line, pipe-separated as <code>Job Title | Job ID | Company</code>.
+                <br />
+                <strong>Loose lines work too</strong> — the parser pulls out IDs, "at Company", and matches against your existing contact groups.
+              </p>
+              <pre className="rf-pl-help__example">
+{`Senior SWE | 12345 | Stripe
+Backend Engineer at OpenAI #JR-9921
+Product Manager - Linear`}
+              </pre>
+            </div>
+          )}
+
+          <textarea
+            className="rf-textarea"
+            rows={5}
+            value={rawInput}
+            onChange={e => setRawInput(e.target.value)}
+            placeholder={'Senior SWE | 12345 | Stripe\nBackend Engineer at OpenAI #JR-9921'}
+            autoFocus
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={addApplications} disabled={parsing || !rawInput.trim()}>
+              {parsing ? <><Loader size={13} className="rf-spin" /> Adding…</> : <><Plus size={13} /> Add applications</>}
+            </button>
             <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setInputOpen(false); setRawInput(''); }}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* Filters */}
-      {apps.length > 0 && (
-        <div style={{ display: 'flex', gap: 'var(--rf-sp-2)', flexWrap: 'wrap' }}>
-          <select className="rf-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="">All statuses</option>
-            {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-          </select>
-          <input className="rf-input" style={{ width: 180 }} placeholder="Filter by company" value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} />
+      {/* Empty state */}
+      {apps.length === 0 && !inputOpen && (
+        <div className="rf-empty" style={{ marginTop: 'var(--rf-sp-6)' }}>
+          <Briefcase size={28} className="rf-empty__icon" />
+          <div className="rf-empty__title">No applications tracked yet</div>
+          <p className="rf-empty__desc">
+            Paste a list of jobs you've applied to and we'll organize them by stage. Drag cards to move them through your funnel.
+          </p>
+          <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setInputOpen(true)}>
+            <Plus size={14} /> Add your first application
+          </button>
         </div>
       )}
 
       {/* Kanban */}
-      {viewMode === 'kanban' ? (
-        <div className="rf-pipeline__board">
-          {STATUS_COLS.map(col => (
-            <div className="rf-pipeline__column" key={col.key}>
-              <div className="rf-pipeline__col-header">
-                <span className="rf-pipeline__col-title"><span className="rf-dot" style={{ background: col.color }} />{col.label}</span>
-                <span className="rf-pipeline__col-count">{(byStatus[col.key] || []).length}</span>
-              </div>
-              <div className={`rf-pipeline__col-cards ${dragId ? 'rf-pipeline__col-cards--dragover' : ''}`} onDragOver={onDragOver} onDrop={e => onDrop(e, col.key)}>
-                {(byStatus[col.key] || []).map(app => (
-                  <div key={app.id} className={`rf-app-card ${dragId === app.id ? 'rf-app-card--dragging' : ''}`} draggable onDragStart={e => onDragStart(e, app.id)}>
-                    <div className="rf-app-card__title">{app.jobTitle || 'Untitled'}</div>
-                    <div className="rf-app-card__company">
-                      {getCompanyGroup(app) && (
-                        <span className="rf-app-card__company-logo">
-                          {getCompanyGroup(app).logoUrl ? <img src={getCompanyGroup(app).logoUrl} alt="" /> : (getCompanyName(app).charAt(0) || '?')}
-                        </span>
-                      )}
-                      <span>{getCompanyName(app) || '—'}</span>
+      {apps.length > 0 && viewMode === 'kanban' && (
+        <div className="rf-pl-board">
+          {STATUS_COLS.map(col => {
+            const items = byStatus[col.key] || [];
+            const isOver = dragOverCol === col.key;
+            return (
+              <div className="rf-pl-col" key={col.key}>
+                <div className="rf-pl-col__head">
+                  <span className="rf-pl-col__title">
+                    <span className="rf-pl-col__dot" style={{ background: col.color }} />
+                    {col.label}
+                  </span>
+                  <span className="rf-pl-col__count rf-num">{items.length}</span>
+                </div>
+                <div
+                  className={`rf-pl-col__body${isOver ? ' rf-pl-col__body--dragover' : ''}`}
+                  onDragOver={(e) => onDragOver(e, col.key)}
+                  onDragLeave={onDragLeave}
+                  onDrop={(e) => onDrop(e, col.key)}
+                >
+                  {items.length === 0 ? (
+                    <div className="rf-pl-col__empty">
+                      {isOver ? 'Drop to move here' : `No ${col.label.toLowerCase()} apps`}
                     </div>
-                    <div className="rf-app-card__footer">
-                      <span className="rf-app-card__date">{relDate(app.appliedDate)}</span>
-                      {app.jobId && <span className="rf-app-card__id">{app.jobId}</span>}
-                      <div className="rf-app-card__actions">
-                        {app.jobTitle && <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => copyText(app.jobTitle, `t-${app.id}`)} title="Copy title"><Copy size={12} /></button>}
-                        <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => deleteApp(app.id)} title="Delete"><Trash2 size={12} /></button>
+                  ) : items.map(app => {
+                    const group = getCompanyGroup(app);
+                    const companyName = getCompanyName(app);
+                    return (
+                      <div
+                        key={app.id}
+                        className={`rf-pl-card${dragId === app.id ? ' rf-pl-card--dragging' : ''}`}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, app.id)}
+                      >
+                        <div className="rf-pl-card__title">{app.jobTitle || 'Untitled role'}</div>
+                        <div className="rf-pl-card__company">
+                          {group ? (
+                            <span className="rf-pl-card__logo">
+                              {group.logoUrl
+                                ? <img src={group.logoUrl} alt="" />
+                                : (companyName.charAt(0).toUpperCase() || '?')}
+                            </span>
+                          ) : (
+                            <span className="rf-pl-card__logo rf-pl-card__logo--ghost">
+                              <Building2 size={11} />
+                            </span>
+                          )}
+                          <span className="rf-truncate">{companyName || 'Unknown company'}</span>
+                        </div>
+                        <div className="rf-pl-card__foot">
+                          <span className="rf-pl-card__date">{relDate(app.appliedDate)}</span>
+                          {app.jobId && (
+                            <button
+                              className="rf-pl-card__id"
+                              onClick={() => copyText(app.jobId, `id-${app.id}`)}
+                              title="Click to copy job ID"
+                            >
+                              {copiedId === `id-${app.id}` ? <CheckCheck size={11} /> : <Copy size={11} />}
+                              {app.jobId}
+                            </button>
+                          )}
+                          <div className="rf-pl-card__actions">
+                            {group && (
+                              <button
+                                className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                                title="View contacts at this company"
+                                onClick={() => navigateTo(`/contacts/${group.id}`)}
+                              >
+                                <Users size={12} />
+                              </button>
+                            )}
+                            <button
+                              className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                              title="Delete"
+                              onClick={() => deleteApp(app.id)}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-                {!(byStatus[col.key] || []).length && <div style={{ padding: 'var(--rf-sp-4)', textAlign: 'center', color: 'var(--rf-text-faint)', fontSize: 'var(--rf-text-xs)' }}>Drop here</div>}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-      ) : (
-        /* Table view */
-        <div className="rf-pipeline__table-wrap">
-          <table className="rf-pipeline__table">
-            <thead><tr><th>Date</th><th>Job Title</th><th>Job ID</th><th>Company</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+      )}
+
+      {/* Table view */}
+      {apps.length > 0 && viewMode === 'table' && (
+        <div className="rf-pl-table-wrap">
+          <table className="rf-pl-table">
+            <thead>
+              <tr>
+                <th style={{ width: 120 }}>Date</th>
+                <th>Job title</th>
+                <th style={{ width: 160 }}>Job ID</th>
+                <th style={{ width: 240 }}>Company</th>
+                <th style={{ width: 160 }}>Status</th>
+                <th style={{ width: 50, textAlign: 'right' }}></th>
+              </tr>
+            </thead>
             <tbody>
               {filtered.map(app => (
                 <tr key={app.id}>
-                  <td>{app.appliedDate ? new Date(app.appliedDate).toLocaleDateString() : '—'}</td>
+                  <td className="rf-num" style={{ color: 'var(--rf-text-muted)' }}>
+                    {app.appliedDate ? new Date(app.appliedDate).toLocaleDateString() : '—'}
+                  </td>
                   <td>
                     <input
-                      className="rf-input rf-pipeline__edit-input"
+                      className="rf-input rf-input--sm"
                       value={app.jobTitle || ''}
                       placeholder="Job title"
                       onChange={e => updateLocalApplication(app.id, { jobTitle: e.target.value })}
@@ -415,7 +597,7 @@ export default function PipelinePage() {
                   </td>
                   <td>
                     <input
-                      className="rf-input rf-pipeline__edit-input rf-mono"
+                      className="rf-input rf-input--sm rf-mono"
                       value={app.jobId || ''}
                       placeholder="Job ID"
                       onChange={e => updateLocalApplication(app.id, { jobId: e.target.value })}
@@ -426,9 +608,9 @@ export default function PipelinePage() {
                   </td>
                   <td>
                     {addingCompanyForId === app.id ? (
-                      <div className="rf-pipeline__company-add">
+                      <div style={{ display: 'flex', gap: 4 }}>
                         <input
-                          className="rf-input"
+                          className="rf-input rf-input--sm"
                           value={newCompanyName}
                           placeholder="Company name"
                           onChange={e => setNewCompanyName(e.target.value)}
@@ -437,7 +619,7 @@ export default function PipelinePage() {
                           autoFocus
                         />
                         <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => createCompanyForApp(app.id)} disabled={!newCompanyName.trim() || companyBusyId === app.id} title="Create company">
-                          <Check size={13} />
+                          {companyBusyId === app.id ? <Loader size={13} className="rf-spin" /> : <Check size={13} />}
                         </button>
                         <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => { setAddingCompanyForId(''); setNewCompanyName(''); }} disabled={companyBusyId === app.id} title="Cancel">
                           <X size={13} />
@@ -445,7 +627,7 @@ export default function PipelinePage() {
                       </div>
                     ) : (
                       <select
-                        className="rf-select rf-pipeline__company-select"
+                        className="rf-select rf-input--sm"
                         value={getCompanySelectValue(app)}
                         onChange={e => {
                           const next = e.target.value;
@@ -469,20 +651,56 @@ export default function PipelinePage() {
                     )}
                   </td>
                   <td>
-                    <select className="rf-select rf-pipeline__status-select" value={app.status || 'applied'} onChange={e => updateStatus(app.id, e.target.value)}>
+                    <select
+                      className="rf-select rf-input--sm"
+                      value={app.status || 'applied'}
+                      onChange={e => updateStatus(app.id, e.target.value)}
+                    >
                       {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                     </select>
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => deleteApp(app.id)}><Trash2 size={13} /></button>
+                    <button
+                      className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                      onClick={() => deleteApp(app.id)}
+                      title="Delete"
+                    ><Trash2 size={13} /></button>
                   </td>
                 </tr>
               ))}
-              {!filtered.length && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--rf-text-muted)', padding: 'var(--rf-sp-6)' }}>No applications found.</td></tr>}
+              {!filtered.length && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--rf-text-muted)', padding: 'var(--rf-sp-8)' }}>
+                    No applications match your filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Sub-components ─────────────────────────────────────── */
+
+function DotMark() {
+  return <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} />;
+}
+
+function SummaryStat({ label, value, sub, active, accent, onClick }) {
+  const clickable = !!onClick;
+  return (
+    <button
+      className={`rf-pl-summary__stat${active ? ' rf-pl-summary__stat--active' : ''}${accent ? ' rf-pl-summary__stat--accent' : ''}`}
+      onClick={onClick}
+      disabled={!clickable}
+      style={!clickable ? { cursor: 'default' } : undefined}
+    >
+      <span className="rf-pl-summary__label">{label}</span>
+      <span className="rf-pl-summary__value rf-num">{value}</span>
+      {sub && <span className="rf-pl-summary__sub">{sub}</span>}
+    </button>
   );
 }

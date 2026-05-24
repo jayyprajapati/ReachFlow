@@ -4,6 +4,7 @@ import { RouterProvider, useRouter } from './router.jsx';
 import { ResumeLabProvider } from './contexts/ResumeLabContext.jsx';
 import AppShell from './components/layout/AppShell.jsx';
 import LandingPage from './pages/LandingPage.jsx';
+import HomePage from './pages/HomePage.jsx';
 import ComposePage from './pages/ComposePage.jsx';
 import PipelinePage from './pages/PipelinePage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
@@ -21,15 +22,16 @@ function PageRouter() {
   const { path } = useRouter();
 
   switch (true) {
-    case path === '/': return <ComposePage />;
-    case path === '/pipeline': return <PipelinePage />;
-    case path.startsWith('/contacts'): return <ContactsPage />;
-    case path === '/templates': return <TemplatesPage />;
-    case path === '/history': return <HistoryPage />;
-    case path === '/settings': return <SettingsPage />;
-    case path.startsWith('/resume-lab'): return <ResumeLabPage />;
-    case path.startsWith('/roadmaps'):   return <RoadmapLabPage />;
-    default: return <ComposePage />;
+    case path === '/':                    return <HomePage />;
+    case path === '/compose':             return <ComposePage />;
+    case path === '/pipeline':            return <PipelinePage />;
+    case path.startsWith('/contacts'):    return <ContactsPage />;
+    case path === '/templates':           return <TemplatesPage />;
+    case path === '/history':             return <HistoryPage />;
+    case path === '/settings':            return <SettingsPage />;
+    case path.startsWith('/resume-lab'):  return <ResumeLabPage />;
+    case path.startsWith('/roadmaps'):    return <RoadmapLabPage />;
+    default:                              return <HomePage />;
   }
 }
 
@@ -38,11 +40,10 @@ function AuthGate() {
   const { path } = useRouter();
 
   // Static pages — no auth needed
-  if (path === '/about') return <AboutPage />;
+  if (path === '/about')          return <AboutPage />;
   if (path === '/privacy-policy') return <PrivacyPolicyPage />;
-  if (path === '/terms-of-use') return <TermsOfUsePage />;
+  if (path === '/terms-of-use')   return <TermsOfUsePage />;
 
-  // Loading
   if (authLoading) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--rf-bg-root)' }}>
@@ -51,10 +52,8 @@ function AuthGate() {
     );
   }
 
-  // Not logged in
   if (!appUser) return <LandingPage />;
 
-  // Logged in — show shell + router
   return (
     <ResumeLabProvider>
       <AppShell>

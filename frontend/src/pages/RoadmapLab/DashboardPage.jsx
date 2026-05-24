@@ -5,19 +5,19 @@ import { useRouter } from '../../router.jsx';
 import { useRoadmap } from '../../contexts/RoadmapContext.jsx';
 import ProgressRing from './ProgressRing.jsx';
 
-// ── Domain palette ────────────────────────────────────────────────────────────
+// ── Domain palette (no green, no purple — blue-led with warm accents) ───────
 
-const PALETTE = ['#8b5cf6','#3b82f6','#10b981','#06b6d4','#f59e0b','#ef4444','#f97316','#6366f1','#14b8a6','#84cc16'];
+const PALETTE = ['#0052FF', '#5B7BB0', '#4B5F9C', '#2A6EFF', '#E89244', '#C97A3D', '#DC2626', '#6B7280', '#1A1815', '#3F4148'];
 
 function getDomainColor(domain) {
   const k = (domain || '').toLowerCase();
-  if (/ai|ml|machine|deep|llm|neural/.test(k))  return '#8b5cf6';
-  if (/backend|server|api|node|python|go|rust/.test(k)) return '#3b82f6';
-  if (/frontend|react|vue|css|ui|ux/.test(k))   return '#10b981';
-  if (/flutter|mobile|ios|android/.test(k))      return '#06b6d4';
-  if (/dsa|algorithm|leetcode|structure/.test(k)) return '#f59e0b';
-  if (/system|design|architect/.test(k))         return '#ef4444';
-  if (/devops|cloud|aws|docker|k8s/.test(k))     return '#f97316';
+  if (/ai|ml|machine|deep|llm|neural/.test(k))         return '#0052FF';
+  if (/backend|server|api|node|python|go|rust/.test(k)) return '#5B7BB0';
+  if (/frontend|react|vue|css|ui|ux/.test(k))           return '#4B5F9C';
+  if (/flutter|mobile|ios|android/.test(k))             return '#2A6EFF';
+  if (/dsa|algorithm|leetcode|structure/.test(k))       return '#E89244';
+  if (/system|design|architect/.test(k))                return '#DC2626';
+  if (/devops|cloud|aws|docker|k8s/.test(k))            return '#C97A3D';
   let h = 0;
   for (let i = 0; i < k.length; i++) h = k.charCodeAt(i) + ((h << 5) - h);
   return PALETTE[Math.abs(h) % PALETTE.length];
@@ -41,8 +41,8 @@ function JourneyLane({ roadmap, navigateTo, onDelete }) {
   const color = getDomainColor(roadmap.domain);
   const pct = roadmap.progressPercent || 0;
 
-  const statusColors = { active: '#22c55e', paused: '#f59e0b', completed: '#3b82f6' };
-  const statusDot = statusColors[roadmap.status] || '#6b7280';
+  const statusColors = { active: 'var(--rf-accent)', paused: 'var(--rf-warning)', completed: 'var(--rf-info)' };
+  const statusDot = statusColors[roadmap.status] || 'var(--rf-text-faint)';
 
   return (
     <div className="rml-lane" onClick={() => navigateTo(`/roadmaps/${roadmap._id}`)}>
@@ -259,19 +259,19 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="rml-dashboard">
-      {/* Hero header */}
-      <div className="rml-dashboard__hero">
-        <div className="rml-dashboard__hero-left">
-          {/* <div className="rml-hero-icon">
-            <Map size={22} />
-          </div> */}
-          <div>
-            <h1 className="rml-hero-title">Roadmap</h1>
-            <p className="rml-hero-sub">Your personal skill progression system</p>
+    <div className="rf-page rf-page--wide rml-dashboard">
+      <header className="rf-page-header">
+        <div className="rf-page-header__lead">
+          <div className="rf-page-header__eyebrow">
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} />
+            Roadmaps
           </div>
+          <h1 className="rf-page-header__title">Skill tracks</h1>
+          <p className="rf-page-header__subtitle">
+            Map out long-running learning journeys. Each roadmap is a stack of stages and resources you progress through over weeks or months.
+          </p>
         </div>
-        <div className="rml-dashboard__hero-right">
+        <div className="rf-page-header__actions">
           {roadmaps.length > 0 && (
             <div className="rml-hero-stats">
               <div className="rml-hero-stat">
@@ -280,21 +280,21 @@ export default function DashboardPage() {
               </div>
               <div className="rml-hero-stat-divider" />
               <div className="rml-hero-stat">
-                <span className="rml-hero-stat__num" style={{ color: 'var(--rf-success)' }}>{stats.active}</span>
+                <span className="rml-hero-stat__num">{stats.active}</span>
                 <span className="rml-hero-stat__label">Active</span>
               </div>
               <div className="rml-hero-stat-divider" />
               <div className="rml-hero-stat">
-                <span className="rml-hero-stat__num" style={{ color: 'var(--rf-accent)' }}>{stats.avgProgress}%</span>
-                <span className="rml-hero-stat__label">Avg Progress</span>
+                <span className="rml-hero-stat__num" style={{ color: 'var(--rf-accent-text)' }}>{stats.avgProgress}%</span>
+                <span className="rml-hero-stat__label">Avg progress</span>
               </div>
             </div>
           )}
-          <button className="rf-btn rf-btn--primary" onClick={() => setShowCreate(true)}>
-            <Plus size={15} /> New Roadmap
+          <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setShowCreate(true)}>
+            <Plus size={14} /> New roadmap
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Controls */}
       <div className="rml-controls">

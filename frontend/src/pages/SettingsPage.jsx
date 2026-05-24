@@ -381,79 +381,103 @@ export default function SettingsPage() {
   } = useApp();
 
   const { aiSettings, aiSettingsLoading } = useResumeLab();
-
-  // Card style shared by both columns
-  const card = {
-    background: 'var(--rf-bg-surface)',
-    border: '1px solid var(--rf-border-subtle)',
-    borderRadius: 'var(--rf-radius-lg)',
-    padding: 'var(--rf-sp-5)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--rf-sp-4)',
-  };
+  const llmValid = aiSettings?.isValid === true;
+  const llmConfigured = !!aiSettings?.configured;
 
   return (
-    // Override the max-width: 640px from .rf-settings so it fills the page
-    <div className="rf-settings" style={{ maxWidth: 'none', width: '100%' }}>
-      <div className="rf-page-header">
-        <div><h1 className="rf-page-header__title">Settings</h1><p className="rf-page-header__subtitle">Configure Gmail, AI provider, and account preferences</p></div>
+    <div className="rf-page rf-page--wide rf-set-page">
+      <header className="rf-page-header">
+        <div className="rf-page-header__lead">
+          <div className="rf-page-header__eyebrow">
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} />
+            Settings
+          </div>
+          <h1 className="rf-page-header__title">Workspace settings</h1>
+          <p className="rf-page-header__subtitle">
+            Gmail connection, AI provider, personalization, and account controls.
+          </p>
+        </div>
+      </header>
+
+      {/* Integrations health strip */}
+      <div className="rf-set-health">
+        <HealthChip
+          ok={gmailConnected}
+          label="Gmail"
+          okMsg="Connected — sending enabled"
+          warnMsg="Not connected — Compose can't send"
+        />
+        <HealthChip
+          ok={llmValid}
+          warn={llmConfigured && !llmValid}
+          label="AI provider"
+          okMsg="Validated — Resume Lab enabled"
+          warnMsg={llmConfigured ? 'Key saved but not validated' : 'Not configured — Resume Lab disabled'}
+        />
       </div>
 
-      {/* Two-column grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--rf-sp-5)', alignItems: 'start' }}>
+      {/* Top grid: Gmail · AI */}
+      <div className="rf-set-grid">
+        {/* Gmail card */}
+        <section className="rf-set-card">
+          <header className="rf-set-card__head">
+            <h2 className="rf-set-card__title"><Mail size={16} /> Gmail</h2>
+            <span className={`rf-badge ${gmailConnected ? 'rf-badge--success' : 'rf-badge--error'}`}>
+              {gmailConnected ? 'Connected' : 'Disconnected'}
+            </span>
+          </header>
 
-        {/* ── Left column: Gmail ── */}
-        <div style={card}>
-          <SectionTitle icon={Mail}>Gmail</SectionTitle>
-
-          {/* Connection */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-3)' }}>
-            <div className="rf-settings__section-title" style={{ fontSize: 'var(--rf-text-sm)', fontWeight: 600 }}>Connection</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--rf-sp-3)' }}>
-              <span className={`rf-badge ${gmailConnected ? 'rf-badge--success' : 'rf-badge--error'}`}>
-                {gmailConnected ? 'Connected' : 'Not connected'}
-              </span>
-              {gmailConnected
-                ? <button className="rf-btn rf-btn--danger rf-btn--sm" onClick={confirmDisconnectGmail} disabled={gmailActionLoading}>{gmailActionLoading ? 'Working…' : 'Disconnect'}</button>
-                : <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={connectGmail} disabled={gmailActionLoading}>{gmailActionLoading ? 'Connecting…' : 'Connect Gmail'}</button>
-              }
+          <div className="rf-set-row">
+            <div className="rf-set-row__body">
+              <div className="rf-set-row__label">Connection</div>
+              <p className="rf-set-row__help">
+                ReachFlow sends from your Gmail using OAuth. Disconnecting revokes our access; we never store your password.
+              </p>
             </div>
-            <button className="rf-btn rf-btn--link" style={{ alignSelf: 'flex-start', padding: 0 }} onClick={confirmReconnectGmail} disabled={gmailActionLoading}>
-              {gmailActionLoading ? 'Working…' : 'Reconnect (fresh OAuth)'}
-            </button>
+            <div className="rf-set-row__actions">
+              {gmailConnected
+                ? <button className="rf-btn rf-btn--danger rf-btn--sm" onClick={confirmDisconnectGmail} disabled={gmailActionLoading}>
+                    {gmailActionLoading ? <><Loader size={13} className="rf-spin" /> Working…</> : 'Disconnect'}
+                  </button>
+                : <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={connectGmail} disabled={gmailActionLoading}>
+                    {gmailActionLoading ? <><Loader size={13} className="rf-spin" /> Connecting…</> : 'Connect Gmail'}
+                  </button>}
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={confirmReconnectGmail} disabled={gmailActionLoading} title="Force a fresh OAuth grant">
+                Reconnect
+              </button>
+            </div>
           </div>
 
-          <Divider />
+          <hr className="rf-divider" />
 
-          {/* Sender name */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-2)' }}>
-            <div className="rf-label">Sender Display Name</div>
+          <div className="rf-set-stack">
+            <label className="rf-label">Sender display name</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 className="rf-input"
                 style={{ flex: 1 }}
                 value={senderName}
                 onChange={e => setSenderName(e.target.value)}
-                placeholder="Display name (optional)"
+                placeholder="Optional — e.g. Jay Prajapati"
               />
               <button
                 className="rf-btn rf-btn--secondary rf-btn--sm"
                 onClick={saveSenderPreference}
                 disabled={savingSenderName || senderName.trim() === savedSenderName}
               >
-                <Save size={13} />{savingSenderName ? 'Saving…' : 'Save'}
+                {savingSenderName ? <><Loader size={13} className="rf-spin" /> Saving…</> : <><Save size={13} /> Save</>}
               </button>
             </div>
-            <p className="rf-settings__help">Controls the name shown in outgoing emails. Leave empty to use your email address.</p>
+            <p className="rf-set-row__help">
+              Shown as the "From" name in outgoing emails. Leave empty to use your email address.
+            </p>
           </div>
 
-          {/* OAuth scopes */}
           {gmailConnected && grantedScopes.length > 0 && (
             <>
-              <Divider />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-2)' }}>
-                <div className="rf-label">Google Permissions</div>
+              <hr className="rf-divider" />
+              <div className="rf-set-stack">
+                <label className="rf-label">Google permissions</label>
                 <div className="rf-scope-list">
                   {requiredScopes.filter(s => s !== 'openid').map(scope => {
                     const short = scope.startsWith('https://') ? scope.split('/').pop() : scope;
@@ -461,66 +485,83 @@ export default function SettingsPage() {
                     return (
                       <div key={scope} className={`rf-scope-item ${granted ? 'rf-scope-item--granted' : 'rf-scope-item--missing'}`}>
                         {granted ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                        <span>{short}</span>
-                        <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', marginLeft: 'auto' }}>{granted ? 'Granted' : 'Missing'}</span>
+                        <span style={{ flex: 1 }}>{short}</span>
+                        <span style={{ fontSize: 11, color: 'var(--rf-text-faint)' }}>
+                          {granted ? 'Granted' : 'Missing'}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
-                <p className="rf-settings__help">If any scope is missing, use "Reconnect" above to re-authorise.</p>
+                <p className="rf-set-row__help">If a permission is missing, click <strong>Reconnect</strong> above and approve the prompt.</p>
               </div>
             </>
           )}
-        </div>
+        </section>
 
-        {/* ── Right column: AI ── */}
-        <div style={card}>
-          <SectionTitle icon={Brain}>AI · Resume Lab</SectionTitle>
-          <p className="rf-settings__help" style={{ marginTop: -8 }}>
-            Configure the LLM used for JD analysis and resume generation. A validated API key is required — Resume Lab will not work without one.
+        {/* AI provider card */}
+        <section className="rf-set-card">
+          <header className="rf-set-card__head">
+            <h2 className="rf-set-card__title"><Brain size={16} /> AI provider <span className="rf-set-card__sub">Resume Lab</span></h2>
+            <span className={`rf-badge ${llmValid ? 'rf-badge--success' : llmConfigured ? 'rf-badge--warning' : 'rf-badge--error'}`}>
+              {llmValid ? 'Validated' : llmConfigured ? 'Untested' : 'Not configured'}
+            </span>
+          </header>
+          <p className="rf-set-row__help" style={{ marginTop: -4 }}>
+            Bring your own key. Resume Lab needs a validated provider before it will run — there is no shared fallback.
           </p>
-          <Divider />
+          <hr className="rf-divider" />
           <AISettingsSection authedFetch={authedFetch} cachedSettings={aiSettings} cachedLoading={aiSettingsLoading} />
-        </div>
+        </section>
       </div>
 
-      {/* ── AI Personalization row ── */}
-      <div style={{ ...card, marginTop: 'var(--rf-sp-5)' }}>
-        <SectionTitle icon={Sliders}>AI Personalization</SectionTitle>
-        <p className="rf-settings__help" style={{ marginTop: -8 }}>
-          Control the tone and style of AI-generated content across Resume Lab.
+      {/* Personalization */}
+      <section className="rf-set-card">
+        <header className="rf-set-card__head">
+          <h2 className="rf-set-card__title"><Sliders size={16} /> AI personalization</h2>
+        </header>
+        <p className="rf-set-row__help" style={{ marginTop: -4 }}>
+          Sets the default tone, length, and format for AI-generated resumes, cover letters, and outreach text.
         </p>
-        <Divider />
+        <hr className="rf-divider" />
         <AIPersonalizationSection authedFetch={authedFetch} initialPrefs={aiSettings?.personalizationPrefs} initialSystemPrompt={aiSettings?.systemPrompt} />
-      </div>
+      </section>
 
-      {/* ── Bottom row: session + danger ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--rf-sp-5)', marginTop: 'var(--rf-sp-5)', alignItems: 'start' }}>
-
-        {/* Logout */}
-        <div style={{ ...card, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Footer grid: session + danger */}
+      <div className="rf-set-grid">
+        <section className="rf-set-card rf-set-card--inline">
           <div>
-            <div style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)', marginBottom: 4 }}>Session</div>
-            <p className="rf-settings__help" style={{ margin: 0 }}>Sign out of your account on this device.</p>
+            <h2 className="rf-set-card__title" style={{ marginBottom: 4 }}>Session</h2>
+            <p className="rf-set-row__help">Sign out of your ReachFlow account on this device.</p>
           </div>
-          <button className="rf-btn rf-btn--secondary rf-btn--sm" style={{ flexShrink: 0 }} onClick={confirmLogout}>
+          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={confirmLogout}>
             <LogOut size={13} /> Log out
           </button>
-        </div>
+        </section>
 
-        {/* Danger zone */}
-        <div style={{ ...card, border: '1px solid rgba(239,68,68,0.25)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <section className="rf-set-card rf-set-card--inline rf-set-card--danger">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-error-text)', marginBottom: 4 }}>
-              <ShieldAlert size={14} /> Danger Zone
-            </div>
-            <p className="rf-settings__help" style={{ margin: 0 }}>Permanently delete your account and all data.</p>
+            <h2 className="rf-set-card__title" style={{ color: 'var(--rf-error-text)', marginBottom: 4 }}>
+              <ShieldAlert size={16} /> Danger zone
+            </h2>
+            <p className="rf-set-row__help">Permanently delete your account, contacts, applications, and resumes. This cannot be undone.</p>
           </div>
-          <button className="rf-btn rf-btn--danger rf-btn--sm" style={{ flexShrink: 0 }} onClick={deleteMyAccount}>
-            <Trash2 size={13} /> Delete Account
+          <button className="rf-btn rf-btn--danger rf-btn--sm" onClick={deleteMyAccount}>
+            <Trash2 size={13} /> Delete account
           </button>
-        </div>
+        </section>
       </div>
+    </div>
+  );
+}
+
+function HealthChip({ ok, warn, label, okMsg, warnMsg }) {
+  const tone = ok ? 'ok' : warn ? 'warn' : 'err';
+  return (
+    <div className={`rf-set-health__chip rf-set-health__chip--${tone}`}>
+      {ok ? <CheckCircle2 size={14} /> : warn ? <AlertCircle size={14} /> : <XCircle size={14} />}
+      <span className="rf-set-health__chip-label">{label}</span>
+      <span className="rf-set-health__chip-msg">{ok ? okMsg : warnMsg}</span>
     </div>
   );
 }

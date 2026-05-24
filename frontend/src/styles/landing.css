@@ -32,6 +32,11 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.rf-landing > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 :root[data-theme="light"] .rf-landing {
   --L-warm: #a87324;
   --L-warm-soft: rgba(168, 115, 36, 0.10);
@@ -62,6 +67,9 @@
 .rf-landing .rf-scope-banner code {
   background: rgba(227, 183, 121, 0.12);
   color: var(--L-warm);
+}
+.rf-landing .rf-scope-banner span {
+  min-width: 0;
 }
 .rf-landing .rf-scope-banner__close { color: var(--L-warm); }
 
@@ -119,6 +127,8 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 /* ── Generic section scaffolding ───────────────────────── */
@@ -180,6 +190,7 @@
   flex-direction: column;
   gap: 18px;
   max-width: 560px;
+  min-width: 0;
 }
 .rf-hero__eyebrow {
   display: inline-flex;
@@ -687,11 +698,89 @@
 
 @media (max-width: 680px) {
   .rf-landing .rf-scope-banner { padding: 7px 14px; font-size: 0.72rem; }
+  .rf-landing .rf-scope-banner {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) 24px;
+    align-items: flex-start;
+    column-gap: 8px;
+    min-width: 0;
+  }
+  .rf-landing .rf-scope-banner a,
+  .rf-landing .rf-scope-banner code {
+    overflow-wrap: anywhere;
+  }
 
-  .rf-hero { padding-inline: 18px; }
-  .rf-hero__title { font-size: clamp(1.6rem, 7vw, 2rem); }
-  .rf-hero__cta { width: 100%; }
-  .rf-hero__cta .rf-btn { flex: 1; min-width: 0; }
+  .rf-landing .rf-scope-banner a,
+  .rf-landing .rf-scope-banner__close {
+    display: none;
+  }
+
+  .rf-landing__header {
+    padding-inline: 14px;
+  }
+
+  .rf-landing__brand-name {
+    font-size: 0.96rem;
+  }
+
+  .rf-landing__header-actions .rf-btn--primary {
+    height: 38px;
+    padding-inline: 12px;
+  }
+
+  .rf-hero {
+    padding-inline: 18px;
+    overflow: visible;
+  }
+
+  .rf-hero__intro {
+    width: calc(100vw - 36px);
+    max-width: calc(100vw - 36px);
+  }
+
+  .rf-hero__title {
+    width: min(100%, 19ch);
+    font-size: clamp(1.4rem, 6vw, 1.75rem);
+    line-height: 1.08;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .rf-hero__title br {
+    display: none;
+  }
+
+  .rf-hero__title-accent {
+    display: inline;
+    line-height: 1.05;
+    transform: none;
+    overflow-wrap: anywhere;
+  }
+
+  .rf-hero__subtitle {
+    width: min(100%, 34ch);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .rf-hero__cta {
+    width: 100%;
+    align-items: flex-start;
+    gap: var(--rf-sp-2);
+  }
+
+  .rf-hero__cta .rf-btn {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .rf-hero__cta-note {
+    flex-basis: 100%;
+    white-space: normal;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
 
   /* Convert desktop constellation to vertical mobile flow */
   .rf-constellation { display: none; }
@@ -759,6 +848,20 @@
   }
 
   .rf-philo { padding-block: 40px; }
+  .rf-philo__heading,
+  .rf-features__heading,
+  .rf-final__heading {
+    width: min(100%, 22ch);
+    overflow-wrap: anywhere;
+  }
+
+  .rf-philo__body,
+  .rf-feature-row__desc,
+  .rf-final__body {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
   .rf-features { padding-block: 40px; }
   .rf-trust { padding-block: 40px; }
   .rf-final { padding-block: 48px; }
@@ -792,7 +895,19 @@
 }
 
 @media (max-width: 420px) {
-  .rf-hero__title { font-size: 1.7rem; }
+  .rf-landing .rf-scope-banner {
+    gap: 8px;
+  }
+
+  .rf-landing__header-actions {
+    gap: 4px;
+  }
+
+  .rf-landing__header-actions .rf-btn--primary {
+    display: none;
+  }
+
+  .rf-hero__title { font-size: 1.55rem; }
   .rf-philo__heading,
   .rf-features__heading { font-size: 1.4rem; }
   .rf-final__heading { font-size: 1.65rem; }
