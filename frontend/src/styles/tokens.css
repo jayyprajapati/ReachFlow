@@ -143,6 +143,35 @@
   --rf-sidebar-collapsed: 64px;
   --rf-header-height:     60px;
   --rf-content-max:       1320px;
+  --rf-page-padding-x:    32px;
+  --rf-page-padding-y:    32px;
+}
+
+/* ── Compact desktop (≤1440px) — laptops & small monitors ── */
+@media (min-width: 1025px) and (max-width: 1440px) {
+  :root {
+    --rf-sidebar-width:   216px;
+    --rf-page-padding-x:  24px;
+    --rf-page-padding-y:  24px;
+    --rf-text-3xl:        1.75rem;    /* 28px */
+    --rf-text-2xl:        1.5rem;     /* 24px */
+    --rf-text-xl:         1.25rem;    /* 20px */
+    --rf-text-lg:         1.0625rem;  /* 17px */
+    --rf-text-md:         0.9375rem;  /* 15px */
+    --rf-text-base:       0.875rem;   /* 14px */
+    --rf-text-sm:         0.78125rem; /* 12.5px */
+  }
+}
+
+/* ── Cramped desktop (≤1280px) — 13" laptops ── */
+@media (min-width: 1025px) and (max-width: 1280px) {
+  :root {
+    --rf-sidebar-width:   200px;
+    --rf-page-padding-x:  20px;
+    --rf-page-padding-y:  20px;
+    --rf-text-3xl:        1.625rem;   /* 26px */
+    --rf-text-2xl:        1.375rem;   /* 22px */
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════

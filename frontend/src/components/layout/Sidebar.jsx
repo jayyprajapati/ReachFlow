@@ -5,7 +5,7 @@ import {
   LayoutGrid, PenLine, Briefcase, Users, FileText, Compass,
   Search, ChevronsLeft, ChevronsRight,
   LogOut, XCircle, CheckCircle2,
-  Sun, Moon, Settings, MailWarning, Sparkles,
+  Sun, Moon, Settings, MailWarning, Sparkles, Lock,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { path: '/compose',    label: 'Compose',       icon: PenLine },
   { path: '/pipeline',   label: 'Applications',  icon: Briefcase },
   { path: '/contacts',   label: 'Contacts',      icon: Users },
-  { path: '/resume-lab', label: 'Resume Lab',    icon: FileText },
+  { path: '/resume-lab', label: 'Resume Lab',    icon: FileText, disabled: true, disabledReason: 'Feature coming soon' },
   { path: '/roadmaps',   label: 'Roadmaps',      icon: Compass },
 ];
 
@@ -33,7 +33,14 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
   const { path, navigateTo } = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [llmValid, setLlmValid] = useState(null);
+  const [hoverTip, setHoverTip] = useState(null); // { text, x, y }
   const menuRef = useRef(null);
+
+  const showHoverTip = (e, text) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2 });
+  };
+  const hideHoverTip = () => setHoverTip(null);
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -70,6 +77,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
 
   return (
     <div className="rf-sidebar">
+      {hoverTip && (
+        <div
+          className="rf-hover-tip"
+          role="tooltip"
+          style={{ top: hoverTip.y, left: hoverTip.x }}
+        >
+          {hoverTip.text}
+        </div>
+      )}
       {/* Brand */}
       <button className="rf-sidebar__brand" onClick={() => goTo('/')}>
         <span className="rf-sidebar__logo">
@@ -94,6 +110,26 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
         {NAV_ITEMS.map(item => {
           const Icon = item.icon;
           const active = isActive(item.path);
+          if (item.disabled) {
+            const tip = item.disabledReason || 'Feature coming soon';
+            return (
+              <button
+                key={item.path}
+                className="rf-sidebar__link rf-sidebar__link--locked"
+                aria-disabled="true"
+                type="button"
+                onClick={(e) => e.preventDefault()}
+                onMouseEnter={(e) => showHoverTip(e, tip)}
+                onMouseLeave={hideHoverTip}
+                onFocus={(e) => showHoverTip(e, tip)}
+                onBlur={hideHoverTip}
+              >
+                <span className="rf-sidebar__link-icon"><Icon size={18} strokeWidth={1.8} /></span>
+                <span className="rf-sidebar__link-label">{item.label}</span>
+                <Lock size={12} className="rf-sidebar__link-lock" />
+              </button>
+            );
+          }
           return (
             <button
               key={item.path}

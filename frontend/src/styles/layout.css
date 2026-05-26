@@ -443,7 +443,7 @@
 .rf-page {
   max-width: var(--rf-content-max);
   margin: 0 auto;
-  padding: var(--rf-sp-8) var(--rf-sp-8) var(--rf-sp-12);
+  padding: var(--rf-page-padding-y) var(--rf-page-padding-x) var(--rf-sp-12);
 }
 
 .rf-page--wide {
@@ -459,8 +459,36 @@
 }
 
 .rf-page-header__lead {
+  flex: 1 1 auto;
   min-width: 0;
 }
+
+.rf-page-header__actions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* Compact-desktop tweaks: shrink header gap, tighten subtitle */
+@media (min-width: 1025px) and (max-width: 1440px) {
+  .rf-page-header {
+    gap: var(--rf-sp-4);
+    margin-bottom: var(--rf-sp-5);
+  }
+  .rf-page-header__subtitle {
+    max-width: 480px;
+    font-size: var(--rf-text-sm);
+  }
+}
+
+@media (min-width: 1025px) and (max-width: 1280px) {
+  .rf-page-header__subtitle {
+    max-width: 380px;
+  }
+}
+
+/* Sizes for header lead/actions defined above in the responsive block. */
 
 .rf-page-header__eyebrow {
   font-size: 11px;
@@ -495,7 +523,10 @@
   display: flex;
   align-items: center;
   gap: var(--rf-sp-2);
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* ── Inline subnav — used inside Resume Lab, Roadmap Lab ── */

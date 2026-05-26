@@ -303,7 +303,20 @@ export default function HomePage() {
         <div className="rf-home__grid">
           {/* Focus stream */}
           <section className="rf-home__focus">
+            {/* Jump-in tiles — primary entry points */}
             <div className="rf-home__section-head">
+              <div className="rf-home__section-title">Jump in</div>
+            </div>
+            <div className="rf-home__tiles">
+              <Tile icon={PenLine}    title="New email"          desc="Compose with templates, variables, AI rewrite."   onClick={() => navigateTo('/compose')} />
+              <Tile icon={Briefcase}  title="Track application"  desc="Drop a job link or paste a list into Pipeline."   onClick={() => navigateTo('/pipeline')} />
+              <Tile icon={Users}      title="Add contact"        desc="Build a company group with HR + recruiter info."  onClick={() => navigateTo('/contacts')} />
+              <Tile icon={FileSearch} title="Analyze a JD"       desc="Tailor your resume against a job description."    onClick={() => navigateTo('/resume-lab')} locked />
+              <Tile icon={Compass}    title="Push a roadmap"     desc="Move a learning track forward today."             onClick={() => navigateTo('/roadmaps')} />
+            </div>
+
+            {/* Up-next focus list */}
+            <div className="rf-home__section-head" style={{ marginTop: 'var(--rf-sp-6)' }}>
               <div className="rf-home__section-title">
                 Up next
                 <span className="rf-home__section-count">{focusItems.length}</span>
@@ -313,7 +326,7 @@ export default function HomePage() {
             {focusItems.length === 0 ? (
               <div className="rf-home__focus-empty">
                 <strong>Nothing pressing.</strong>
-                Start a new outreach, log a fresh application, or push your roadmap forward — use a tile below.
+                Start a new outreach, log a fresh application, or push your roadmap forward — use a tile above.
               </div>
             ) : (
               focusItems.map(item => {
@@ -334,18 +347,6 @@ export default function HomePage() {
                 );
               })
             )}
-
-            {/* Jump-in tiles */}
-            <div className="rf-home__section-head" style={{ marginTop: 'var(--rf-sp-3)' }}>
-              <div className="rf-home__section-title">Jump in</div>
-            </div>
-            <div className="rf-home__tiles">
-              <Tile icon={PenLine}    title="New email"          desc="Compose with templates, variables, AI rewrite."   onClick={() => navigateTo('/compose')} />
-              <Tile icon={Briefcase}  title="Track application"  desc="Drop a job link or paste a list into Pipeline."   onClick={() => navigateTo('/pipeline')} />
-              <Tile icon={Users}      title="Add contact"        desc="Build a company group with HR + recruiter info."  onClick={() => navigateTo('/contacts')} />
-              <Tile icon={FileSearch} title="Analyze a JD"       desc="Tailor your resume against a job description."    onClick={() => navigateTo('/resume-lab')} />
-              <Tile icon={Compass}    title="Push a roadmap"     desc="Move a learning track forward today."             onClick={() => navigateTo('/roadmaps')} />
-            </div>
           </section>
 
           {/* Side rail */}
@@ -436,12 +437,35 @@ function Stat({ icon: Icon, label, value, sub, onClick }) {
   );
 }
 
-function Tile({ icon: Icon, title, desc, onClick }) {
+function Tile({ icon: Icon, title, desc, onClick, locked }) {
+  if (locked) {
+    return (
+      <button
+        className="rf-home__tile rf-home__tile--locked"
+        aria-disabled="true"
+        type="button"
+        title="Feature coming soon"
+        onClick={(e) => e.preventDefault()}
+      >
+        <span className="rf-home__tile-icon"><Icon size={18} strokeWidth={1.8} /></span>
+        <span className="rf-home__tile-title">{title} <LockMark /></span>
+        <span className="rf-home__tile-desc">{desc}</span>
+      </button>
+    );
+  }
   return (
     <button className="rf-home__tile" onClick={onClick}>
       <span className="rf-home__tile-icon"><Icon size={18} strokeWidth={1.8} /></span>
       <span className="rf-home__tile-title">{title}</span>
       <span className="rf-home__tile-desc">{desc}</span>
     </button>
+  );
+}
+
+function LockMark() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 6, color: 'var(--rf-text-faint)' }} aria-hidden="true">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </span>
   );
 }

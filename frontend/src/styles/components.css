@@ -410,6 +410,10 @@
   padding: var(--rf-sp-6);
   max-width: 460px;
   width: 100%;
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   box-shadow: var(--rf-shadow-xl);
   animation: rf-scaleIn var(--rf-duration-slow) var(--rf-ease-spring);
 }
@@ -420,6 +424,7 @@
   font-weight: 700;
   letter-spacing: -0.012em;
   margin-bottom: var(--rf-sp-3);
+  flex-shrink: 0;
 }
 
 .rf-dialog__body {
@@ -427,6 +432,11 @@
   font-size: var(--rf-text-base);
   line-height: var(--rf-leading-normal);
   margin-bottom: var(--rf-sp-6);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .rf-dialog__actions {
@@ -680,6 +690,114 @@
 .rf-copy-btn:focus-visible { opacity: 1; }
 .rf-copy-btn:hover { color: var(--rf-accent-text); background: var(--rf-accent-muted); }
 .rf-copy-btn--copied { color: var(--rf-success-text); opacity: 1; }
+
+/* Generic fixed-position hover tooltip — escapes every overflow:hidden ancestor */
+.rf-hover-tip {
+  position: fixed;
+  transform: translateY(-50%);
+  background: var(--rf-text);
+  color: var(--rf-text-inverse);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: var(--rf-radius-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--rf-z-toast);
+  box-shadow: var(--rf-shadow-md);
+  letter-spacing: 0.005em;
+  animation: rf-hover-tip-in 120ms var(--rf-ease-out);
+}
+.rf-hover-tip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: var(--rf-text);
+}
+@keyframes rf-hover-tip-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(-2px); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* Fixed-position copy toast — escapes every overflow:hidden ancestor */
+.rf-copy-toast {
+  position: fixed;
+  transform: translateX(-50%);
+  background: var(--rf-text);
+  color: var(--rf-text-inverse);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: var(--rf-radius-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--rf-z-toast);
+  box-shadow: var(--rf-shadow-md);
+  letter-spacing: 0.005em;
+  animation: rf-copy-toast-in 140ms var(--rf-ease-out);
+}
+.rf-copy-toast::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--rf-text);
+}
+@keyframes rf-copy-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Coming-soon / locked feature affordance ──────────────── */
+
+/* Locked button — keep visual identity but show it's not interactive */
+.rf-btn--locked,
+.rf-btn--locked:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: var(--rf-text-muted) !important;
+  background: var(--rf-bg-surface) !important;
+  border-color: var(--rf-border-subtle) !important;
+}
+.rf-btn--locked svg { color: var(--rf-text-faint); }
+
+/* Locked sidebar link — dim, lock badge on the right */
+.rf-sidebar__link-lock-wrap { display: block; width: 100%; cursor: not-allowed; }
+.rf-sidebar__link--locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rf-sidebar__link--locked:hover { background: transparent; color: var(--rf-text-secondary); }
+.rf-sidebar__link-lock {
+  margin-left: auto;
+  color: var(--rf-text-faint);
+  flex-shrink: 0;
+}
+
+/* Locked home tile */
+.rf-home__tile--locked,
+.rf-home__tile--locked:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rf-home__tile--locked:hover {
+  transform: none;
+  border-color: var(--rf-border-subtle);
+  box-shadow: none;
+}
+
+/* Locked command palette item */
+.rf-command__item--locked,
+.rf-command__item--locked:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rf-command__item--locked .rf-command__item-go { color: var(--rf-text-faint); }
 
 /* ── Status Dot ──────────────────────────────────────────── */
 

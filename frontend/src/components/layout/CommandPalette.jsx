@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Search, LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Settings, ArrowRight, CornerDownLeft,
+  Search, LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Settings, ArrowRight, CornerDownLeft, Lock,
 } from 'lucide-react';
 
 const NAV_COMMANDS = [
@@ -10,7 +10,7 @@ const NAV_COMMANDS = [
   { id: 'nav-compose',   label: 'Compose',       hint: 'New email',    path: '/compose',    icon: PenLine,     section: 'Workspace' },
   { id: 'nav-pipeline',  label: 'Applications',  hint: 'Pipeline',     path: '/pipeline',   icon: Briefcase,   section: 'Workspace' },
   { id: 'nav-contacts',  label: 'Contacts',      hint: 'Companies',    path: '/contacts',   icon: Users,       section: 'Workspace' },
-  { id: 'nav-resume',    label: 'Resume Lab',    hint: 'Analyze · Generate', path: '/resume-lab', icon: FileText, section: 'Workspace' },
+  { id: 'nav-resume',    label: 'Resume Lab',    hint: 'Coming soon', path: '/resume-lab', icon: FileText, section: 'Workspace', disabled: true },
   { id: 'nav-roadmap',   label: 'Roadmaps',      hint: 'Skill tracks', path: '/roadmaps',   icon: Compass,     section: 'Workspace' },
   { id: 'nav-settings',  label: 'Settings',      hint: '',             path: '/settings',   icon: Settings,    section: 'Workspace' },
 ];
@@ -52,6 +52,7 @@ export default function CommandPalette({ onClose }) {
   useEffect(() => { setActiveIdx(0); }, [query]);
 
   function handleSelect(item) {
+    if (item.disabled) return;
     navigateTo(item.path);
     onClose();
   }
@@ -101,16 +102,20 @@ export default function CommandPalette({ onClose }) {
                   return (
                     <button
                       key={item.id}
-                      className={`rf-command__item${active ? ' rf-command__item--active' : ''}`}
+                      className={`rf-command__item${active ? ' rf-command__item--active' : ''}${item.disabled ? ' rf-command__item--locked' : ''}`}
                       onClick={() => handleSelect(item)}
                       onMouseEnter={() => setActiveIdx(item.globalIdx)}
+                      disabled={item.disabled}
+                      title={item.disabled ? 'Feature coming soon' : undefined}
                     >
                       <span className="rf-command__item-icon"><Icon size={16} strokeWidth={1.8} /></span>
                       <span className="rf-command__item-label">{item.label}</span>
                       {item.hint && <span className="rf-command__item-hint">{item.hint}</span>}
-                      {active
-                        ? <CornerDownLeft size={13} className="rf-command__item-go" />
-                        : <ArrowRight size={13} className="rf-command__item-go" />}
+                      {item.disabled
+                        ? <Lock size={12} className="rf-command__item-go" />
+                        : (active
+                          ? <CornerDownLeft size={13} className="rf-command__item-go" />
+                          : <ArrowRight size={13} className="rf-command__item-go" />)}
                     </button>
                   );
                 })}

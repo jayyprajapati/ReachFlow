@@ -78,7 +78,17 @@ function parseContactLine(line) {
   const rawLine = String(line || '').trim();
   if (!rawLine) return null;
   const { email, raw } = extractEmail(rawLine);
-  let cleaned = rawLine
+  // Detect trailing " V"/" v" marker — flags email as verified.
+  // Only treat it as the verified-marker when there's an email AND the V is the
+  // very last token, so legitimate names like "Andrew V" don't false-positive
+  // when there's no email present.
+  let verifiedFlag = false;
+  let working = rawLine;
+  if (email && /\s+[Vv]\s*$/.test(rawLine)) {
+    verifiedFlag = true;
+    working = rawLine.replace(/\s+[Vv]\s*$/, '');
+  }
+  let cleaned = working
     .replace(raw || '', ' ')
     .replace(/[<>()[\]{}"']/g, ' ')
     .replace(/\s+/g, ' ')
@@ -89,7 +99,9 @@ function parseContactLine(line) {
     .filter(Boolean);
   const name = capitalizeDisplayName(segments[0] || (email ? nameFromEmail(email) : cleaned));
   if (!name && !email) return null;
-  return { name, email, role: 'Recruiter', source: rawLine };
+  const result = { name, email, role: 'Recruiter', source: rawLine };
+  if (verifiedFlag) result.email_status = 'verified';
+  return result;
 }
 
 function parseBulkText(text) {
@@ -175,13 +187,16 @@ function parseGlobalBulkText(text, groups) {
   const seen = new Set();
   return splitPasteRows(text).map(line => {
     const { email, raw } = extractEmail(line);
+    // Detect trailing " V"/" v" valid-marker on the original line (before email is stripped).
+    const verifiedFlag = !!email && /\s+[Vv]\s*$/.test(line);
+    const withoutVerified = verifiedFlag ? line.replace(/\s+[Vv]\s*$/, '') : line;
     const emailKey = email.toLowerCase();
     if (emailKey) {
       if (seen.has(emailKey)) return null;
       seen.add(emailKey);
     }
-    const target = matchGroupForLine(line, email, groups, lookup);
-    const withoutEmail = raw ? line.replace(raw, ' ') : line;
+    const target = matchGroupForLine(withoutVerified, email, groups, lookup);
+    const withoutEmail = raw ? withoutVerified.replace(raw, ' ') : withoutVerified;
     const contactLine = `${target ? removeCompanyFromLine(withoutEmail, target) : withoutEmail} ${email}`.trim();
     const parsed = parseContactLine(contactLine);
     if (!parsed) return null;
@@ -189,6 +204,7 @@ function parseGlobalBulkText(text, groups) {
       ...parsed,
       email,
       name: capitalizeDisplayName(parsed.name || (email ? nameFromEmail(email) : '')),
+      ...(verifiedFlag ? { email_status: 'verified' } : {}),
       targetGroup: target,
       targetGroupName: target?.companyName || (email ? companyFromEmail(email) : ''),
       source: line,
@@ -197,9 +213,9 @@ function parseGlobalBulkText(text, groups) {
 }
 
 function getNewCompanyShortcutLabel() {
-  if (typeof navigator === 'undefined') return 'Alt+Shift+N';
+  if (typeof navigator === 'undefined') return 'Alt↑N';
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
-  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌥⇧N' : 'Alt+Shift+N';
+  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌥↑N' : 'Alt↑N';
 }
 
 export default function ContactsPage() {
@@ -257,7 +273,7 @@ export default function ContactsPage() {
   }, []);
 
   useEffect(() => { loadGroups(); }, []);
-  useEffect(() => { if (copiedField) { const t = setTimeout(() => setCopiedField(''), 1200); return () => clearTimeout(t); } }, [copiedField]);
+  useEffect(() => { if (copiedField) { const t = setTimeout(() => setCopiedField(''), 2000); return () => clearTimeout(t); } }, [copiedField]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -537,20 +553,35 @@ export default function ContactsPage() {
 
   function copyVal(text, key) { navigator.clipboard.writeText(text || '').then(() => setCopiedField(key)); }
 
-  function handleNameClick(contact) {
+  function handleNameClick(contact, anchorEl) {
     const key = contact.id;
+    // Capture the button's screen position now — by the time the setTimeout fires,
+    // React may have re-rendered the row and the synthetic event's currentTarget is gone.
+    const rect = anchorEl?.getBoundingClientRect?.();
     if (clickTimerRef.current[key]) {
       clearTimeout(clickTimerRef.current[key]);
       delete clickTimerRef.current[key];
       copyVal(contact.name, `name-${contact.id}-full`);
+      showCopyTip(rect, 'Full name copied');
     } else {
       clickTimerRef.current[key] = setTimeout(() => {
         delete clickTimerRef.current[key];
         const firstName = (contact.name || '').split(/\s+/)[0];
         copyVal(firstName || contact.name, `name-${contact.id}-first`);
+        showCopyTip(rect, 'Click twice to copy full');
       }, 220);
     }
   }
+
+  const [copyTip, setCopyTip] = useState(null);
+  const copyTipTimerRef = useRef(null);
+  function showCopyTip(rect, text) {
+    if (!rect) return;
+    if (copyTipTimerRef.current) clearTimeout(copyTipTimerRef.current);
+    setCopyTip({ text, x: rect.left + rect.width / 2, y: rect.top });
+    copyTipTimerRef.current = setTimeout(() => setCopyTip(null), 1800);
+  }
+  useEffect(() => () => { if (copyTipTimerRef.current) clearTimeout(copyTipTimerRef.current); }, []);
 
   function composeToCompany() {
     if (!detail?.contacts?.length) {
@@ -576,6 +607,44 @@ export default function ContactsPage() {
     a.download = `${(detail.companyName || 'contacts').replace(/[^a-z0-9]/gi, '_')}_contacts.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  const [exportingAll, setExportingAll] = useState(false);
+  async function exportAllCSV() {
+    if (exportingAll || !groups.length) return;
+    setExportingAll(true);
+    try {
+      const headers = ['Company', 'Name', 'Email', 'Role', 'LinkedIn', 'Connection Status', 'Email Status'];
+      const rows = [];
+      for (const g of groups) {
+        if (!g.contactCount) continue;
+        try {
+          const r = await authedFetch(`${API}/api/groups/${g.id}`);
+          const data = await r.json();
+          if (!r.ok) continue;
+          for (const c of (data.contacts || [])) {
+            rows.push([data.companyName || g.companyName, c.name, c.email, c.role, c.linkedin, c.connectionStatus, c.email_status]);
+          }
+        } catch {/* skip failed group */}
+      }
+      if (!rows.length) {
+        setNotice({ type: 'info', message: 'No contacts to export' });
+        return;
+      }
+      const csv = [headers, ...rows].map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reachflow_all_contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setNotice({ type: 'success', message: `Exported ${rows.length} contact${rows.length !== 1 ? 's' : ''} across ${groups.filter(g => g.contactCount).length} compan${groups.filter(g => g.contactCount).length !== 1 ? 'ies' : 'y'}.` });
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Export failed' });
+    } finally {
+      setExportingAll(false);
+    }
   }
 
   function handleCSVFile(e) {
@@ -627,6 +696,15 @@ export default function ContactsPage() {
 
   return (
     <div className="rf-page rf-page--wide rf-contacts-page" ref={pageRef}>
+      {copyTip && (
+        <div
+          className="rf-copy-toast"
+          role="status"
+          style={{ top: Math.max(8, copyTip.y - 36), left: copyTip.x }}
+        >
+          {copyTip.text}
+        </div>
+      )}
       <header className="rf-page-header">
         <div className="rf-page-header__lead">
           <div className="rf-page-header__eyebrow"><DotMark /> Contacts</div>
@@ -640,17 +718,19 @@ export default function ContactsPage() {
             <span className="rf-num" style={{ color: 'var(--rf-text)', fontWeight: 600 }}>{groups.length}</span> companies · <span className="rf-num" style={{ color: 'var(--rf-text)', fontWeight: 600 }}>{totalContacts}</span> contacts
           </span>
           <button
-            className="rf-btn rf-btn--secondary rf-btn--sm"
+            className="rf-btn rf-btn--ghost rf-btn--sm"
+            onClick={exportAllCSV}
+            disabled={exportingAll || !totalContacts}
+            title={totalContacts ? 'Export every contact across all companies as CSV' : 'Add contacts first'}
+          >
+            {exportingAll ? <Loader size={14} className="rf-spin" /> : <FileDown size={14} />}
+            {exportingAll ? 'Exporting…' : 'Export all'}
+          </button>
+          <button
+            className="rf-btn rf-btn--ghost rf-btn--sm"
             onClick={openGlobalPaste}
           >
             <ClipboardPaste size={14} /> Global paste
-          </button>
-          <button
-            className="rf-btn rf-btn--primary rf-btn--sm"
-            onClick={startCreateCompany}
-            title={`New company (${newCompanyShortcutLabel})`}
-          >
-            <Plus size={14} /> New company <kbd className="rf-ct__btn-shortcut">{newCompanyShortcutLabel}</kbd>
           </button>
         </div>
       </header>
@@ -679,13 +759,24 @@ export default function ContactsPage() {
                   </button>
                 )}
               </div>
-              <button
-                className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
-                onClick={() => setSortCompaniesAZ(v => !v)}
-                title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
-              >
-                <ArrowUpDown size={13} /> A-Z
-              </button>
+              <div className="rf-ct__sidebar-actions">
+                <button
+                  className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
+                  onClick={() => setSortCompaniesAZ(v => !v)}
+                  title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
+                >
+                  <ArrowUpDown size={13} /> Sort
+                </button>
+                <div className="rf-ct__new-company-action">
+                  <button
+                    className="rf-btn rf-btn--primary rf-btn--sm rf-ct__new-company"
+                  onClick={startCreateCompany}
+                  title={`New company (${newCompanyShortcutLabel})`}
+                >
+                    <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -927,7 +1018,13 @@ export default function ContactsPage() {
                       {editingId === '__new__' && (
                         <tr className="rf-ct__table-edit">
                           <td>
-                            <input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" autoFocus />
+                            <div className="rf-ct__edit-stack">
+                              <input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" autoFocus />
+                              <div className="rf-ct__edit-linkedin">
+                                <Linkedin size={12} />
+                                <input className="rf-input rf-input--sm" value={contactForm.linkedin || ''} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL (optional)" />
+                              </div>
+                            </div>
                           </td>
                           <td>
                             <input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="email@company.com" />
@@ -952,7 +1049,15 @@ export default function ContactsPage() {
                       )}
                       {visibleContacts.map(c => editingId === c.id ? (
                         <tr key={c.id} className="rf-ct__table-edit">
-                          <td><input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} /></td>
+                          <td>
+                            <div className="rf-ct__edit-stack">
+                              <input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} />
+                              <div className="rf-ct__edit-linkedin">
+                                <Linkedin size={12} />
+                                <input className="rf-input rf-input--sm" value={contactForm.linkedin || ''} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL (optional)" />
+                              </div>
+                            </div>
+                          </td>
                           <td><input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} /></td>
                           <td>
                             <select className="rf-select rf-input--sm" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
@@ -984,9 +1089,15 @@ export default function ContactsPage() {
                               {c.name && (
                                 <button
                                   className={`rf-copy-btn ${copiedField.startsWith(`name-${c.id}-`) ? 'rf-copy-btn--copied' : ''}`}
-                                  title={getNameCopyTitle(c)}
-                                  onClick={() => handleNameClick(c)}
-                                ><Copy size={11} /></button>
+                                  title={
+                                    copiedField === `name-${c.id}-full` ? 'Full name copied'
+                                    : copiedField === `name-${c.id}-first` ? 'First name copied · click twice for full name'
+                                    : 'Copy first name · double-click for full name'
+                                  }
+                                  onClick={(e) => handleNameClick(c, e.currentTarget)}
+                                >
+                                  {copiedField.startsWith(`name-${c.id}-`) ? <Check size={11} /> : <Copy size={11} />}
+                                </button>
                               )}
                             </span>
                           </td>
@@ -997,8 +1108,10 @@ export default function ContactsPage() {
                                 <button
                                   className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
                                   onClick={() => copyVal(c.email, `e-${c.id}`)}
-                                  title={copiedField === `e-${c.id}` ? 'Copied' : 'Copy email'}
-                                ><Copy size={11} /></button>
+                                  title={copiedField === `e-${c.id}` ? 'Email copied' : 'Copy email'}
+                                >
+                                  {copiedField === `e-${c.id}` ? <Check size={11} /> : <Copy size={11} />}
+                                </button>
                               )}
                             </span>
                           </td>
