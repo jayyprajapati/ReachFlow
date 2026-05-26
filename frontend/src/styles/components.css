@@ -691,43 +691,113 @@
 .rf-copy-btn:hover { color: var(--rf-accent-text); background: var(--rf-accent-muted); }
 .rf-copy-btn--copied { color: var(--rf-success-text); opacity: 1; }
 
-.rf-copy-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.rf-copy-feedback {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+/* Generic fixed-position hover tooltip — escapes every overflow:hidden ancestor */
+.rf-hover-tip {
+  position: fixed;
+  transform: translateY(-50%);
   background: var(--rf-text);
   color: var(--rf-text-inverse);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-radius: var(--rf-radius-sm);
   white-space: nowrap;
   pointer-events: none;
-  z-index: var(--rf-z-dropdown);
+  z-index: var(--rf-z-toast);
   box-shadow: var(--rf-shadow-md);
-  animation: rf-copy-feedback-in 140ms var(--rf-ease-out);
   letter-spacing: 0.005em;
+  animation: rf-hover-tip-in 120ms var(--rf-ease-out);
 }
-.rf-copy-feedback::after {
+.rf-hover-tip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: var(--rf-text);
+}
+@keyframes rf-hover-tip-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(-2px); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* Fixed-position copy toast — escapes every overflow:hidden ancestor */
+.rf-copy-toast {
+  position: fixed;
+  transform: translateX(-50%);
+  background: var(--rf-text);
+  color: var(--rf-text-inverse);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: var(--rf-radius-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--rf-z-toast);
+  box-shadow: var(--rf-shadow-md);
+  letter-spacing: 0.005em;
+  animation: rf-copy-toast-in 140ms var(--rf-ease-out);
+}
+.rf-copy-toast::after {
   content: '';
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  border: 4px solid transparent;
+  border: 5px solid transparent;
   border-top-color: var(--rf-text);
 }
-@keyframes rf-copy-feedback-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(2px); }
+@keyframes rf-copy-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ── Coming-soon / locked feature affordance ──────────────── */
+
+/* Locked button — keep visual identity but show it's not interactive */
+.rf-btn--locked,
+.rf-btn--locked:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: var(--rf-text-muted) !important;
+  background: var(--rf-bg-surface) !important;
+  border-color: var(--rf-border-subtle) !important;
+}
+.rf-btn--locked svg { color: var(--rf-text-faint); }
+
+/* Locked sidebar link — dim, lock badge on the right */
+.rf-sidebar__link-lock-wrap { display: block; width: 100%; cursor: not-allowed; }
+.rf-sidebar__link--locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rf-sidebar__link--locked:hover { background: transparent; color: var(--rf-text-secondary); }
+.rf-sidebar__link-lock {
+  margin-left: auto;
+  color: var(--rf-text-faint);
+  flex-shrink: 0;
+}
+
+/* Locked home tile */
+.rf-home__tile--locked,
+.rf-home__tile--locked:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rf-home__tile--locked:hover {
+  transform: none;
+  border-color: var(--rf-border-subtle);
+  box-shadow: none;
+}
+
+/* Locked command palette item */
+.rf-command__item--locked,
+.rf-command__item--locked:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rf-command__item--locked .rf-command__item-go { color: var(--rf-text-faint); }
 
 /* ── Status Dot ──────────────────────────────────────────── */
 

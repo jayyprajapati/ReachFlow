@@ -6,7 +6,7 @@ import {
   Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
   Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste,
   Info, ChevronRight, AtSign, Variable, Wand2, MailCheck, AlertTriangle, ArrowUpRight,
-  ChevronDown,
+  ChevronDown, Lock,
 } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -782,14 +782,16 @@ export default function ComposePage() {
               </span>
             </div>
             <div className="rf-cp-card__toolbar">
-              <button
-                className="rf-btn rf-btn--ghost rf-btn--sm"
-                onClick={doRewrite}
-                disabled={isRewriting || !strip(body)}
-                title="Rewrite the body with AI (requires AI configured in Settings)"
-              >
-                {isRewriting ? <><Loader size={13} className="rf-spin" /> Rewriting…</> : <><Wand2 size={13} /> Rewrite with AI</>}
-              </button>
+              <span title="Feature coming soon" style={{ display: 'inline-flex' }}>
+                <button
+                  className="rf-btn rf-btn--ghost rf-btn--sm rf-btn--locked"
+                  aria-disabled="true"
+                  type="button"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <Lock size={12} /> Rewrite with AI
+                </button>
+              </span>
             </div>
           </header>
 

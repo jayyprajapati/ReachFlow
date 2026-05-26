@@ -11,8 +11,8 @@ import ContactsPage from './pages/ContactsPage.jsx';
 import TemplatesPage from './pages/TemplatesPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
-import ResumeLabPage from './pages/ResumeLab/index.jsx';
 import RoadmapLabPage from './pages/RoadmapLab/index.jsx';
+import ComingSoonPage from './components/ComingSoonPage.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './components/TermsOfUsePage.jsx';
@@ -52,7 +52,7 @@ function PageRouter() {
     case path === '/templates':           return <TemplatesPage />;
     case path === '/history':             return <HistoryPage />;
     case path === '/settings':            return <SettingsPage />;
-    case path.startsWith('/resume-lab'):  return <ResumeLabPage />;
+    case path.startsWith('/resume-lab'):  return <ComingSoonPage feature="Resume Lab" />;
     case path.startsWith('/roadmaps'):    return <RoadmapLabPage />;
     default:                              return <HomePage />;
   }

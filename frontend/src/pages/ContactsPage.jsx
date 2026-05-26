@@ -213,9 +213,9 @@ function parseGlobalBulkText(text, groups) {
 }
 
 function getNewCompanyShortcutLabel() {
-  if (typeof navigator === 'undefined') return 'Alt+Shift+N';
+  if (typeof navigator === 'undefined') return 'Alt↑N';
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
-  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌥⇧N' : 'Alt+Shift+N';
+  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌥↑N' : 'Alt↑N';
 }
 
 export default function ContactsPage() {
@@ -553,20 +553,35 @@ export default function ContactsPage() {
 
   function copyVal(text, key) { navigator.clipboard.writeText(text || '').then(() => setCopiedField(key)); }
 
-  function handleNameClick(contact) {
+  function handleNameClick(contact, anchorEl) {
     const key = contact.id;
+    // Capture the button's screen position now — by the time the setTimeout fires,
+    // React may have re-rendered the row and the synthetic event's currentTarget is gone.
+    const rect = anchorEl?.getBoundingClientRect?.();
     if (clickTimerRef.current[key]) {
       clearTimeout(clickTimerRef.current[key]);
       delete clickTimerRef.current[key];
       copyVal(contact.name, `name-${contact.id}-full`);
+      showCopyTip(rect, 'Full name copied');
     } else {
       clickTimerRef.current[key] = setTimeout(() => {
         delete clickTimerRef.current[key];
         const firstName = (contact.name || '').split(/\s+/)[0];
         copyVal(firstName || contact.name, `name-${contact.id}-first`);
+        showCopyTip(rect, 'Click twice to copy full');
       }, 220);
     }
   }
+
+  const [copyTip, setCopyTip] = useState(null);
+  const copyTipTimerRef = useRef(null);
+  function showCopyTip(rect, text) {
+    if (!rect) return;
+    if (copyTipTimerRef.current) clearTimeout(copyTipTimerRef.current);
+    setCopyTip({ text, x: rect.left + rect.width / 2, y: rect.top });
+    copyTipTimerRef.current = setTimeout(() => setCopyTip(null), 1800);
+  }
+  useEffect(() => () => { if (copyTipTimerRef.current) clearTimeout(copyTipTimerRef.current); }, []);
 
   function composeToCompany() {
     if (!detail?.contacts?.length) {
@@ -681,6 +696,15 @@ export default function ContactsPage() {
 
   return (
     <div className="rf-page rf-page--wide rf-contacts-page" ref={pageRef}>
+      {copyTip && (
+        <div
+          className="rf-copy-toast"
+          role="status"
+          style={{ top: Math.max(8, copyTip.y - 36), left: copyTip.x }}
+        >
+          {copyTip.text}
+        </div>
+      )}
       <header className="rf-page-header">
         <div className="rf-page-header__lead">
           <div className="rf-page-header__eyebrow"><DotMark /> Contacts</div>
@@ -703,17 +727,10 @@ export default function ContactsPage() {
             {exportingAll ? 'Exporting…' : 'Export all'}
           </button>
           <button
-            className="rf-btn rf-btn--secondary rf-btn--sm"
+            className="rf-btn rf-btn--ghost rf-btn--sm"
             onClick={openGlobalPaste}
           >
             <ClipboardPaste size={14} /> Global paste
-          </button>
-          <button
-            className="rf-btn rf-btn--primary rf-btn--sm"
-            onClick={startCreateCompany}
-            title={`New company (${newCompanyShortcutLabel})`}
-          >
-            <Plus size={14} /> New company <kbd className="rf-ct__btn-shortcut">{newCompanyShortcutLabel}</kbd>
           </button>
         </div>
       </header>
@@ -742,13 +759,24 @@ export default function ContactsPage() {
                   </button>
                 )}
               </div>
-              <button
-                className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
-                onClick={() => setSortCompaniesAZ(v => !v)}
-                title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
-              >
-                <ArrowUpDown size={13} /> A-Z
-              </button>
+              <div className="rf-ct__sidebar-actions">
+                <button
+                  className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
+                  onClick={() => setSortCompaniesAZ(v => !v)}
+                  title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
+                >
+                  <ArrowUpDown size={13} /> Sort
+                </button>
+                <div className="rf-ct__new-company-action">
+                  <button
+                    className="rf-btn rf-btn--primary rf-btn--sm rf-ct__new-company"
+                  onClick={startCreateCompany}
+                  title={`New company (${newCompanyShortcutLabel})`}
+                >
+                    <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1059,19 +1087,17 @@ export default function ContactsPage() {
                                 </a>
                               )}
                               {c.name && (
-                                <span className="rf-copy-wrap">
-                                  <button
-                                    className={`rf-copy-btn ${copiedField.startsWith(`name-${c.id}-`) ? 'rf-copy-btn--copied' : ''}`}
-                                    title="Click to copy first name · double-click to copy full name"
-                                    onClick={() => handleNameClick(c)}
-                                  ><Copy size={11} /></button>
-                                  {copiedField === `name-${c.id}-first` && (
-                                    <span className="rf-copy-feedback" role="status">First name copied · double-click for full name</span>
-                                  )}
-                                  {copiedField === `name-${c.id}-full` && (
-                                    <span className="rf-copy-feedback" role="status">Full name copied</span>
-                                  )}
-                                </span>
+                                <button
+                                  className={`rf-copy-btn ${copiedField.startsWith(`name-${c.id}-`) ? 'rf-copy-btn--copied' : ''}`}
+                                  title={
+                                    copiedField === `name-${c.id}-full` ? 'Full name copied'
+                                    : copiedField === `name-${c.id}-first` ? 'First name copied · click twice for full name'
+                                    : 'Copy first name · double-click for full name'
+                                  }
+                                  onClick={(e) => handleNameClick(c, e.currentTarget)}
+                                >
+                                  {copiedField.startsWith(`name-${c.id}-`) ? <Check size={11} /> : <Copy size={11} />}
+                                </button>
                               )}
                             </span>
                           </td>
@@ -1079,16 +1105,13 @@ export default function ContactsPage() {
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                               <span className="rf-truncate" style={{ maxWidth: 240 }}>{renderHighlightedText(c.email, <em style={{ color: 'var(--rf-text-faint)' }}>—</em>)}</span>
                               {c.email && (
-                                <span className="rf-copy-wrap">
-                                  <button
-                                    className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
-                                    onClick={() => copyVal(c.email, `e-${c.id}`)}
-                                    title="Copy email"
-                                  ><Copy size={11} /></button>
-                                  {copiedField === `e-${c.id}` && (
-                                    <span className="rf-copy-feedback" role="status">Email copied</span>
-                                  )}
-                                </span>
+                                <button
+                                  className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
+                                  onClick={() => copyVal(c.email, `e-${c.id}`)}
+                                  title={copiedField === `e-${c.id}` ? 'Email copied' : 'Copy email'}
+                                >
+                                  {copiedField === `e-${c.id}` ? <Check size={11} /> : <Copy size={11} />}
+                                </button>
                               )}
                             </span>
                           </td>
