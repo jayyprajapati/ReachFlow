@@ -2076,6 +2076,180 @@
   fill: var(--rf-accent);
 }
 
+/* ── Short desktop density — protects 12–13" screens without changing roomy desktops ── */
+
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rf-home { gap: var(--rf-sp-5); }
+  .rf-home__hero {
+    gap: var(--rf-sp-4);
+    padding-bottom: var(--rf-sp-4);
+  }
+  .rf-home__hi-eyebrow { margin-bottom: 4px; }
+  .rf-home__hi-title { font-size: var(--rf-text-3xl); }
+  .rf-home__hi-sub { margin-top: var(--rf-sp-2); }
+  .rf-home__stats,
+  .rf-home__grid { gap: var(--rf-sp-3); }
+  .rf-home__stat { padding: var(--rf-sp-3) var(--rf-sp-4); }
+
+  .rf-compose { gap: var(--rf-sp-2); }
+  .rf-cp-card { padding: var(--rf-sp-4); }
+  .rf-cp-card--subject { padding: var(--rf-sp-3) var(--rf-sp-4); }
+  .rf-cp-card__head {
+    gap: var(--rf-sp-2);
+    margin-bottom: var(--rf-sp-2);
+  }
+  .rf-cp-subject-input { font-size: var(--rf-text-xl); }
+  .rf-cp-vars {
+    padding: 7px 0;
+    margin-bottom: 4px;
+  }
+  .rf-cp-editor { min-height: 220px; }
+  .rf-cp-actions {
+    padding: var(--rf-sp-2) var(--rf-sp-3);
+    gap: var(--rf-sp-2);
+  }
+  .rf-history-item { padding: 9px 12px; }
+
+  .rf-pipeline-page,
+  .rf-contacts-page,
+  .rf-set-page {
+    gap: var(--rf-sp-3);
+  }
+
+  .rf-pl-summary {
+    gap: var(--rf-sp-2);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .rf-pl-summary::-webkit-scrollbar { display: none; }
+  .rf-pl-summary__stat {
+    min-width: 92px;
+    padding: 7px 10px;
+  }
+  .rf-pl-summary__value { font-size: var(--rf-text-xl); }
+  .rf-pl-summary__filters {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .rf-pl-help { display: none; }
+  .rf-pipeline__input { padding: var(--rf-sp-3); }
+  .rf-pipeline__input-actions {
+    margin-top: var(--rf-sp-2);
+    gap: 6px;
+  }
+  .rf-pl-board {
+    gap: var(--rf-sp-3);
+    padding-bottom: var(--rf-sp-2);
+  }
+  .rf-pl-col { flex-basis: 272px; }
+  .rf-pl-col__body {
+    padding: var(--rf-sp-2);
+    min-height: 190px;
+  }
+  .rf-pl-card { padding: 10px 12px; }
+  .rf-pl-card__title { margin-bottom: 4px; }
+  .rf-pl-card__company { margin-bottom: 7px; }
+  .rf-pl-table th { padding: 8px 10px; }
+  .rf-pl-table td { padding: 6px 10px; }
+
+  .rf-ct {
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: var(--rf-sp-3);
+  }
+  .rf-ct__sidebar-head { padding: 10px; }
+  .rf-ct__sidebar-tools { gap: 8px; }
+  .rf-ct__sidebar-scroll { padding: 6px; }
+  .rf-ct__company {
+    gap: 8px;
+    padding: 6px 8px;
+  }
+  .rf-ct__company-logo {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+  .rf-ct__company-name { font-size: var(--rf-text-sm); }
+  .rf-ct__company-meta { font-size: 11px; }
+
+  .rf-ct__detail-head {
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .rf-ct__logo {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+  .rf-ct__title { font-size: var(--rf-text-lg); }
+  .rf-ct__meta {
+    gap: 6px;
+    margin-top: 1px;
+    font-size: var(--rf-text-sm);
+  }
+  .rf-ct__detail-actions { gap: 4px; }
+
+  .rf-ct__people-head {
+    display: grid;
+    grid-template-columns: auto minmax(170px, 240px) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    flex-wrap: nowrap;
+  }
+  .rf-ct__people-title {
+    font-size: var(--rf-text-base);
+  }
+  .rf-ct__contact-search {
+    width: 100%;
+    margin-left: 0;
+    justify-self: end;
+  }
+  .rf-ct__people-actions {
+    justify-self: end;
+    flex-wrap: nowrap;
+    padding: 2px;
+  }
+  .rf-ct__people-actions .rf-btn--ghost,
+  .rf-ct__people-actions .rf-btn--primary {
+    height: 26px;
+    padding: 0 8px;
+  }
+  .rf-ct__table-wrap { padding: 0 16px 12px; }
+  .rf-ct__table th { padding: 8px 10px; }
+  .rf-ct__table td {
+    padding: 8px 10px;
+    font-size: var(--rf-text-sm);
+  }
+
+  .rf-templates__grid { gap: var(--rf-sp-3); }
+  .rf-set-page { gap: var(--rf-sp-3); }
+  .rf-set-card { padding: var(--rf-sp-4); }
+  .rf-settings__section { gap: var(--rf-sp-2); }
+}
+
+@media (min-width: 1025px) and (max-width: 1180px) and (max-height: 900px) {
+  .rf-ct {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+
+  .rf-ct__people-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .rf-ct__contact-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: none;
+  }
+
+  .rf-ct__people-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 
 @media (max-width: 1100px) {

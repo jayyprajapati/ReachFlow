@@ -667,6 +667,60 @@
 :root[data-theme="dark"] .rml-col       { border-color: var(--rf-border); }
 :root[data-theme="dark"] .rml-lane__track { background: var(--rf-bg-overlay); }
 
+/* ── Short desktop density ───────────────────────────────────────────────── */
+
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rml-dashboard {
+    gap: var(--rf-sp-4);
+  }
+
+  .rml-dashboard__hero {
+    gap: var(--rf-sp-3);
+  }
+
+  .rml-hero-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .rml-hero-title,
+  .rml-board-title {
+    font-size: var(--rf-text-lg);
+  }
+
+  .rml-hero-stats {
+    gap: var(--rf-sp-3);
+    padding: 6px 12px;
+  }
+
+  .rml-controls {
+    gap: var(--rf-sp-2);
+  }
+
+  .rml-lanes {
+    gap: var(--rf-sp-2);
+  }
+
+  .rml-lane__top {
+    padding: var(--rf-sp-3);
+  }
+
+  .rml-board-header {
+    gap: var(--rf-sp-3);
+    padding-bottom: var(--rf-sp-3);
+  }
+
+  .rml-board-body-wrap {
+    margin-top: var(--rf-sp-3);
+  }
+
+  .rml-stage-node,
+  .rml-res-node,
+  .rml-item {
+    padding: var(--rf-sp-2);
+  }
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 1024px) {
