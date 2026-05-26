@@ -415,6 +415,69 @@
 .rf-shell__sidebar:hover .rf-sidebar__collapse { opacity: 1; }
 .rf-sidebar__collapse:hover { color: var(--rf-text); border-color: var(--rf-border); }
 
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rf-shell__sidebar {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .rf-sidebar {
+    min-height: 100%;
+    height: auto;
+    padding: var(--rf-sp-4) var(--rf-sp-3) var(--rf-sp-3);
+    gap: 0;
+  }
+
+  .rf-sidebar__brand {
+    margin-bottom: var(--rf-sp-4);
+  }
+
+  .rf-sidebar__logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .rf-sidebar__brand-name {
+    font-size: 1rem;
+  }
+
+  .rf-sidebar__cmd {
+    height: 30px;
+    margin-bottom: var(--rf-sp-3);
+    padding: 6px 9px;
+  }
+
+  .rf-sidebar__nav {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .rf-sidebar__section-label {
+    padding-top: var(--rf-sp-2);
+  }
+
+  .rf-sidebar__link,
+  .rf-sidebar__theme-row,
+  .rf-sidebar__user {
+    padding: 7px 9px;
+    gap: var(--rf-sp-2);
+    font-size: var(--rf-text-sm);
+  }
+
+  .rf-sidebar__footer {
+    margin-top: auto;
+    padding-top: var(--rf-sp-2);
+  }
+
+  .rf-sidebar__footer-divider {
+    margin: var(--rf-sp-1) 0;
+  }
+
+  .rf-sidebar__legal {
+    justify-content: flex-start;
+  }
+}
+
 /* Collapsed state */
 .rf-shell__sidebar--collapsed .rf-sidebar__brand-text,
 .rf-shell__sidebar--collapsed .rf-sidebar__cmd-text,
@@ -529,6 +592,45 @@
   min-width: 0;
 }
 
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rf-page {
+    padding-top: var(--rf-page-padding-y);
+    padding-bottom: var(--rf-sp-5);
+  }
+
+  .rf-page-header {
+    align-items: center;
+    gap: var(--rf-sp-4);
+    margin-bottom: var(--rf-sp-4);
+  }
+
+  .rf-page-header__eyebrow {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+
+  .rf-page-header__title {
+    font-size: var(--rf-text-2xl);
+    line-height: 1.05;
+  }
+
+  .rf-page-header__subtitle {
+    margin-top: 5px;
+    max-width: 760px;
+    font-size: var(--rf-text-sm);
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .rf-page-header__actions {
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+}
+
 /* ── Inline subnav — used inside Resume Lab, Roadmap Lab ── */
 
 .rf-subnav {
@@ -572,6 +674,17 @@
   height: 2px;
   background: var(--rf-accent);
   border-radius: 2px 2px 0 0;
+}
+
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rf-subnav {
+    margin-bottom: var(--rf-sp-4);
+  }
+
+  .rf-subnav__item {
+    padding: var(--rf-sp-2) var(--rf-sp-3);
+    font-size: var(--rf-text-sm);
+  }
 }
 
 /* ── Mobile ───────────────────────────────────────────────── */

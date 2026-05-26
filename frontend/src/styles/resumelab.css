@@ -56,6 +56,30 @@
   flex-shrink: 0;
 }
 
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rf-rl-page {
+    gap: var(--rf-sp-3);
+  }
+
+  .rl-page__header {
+    margin-bottom: var(--rf-sp-3);
+    gap: var(--rf-sp-3);
+  }
+
+  .rl-page__title {
+    font-size: var(--rf-text-lg);
+  }
+
+  .rl-page__subtitle {
+    display: -webkit-box;
+    max-width: 760px;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+}
+
 .rl-section-label {
   font-size: var(--rf-text-xs);
   font-weight: 600;
@@ -63,6 +87,12 @@
   letter-spacing: 0.06em;
   color: var(--rf-text-faint);
   padding: var(--rf-sp-3) 0 var(--rf-sp-2);
+}
+
+@media (min-width: 1025px) and (max-height: 900px) {
+  .rl-section-label {
+    padding: var(--rf-sp-2) 0 var(--rf-sp-1);
+  }
 }
 
 /* ── Badges ──────────────────────────────────────────────────────────────── */

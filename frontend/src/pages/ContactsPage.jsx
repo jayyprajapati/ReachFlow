@@ -770,9 +770,9 @@ export default function ContactsPage() {
                 <div className="rf-ct__new-company-action">
                   <button
                     className="rf-btn rf-btn--primary rf-btn--sm rf-ct__new-company"
-                  onClick={startCreateCompany}
-                  title={`New company (${newCompanyShortcutLabel})`}
-                >
+                    onClick={startCreateCompany}
+                    title={`New company (${newCompanyShortcutLabel})`}
+                  >
                     <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
                   </button>
                 </div>
