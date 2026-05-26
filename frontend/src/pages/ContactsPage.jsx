@@ -78,7 +78,17 @@ function parseContactLine(line) {
   const rawLine = String(line || '').trim();
   if (!rawLine) return null;
   const { email, raw } = extractEmail(rawLine);
-  let cleaned = rawLine
+  // Detect trailing " V"/" v" marker — flags email as verified.
+  // Only treat it as the verified-marker when there's an email AND the V is the
+  // very last token, so legitimate names like "Andrew V" don't false-positive
+  // when there's no email present.
+  let verifiedFlag = false;
+  let working = rawLine;
+  if (email && /\s+[Vv]\s*$/.test(rawLine)) {
+    verifiedFlag = true;
+    working = rawLine.replace(/\s+[Vv]\s*$/, '');
+  }
+  let cleaned = working
     .replace(raw || '', ' ')
     .replace(/[<>()[\]{}"']/g, ' ')
     .replace(/\s+/g, ' ')
@@ -89,7 +99,9 @@ function parseContactLine(line) {
     .filter(Boolean);
   const name = capitalizeDisplayName(segments[0] || (email ? nameFromEmail(email) : cleaned));
   if (!name && !email) return null;
-  return { name, email, role: 'Recruiter', source: rawLine };
+  const result = { name, email, role: 'Recruiter', source: rawLine };
+  if (verifiedFlag) result.email_status = 'verified';
+  return result;
 }
 
 function parseBulkText(text) {
@@ -175,13 +187,16 @@ function parseGlobalBulkText(text, groups) {
   const seen = new Set();
   return splitPasteRows(text).map(line => {
     const { email, raw } = extractEmail(line);
+    // Detect trailing " V"/" v" valid-marker on the original line (before email is stripped).
+    const verifiedFlag = !!email && /\s+[Vv]\s*$/.test(line);
+    const withoutVerified = verifiedFlag ? line.replace(/\s+[Vv]\s*$/, '') : line;
     const emailKey = email.toLowerCase();
     if (emailKey) {
       if (seen.has(emailKey)) return null;
       seen.add(emailKey);
     }
-    const target = matchGroupForLine(line, email, groups, lookup);
-    const withoutEmail = raw ? line.replace(raw, ' ') : line;
+    const target = matchGroupForLine(withoutVerified, email, groups, lookup);
+    const withoutEmail = raw ? withoutVerified.replace(raw, ' ') : withoutVerified;
     const contactLine = `${target ? removeCompanyFromLine(withoutEmail, target) : withoutEmail} ${email}`.trim();
     const parsed = parseContactLine(contactLine);
     if (!parsed) return null;
@@ -189,6 +204,7 @@ function parseGlobalBulkText(text, groups) {
       ...parsed,
       email,
       name: capitalizeDisplayName(parsed.name || (email ? nameFromEmail(email) : '')),
+      ...(verifiedFlag ? { email_status: 'verified' } : {}),
       targetGroup: target,
       targetGroupName: target?.companyName || (email ? companyFromEmail(email) : ''),
       source: line,
@@ -257,7 +273,7 @@ export default function ContactsPage() {
   }, []);
 
   useEffect(() => { loadGroups(); }, []);
-  useEffect(() => { if (copiedField) { const t = setTimeout(() => setCopiedField(''), 1200); return () => clearTimeout(t); } }, [copiedField]);
+  useEffect(() => { if (copiedField) { const t = setTimeout(() => setCopiedField(''), 2000); return () => clearTimeout(t); } }, [copiedField]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -578,6 +594,44 @@ export default function ContactsPage() {
     URL.revokeObjectURL(url);
   }
 
+  const [exportingAll, setExportingAll] = useState(false);
+  async function exportAllCSV() {
+    if (exportingAll || !groups.length) return;
+    setExportingAll(true);
+    try {
+      const headers = ['Company', 'Name', 'Email', 'Role', 'LinkedIn', 'Connection Status', 'Email Status'];
+      const rows = [];
+      for (const g of groups) {
+        if (!g.contactCount) continue;
+        try {
+          const r = await authedFetch(`${API}/api/groups/${g.id}`);
+          const data = await r.json();
+          if (!r.ok) continue;
+          for (const c of (data.contacts || [])) {
+            rows.push([data.companyName || g.companyName, c.name, c.email, c.role, c.linkedin, c.connectionStatus, c.email_status]);
+          }
+        } catch {/* skip failed group */}
+      }
+      if (!rows.length) {
+        setNotice({ type: 'info', message: 'No contacts to export' });
+        return;
+      }
+      const csv = [headers, ...rows].map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reachflow_all_contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setNotice({ type: 'success', message: `Exported ${rows.length} contact${rows.length !== 1 ? 's' : ''} across ${groups.filter(g => g.contactCount).length} compan${groups.filter(g => g.contactCount).length !== 1 ? 'ies' : 'y'}.` });
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Export failed' });
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   function handleCSVFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -639,6 +693,15 @@ export default function ContactsPage() {
           <span style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-muted)' }}>
             <span className="rf-num" style={{ color: 'var(--rf-text)', fontWeight: 600 }}>{groups.length}</span> companies · <span className="rf-num" style={{ color: 'var(--rf-text)', fontWeight: 600 }}>{totalContacts}</span> contacts
           </span>
+          <button
+            className="rf-btn rf-btn--ghost rf-btn--sm"
+            onClick={exportAllCSV}
+            disabled={exportingAll || !totalContacts}
+            title={totalContacts ? 'Export every contact across all companies as CSV' : 'Add contacts first'}
+          >
+            {exportingAll ? <Loader size={14} className="rf-spin" /> : <FileDown size={14} />}
+            {exportingAll ? 'Exporting…' : 'Export all'}
+          </button>
           <button
             className="rf-btn rf-btn--secondary rf-btn--sm"
             onClick={openGlobalPaste}
@@ -927,7 +990,13 @@ export default function ContactsPage() {
                       {editingId === '__new__' && (
                         <tr className="rf-ct__table-edit">
                           <td>
-                            <input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" autoFocus />
+                            <div className="rf-ct__edit-stack">
+                              <input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" autoFocus />
+                              <div className="rf-ct__edit-linkedin">
+                                <Linkedin size={12} />
+                                <input className="rf-input rf-input--sm" value={contactForm.linkedin || ''} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL (optional)" />
+                              </div>
+                            </div>
                           </td>
                           <td>
                             <input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="email@company.com" />
@@ -952,7 +1021,15 @@ export default function ContactsPage() {
                       )}
                       {visibleContacts.map(c => editingId === c.id ? (
                         <tr key={c.id} className="rf-ct__table-edit">
-                          <td><input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} /></td>
+                          <td>
+                            <div className="rf-ct__edit-stack">
+                              <input className="rf-input rf-input--sm" value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} />
+                              <div className="rf-ct__edit-linkedin">
+                                <Linkedin size={12} />
+                                <input className="rf-input rf-input--sm" value={contactForm.linkedin || ''} onChange={e => setContactForm(f => ({ ...f, linkedin: e.target.value }))} placeholder="LinkedIn URL (optional)" />
+                              </div>
+                            </div>
+                          </td>
                           <td><input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} /></td>
                           <td>
                             <select className="rf-select rf-input--sm" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
@@ -982,11 +1059,19 @@ export default function ContactsPage() {
                                 </a>
                               )}
                               {c.name && (
-                                <button
-                                  className={`rf-copy-btn ${copiedField.startsWith(`name-${c.id}-`) ? 'rf-copy-btn--copied' : ''}`}
-                                  title={getNameCopyTitle(c)}
-                                  onClick={() => handleNameClick(c)}
-                                ><Copy size={11} /></button>
+                                <span className="rf-copy-wrap">
+                                  <button
+                                    className={`rf-copy-btn ${copiedField.startsWith(`name-${c.id}-`) ? 'rf-copy-btn--copied' : ''}`}
+                                    title="Click to copy first name · double-click to copy full name"
+                                    onClick={() => handleNameClick(c)}
+                                  ><Copy size={11} /></button>
+                                  {copiedField === `name-${c.id}-first` && (
+                                    <span className="rf-copy-feedback" role="status">First name copied · double-click for full name</span>
+                                  )}
+                                  {copiedField === `name-${c.id}-full` && (
+                                    <span className="rf-copy-feedback" role="status">Full name copied</span>
+                                  )}
+                                </span>
                               )}
                             </span>
                           </td>
@@ -994,11 +1079,16 @@ export default function ContactsPage() {
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                               <span className="rf-truncate" style={{ maxWidth: 240 }}>{renderHighlightedText(c.email, <em style={{ color: 'var(--rf-text-faint)' }}>—</em>)}</span>
                               {c.email && (
-                                <button
-                                  className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
-                                  onClick={() => copyVal(c.email, `e-${c.id}`)}
-                                  title={copiedField === `e-${c.id}` ? 'Copied' : 'Copy email'}
-                                ><Copy size={11} /></button>
+                                <span className="rf-copy-wrap">
+                                  <button
+                                    className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
+                                    onClick={() => copyVal(c.email, `e-${c.id}`)}
+                                    title="Copy email"
+                                  ><Copy size={11} /></button>
+                                  {copiedField === `e-${c.id}` && (
+                                    <span className="rf-copy-feedback" role="status">Email copied</span>
+                                  )}
+                                </span>
                               )}
                             </span>
                           </td>

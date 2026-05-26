@@ -6,6 +6,7 @@ import {
   Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
   Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste,
   Info, ChevronRight, AtSign, Variable, Wand2, MailCheck, AlertTriangle, ArrowUpRight,
+  ChevronDown,
 } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -106,6 +107,8 @@ export default function ComposePage() {
   const [previewRecipientId, setPreviewRecipientId] = useState(null);
   const [groupImports, setGroupImports] = useState([]);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [recipientsCollapsed, setRecipientsCollapsed] = useState(false);
+  const [lastImportSource, setLastImportSource] = useState(null); // { groupName, added }
   const [templateDrawer, setTemplateDrawer] = useState(null);
   const [templateTitle, setTemplateTitle] = useState('');
   const [templateBrowseOpen, setTemplateBrowseOpen] = useState(false);
@@ -501,6 +504,8 @@ export default function ComposePage() {
       return;
     }
     setRecipients(p => [...p, ...adds]);
+    setLastImportSource({ groupName, added: adds.length });
+    setRecipientsCollapsed(true);
     setNotice({
       type: invalid.length ? 'warning' : 'info',
       message: `Imported ${adds.length} contact${adds.length !== 1 ? 's' : ''}${duplicateCount ? `, skipped ${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''}` : ''}.${invalidMsg}`,
@@ -536,6 +541,7 @@ export default function ComposePage() {
     setRecipients([]); setSubject(''); setBody(''); setDraftId(null);
     setErrors({ recipients: {} }); setGroupImports([]);
     setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]);
+    setRecipientsCollapsed(false); setLastImportSource(null);
   }
 
   async function doRewrite() {
@@ -612,13 +618,35 @@ export default function ComposePage() {
 
       <div className="rf-compose">
         {/* Recipients */}
-        <section className="rf-cp-card">
+        <section className={`rf-cp-card${recipientsCollapsed ? ' rf-cp-card--collapsed' : ''}`}>
           <header className="rf-cp-card__head">
-            <div className="rf-cp-card__title">
+            <button
+              type="button"
+              className="rf-cp-card__title rf-cp-card__title--toggle"
+              onClick={() => setRecipientsCollapsed(v => !v)}
+              aria-expanded={!recipientsCollapsed}
+              aria-controls="rf-cp-recipients-body"
+              title={recipientsCollapsed ? 'Expand recipients' : 'Collapse recipients'}
+            >
               <Users size={16} />
               <span>Recipients</span>
               {recipientCount > 0 && <span className="rf-cp-card__count rf-num">{recipientCount}</span>}
-            </div>
+              {recipientsCollapsed && recipientCount > 0 && (() => {
+                const validCount = recipients.filter(r => emailRegex.test((r.email || '').trim())).length;
+                const sourceLabel = lastImportSource?.groupName
+                  ? `from ${lastImportSource.groupName}`
+                  : '';
+                return (
+                  <span className="rf-cp-card__summary">
+                    <span className="rf-cp-card__summary-dot" />
+                    <span>{validCount} valid · {recipientCount - validCount} pending</span>
+                    {sourceLabel && <span className="rf-cp-card__summary-source">{sourceLabel}</span>}
+                  </span>
+                );
+              })()}
+              <ChevronDown size={14} className={`rf-cp-card__chevron${recipientsCollapsed ? ' rf-cp-card__chevron--collapsed' : ''}`} />
+            </button>
+            {!recipientsCollapsed && (
             <div className="rf-cp-card__toolbar">
               {!bulkMode && (
                 <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={addRow}>
@@ -644,7 +672,10 @@ export default function ComposePage() {
                 </label>
               </div>
             </div>
+            )}
           </header>
+          {!recipientsCollapsed && (
+          <div id="rf-cp-recipients-body" className="rf-cp-card__body-wrap">
 
           {bulkMode ? (
             <div className="rf-cp-bulk">
@@ -724,6 +755,8 @@ export default function ComposePage() {
             </div>
           )}
           {errors.recipientsGeneral && <span className="rf-field-error" style={{ marginTop: 8, display: 'block' }}>{errors.recipientsGeneral}</span>}
+          </div>
+          )}
         </section>
 
         {/* Subject */}

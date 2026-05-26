@@ -303,7 +303,20 @@ export default function HomePage() {
         <div className="rf-home__grid">
           {/* Focus stream */}
           <section className="rf-home__focus">
+            {/* Jump-in tiles — primary entry points */}
             <div className="rf-home__section-head">
+              <div className="rf-home__section-title">Jump in</div>
+            </div>
+            <div className="rf-home__tiles">
+              <Tile icon={PenLine}    title="New email"          desc="Compose with templates, variables, AI rewrite."   onClick={() => navigateTo('/compose')} />
+              <Tile icon={Briefcase}  title="Track application"  desc="Drop a job link or paste a list into Pipeline."   onClick={() => navigateTo('/pipeline')} />
+              <Tile icon={Users}      title="Add contact"        desc="Build a company group with HR + recruiter info."  onClick={() => navigateTo('/contacts')} />
+              <Tile icon={FileSearch} title="Analyze a JD"       desc="Tailor your resume against a job description."    onClick={() => navigateTo('/resume-lab')} />
+              <Tile icon={Compass}    title="Push a roadmap"     desc="Move a learning track forward today."             onClick={() => navigateTo('/roadmaps')} />
+            </div>
+
+            {/* Up-next focus list */}
+            <div className="rf-home__section-head" style={{ marginTop: 'var(--rf-sp-6)' }}>
               <div className="rf-home__section-title">
                 Up next
                 <span className="rf-home__section-count">{focusItems.length}</span>
@@ -313,7 +326,7 @@ export default function HomePage() {
             {focusItems.length === 0 ? (
               <div className="rf-home__focus-empty">
                 <strong>Nothing pressing.</strong>
-                Start a new outreach, log a fresh application, or push your roadmap forward — use a tile below.
+                Start a new outreach, log a fresh application, or push your roadmap forward — use a tile above.
               </div>
             ) : (
               focusItems.map(item => {
@@ -334,18 +347,6 @@ export default function HomePage() {
                 );
               })
             )}
-
-            {/* Jump-in tiles */}
-            <div className="rf-home__section-head" style={{ marginTop: 'var(--rf-sp-3)' }}>
-              <div className="rf-home__section-title">Jump in</div>
-            </div>
-            <div className="rf-home__tiles">
-              <Tile icon={PenLine}    title="New email"          desc="Compose with templates, variables, AI rewrite."   onClick={() => navigateTo('/compose')} />
-              <Tile icon={Briefcase}  title="Track application"  desc="Drop a job link or paste a list into Pipeline."   onClick={() => navigateTo('/pipeline')} />
-              <Tile icon={Users}      title="Add contact"        desc="Build a company group with HR + recruiter info."  onClick={() => navigateTo('/contacts')} />
-              <Tile icon={FileSearch} title="Analyze a JD"       desc="Tailor your resume against a job description."    onClick={() => navigateTo('/resume-lab')} />
-              <Tile icon={Compass}    title="Push a roadmap"     desc="Move a learning track forward today."             onClick={() => navigateTo('/roadmaps')} />
-            </div>
           </section>
 
           {/* Side rail */}
