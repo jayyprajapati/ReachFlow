@@ -1083,7 +1083,7 @@ export default function ContactsPage() {
                               <span style={{ fontWeight: 600 }}>{renderHighlightedText(c.name, <em style={{ color: 'var(--rf-text-faint)' }}>Unnamed</em>)}</span>
                               {c.linkedin && (
                                 <a href={c.linkedin} target="_blank" rel="noreferrer" title="LinkedIn">
-                                  <Linkedin size={12} style={{ color: 'var(--rf-info-text)' }} />
+                                  <ExternalLink size={12} style={{ color: 'var(--rf-info-text)' }} />
                                 </a>
                               )}
                               {c.name && (

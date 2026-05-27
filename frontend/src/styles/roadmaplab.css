@@ -669,7 +669,7 @@
 
 /* ── Short desktop density ───────────────────────────────────────────────── */
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rml-dashboard {
     gap: var(--rf-sp-4);
   }

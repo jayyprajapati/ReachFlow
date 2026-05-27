@@ -2078,7 +2078,7 @@
 
 /* ── Short desktop density — protects 12–13" screens without changing roomy desktops ── */
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-home { gap: var(--rf-sp-5); }
   .rf-home__hero {
     gap: var(--rf-sp-4);

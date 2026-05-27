@@ -71,6 +71,21 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function roleKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function buildRoleBuckets(contacts = []) {
+  const map = new Map();
+  for (const contact of contacts) {
+    const raw = String(contact?.role || '').trim();
+    const key = roleKey(raw);
+    if (!map.has(key)) map.set(key, { key, label: raw || 'No role', count: 0 });
+    map.get(key).count += 1;
+  }
+  return [...map.values()];
+}
+
 /* ──────────────────────────────────────────────────────────
    ComposePage
    ────────────────────────────────────────────────────────── */
@@ -107,6 +122,7 @@ export default function ComposePage() {
   const [previewRecipientId, setPreviewRecipientId] = useState(null);
   const [groupImports, setGroupImports] = useState([]);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [roleImportPrompt, setRoleImportPrompt] = useState(null);
   const [recipientsCollapsed, setRecipientsCollapsed] = useState(false);
   const [lastImportSource, setLastImportSource] = useState(null); // { groupName, added }
   const [templateDrawer, setTemplateDrawer] = useState(null);
@@ -156,7 +172,7 @@ export default function ComposePage() {
               const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
               const d = await r.json();
               if (r.ok && d.contacts) {
-                handleGroupImport(d.contacts, companyName || 'group');
+                maybeImportGroupByRole(d.contacts, companyName || d.companyName || 'group');
               }
             } catch { /* silent */ }
           })();
@@ -214,6 +230,21 @@ export default function ComposePage() {
     setRecipients(p => { const n = [...p]; n[idx] = { ...n[idx], variables: { ...(n[idx].variables || {}), [key]: value } }; return n; });
   }
   function deleteRecipient(idx) { setRecipients(p => p.filter((_, i) => i !== idx)); }
+  function clearAllRecipients() {
+    if (!recipients.length) return;
+    setWarningDialog({
+      title: 'Clear all recipients?',
+      message: `This removes ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''} from this draft. Subject, body, and attachments stay unchanged.`,
+      confirmText: 'Clear all',
+      intent: 'danger',
+      onConfirm: () => {
+        setRecipients([]);
+        setErrors(p => ({ ...p, recipients: {}, recipientsGeneral: undefined }));
+        setLastImportSource(null);
+        setRecipientsCollapsed(false);
+      },
+    });
+  }
   function onEmailBlur(idx) {
     setRecipients(p => {
       const n = [...p], r = n[idx];
@@ -473,6 +504,24 @@ export default function ComposePage() {
   }
 
   /* Groups */
+  function maybeImportGroupByRole(contacts, groupName = 'group') {
+    const incoming = contacts || [];
+    const roles = buildRoleBuckets(incoming);
+    if (roles.length > 1) {
+      setRoleImportPrompt({ contacts: incoming, groupName, roles });
+      return true;
+    }
+    handleGroupImport(incoming, groupName);
+    return false;
+  }
+
+  function importSelectedRole(role) {
+    if (!roleImportPrompt) return;
+    const selected = roleImportPrompt.contacts.filter(c => roleKey(c.role) === role.key);
+    setRoleImportPrompt(null);
+    handleGroupImport(selected, `${roleImportPrompt.groupName} · ${role.label}`);
+  }
+
   function handleGroupImport(contacts, groupName = 'group') {
     const incoming = contacts || [];
     if (!incoming.length) { setNotice({ type: 'error', message: 'No contacts to import' }); return; }
@@ -518,7 +567,7 @@ export default function ComposePage() {
     try {
       const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
-      handleGroupImport(d.contacts || [], d.companyName || 'group');
+      maybeImportGroupByRole(d.contacts || [], d.companyName || 'group');
       setImportModalOpen(false);
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setImportingGroupId(''); }
@@ -541,7 +590,7 @@ export default function ComposePage() {
     setRecipients([]); setSubject(''); setBody(''); setDraftId(null);
     setErrors({ recipients: {} }); setGroupImports([]);
     setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]);
-    setRecipientsCollapsed(false); setLastImportSource(null);
+    setRecipientsCollapsed(false); setLastImportSource(null); setRoleImportPrompt(null);
   }
 
   async function doRewrite() {
@@ -659,6 +708,11 @@ export default function ComposePage() {
               <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}>
                 <UserPlus size={13} /> From group
               </button>
+              {recipientCount > 0 && (
+                <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={clearAllRecipients}>
+                  <Trash2 size={13} /> Clear all
+                </button>
+              )}
               <span className="rf-toolbar__divider" />
               <div className="rf-cp-name-format" title="How {{name}} renders for each recipient">
                 <span style={{ fontSize: 12, color: 'var(--rf-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Name</span>
@@ -1162,6 +1216,40 @@ export default function ComposePage() {
         </>
       )}
 
+      {/* Role picker for group imports */}
+      {roleImportPrompt && (
+        <div className="rf-dialog-overlay" onClick={() => setRoleImportPrompt(null)}>
+          <div className="rf-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="rf-dialog__title"><Users size={18} style={{ verticalAlign: '-3px', marginRight: 8 }} /> Choose recipient role</div>
+            <div className="rf-dialog__body">
+              <p className="rf-help" style={{ marginTop: 0, marginBottom: 'var(--rf-sp-4)' }}>
+                {roleImportPrompt.groupName} has multiple roles. Choose which role to import.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {roleImportPrompt.roles.map(role => (
+                  <button
+                    key={role.key || '__empty__'}
+                    className="rf-cp-group-row"
+                    onClick={() => importSelectedRole(role)}
+                  >
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                      {role.label}
+                    </span>
+                    <span style={{ color: 'var(--rf-text-muted)', fontSize: 'var(--rf-text-sm)', fontVariantNumeric: 'tabular-nums' }}>
+                      {role.count} contact{role.count === 1 ? '' : 's'}
+                    </span>
+                    <ChevronRight size={14} style={{ color: 'var(--rf-text-faint)' }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rf-dialog__actions">
+              <button className="rf-btn rf-btn--ghost" onClick={() => setRoleImportPrompt(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Import group dialog */}
       {importModalOpen && (
         <div className="rf-dialog-overlay" onClick={() => { if (!importingGroupId) setImportModalOpen(false); }}>
@@ -1169,7 +1257,7 @@ export default function ComposePage() {
             <div className="rf-dialog__title"><Users size={18} style={{ verticalAlign: '-3px', marginRight: 8 }} /> Import recipients from group</div>
             <div className="rf-dialog__body">
               <p className="rf-help" style={{ marginTop: 0, marginBottom: 'var(--rf-sp-4)' }}>
-                Pulls all contacts from the selected company group. Already-added emails are skipped.
+                Pulls contacts from the selected company group. If the group has multiple roles, choose one before importing. Already-added emails are skipped.
               </p>
               {groups.length === 0 ? (
                 <div className="rf-empty">

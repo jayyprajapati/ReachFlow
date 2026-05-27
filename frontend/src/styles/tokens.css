@@ -175,7 +175,7 @@
 }
 
 /* ── Short desktop viewports — 12–13" laptops with browser chrome ── */
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   :root {
     --rf-page-padding-y:  20px;
     --rf-text-4xl:        2.25rem;    /* 36px */

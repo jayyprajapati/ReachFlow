@@ -121,7 +121,7 @@
   text-underline-offset: 2px;
 }
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-btn {
     height: 34px;
     padding: 0 12px;
@@ -253,7 +253,7 @@
   font-family: var(--rf-font-mono);
 }
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-input,
   .rf-select,
   .rf-search__input {
@@ -365,7 +365,7 @@
   box-shadow: var(--rf-shadow-md);
 }
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-card {
     padding: var(--rf-sp-4);
   }
