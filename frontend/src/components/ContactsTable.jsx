@@ -1,5 +1,5 @@
 import React from 'react';
-import { Copy, Pencil, Trash2, Check, X, Mail, Linkedin } from 'lucide-react';
+import { Copy, Pencil, Trash2, Check, X, Mail, Linkedin, ExternalLink } from 'lucide-react';
 
 function renderEmailStatus(status) {
   const safe = ['verified', 'tentative', 'not_valid'].includes(status) ? status : 'tentative';
@@ -259,7 +259,7 @@ export default function ContactsTable({
                   {c.linkedin ? (
                     <a className="gm-name-link" href={c.linkedin} target="_blank" rel="noreferrer" title={c.name}>
                       <span className="gm-cell-ellipsis">{c.name}</span>
-                      <Linkedin size={12} />
+                      <ExternalLink size={12} />
                     </a>
                   ) : (
                     <span className="gm-cell-ellipsis" title={c.name}>{c.name}</span>

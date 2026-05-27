@@ -249,18 +249,58 @@ async function bumpContactTracking(userId, emailHashToCount) {
   const updates = Object.entries(emailHashToCount || {}).filter(([hash, count]) => !!hash && Number(count) > 0);
   if (!updates.length) return;
 
+  // For each affected group, decrypt the matching contacts, append a manual-source-equivalent
+  // conversation entry (source=reachflow_email) per send, and re-encrypt. Email count is
+  // recomputed from the conversation list so the two stay in sync.
+  const hashes = updates.map(([hash]) => hash);
+  const groups = await Group.find({ userId, 'contacts.emailHash': { $in: hashes } });
+  const countByHash = new Map(updates.map(([hash, count]) => [hash, Number(count)]));
   const touchedAt = new Date();
-  await Promise.all(updates.map(([emailHash, count]) => (
-    Group.updateMany(
-      { userId, 'contacts.emailHash': emailHash },
-      {
-        $inc: {
-          'contacts.$[contact].emailCount': Number(count),
-        },
-      },
-      { arrayFilters: [{ 'contact.emailHash': emailHash }] }
-    )
-  )));
+
+  for (const group of groups) {
+    let mutated = false;
+    for (const contact of group.contacts || []) {
+      const sends = countByHash.get(contact.emailHash);
+      if (!sends || sends <= 0) continue;
+
+      let payload = null;
+      if (isEncryptedEnvelope(contact.encryptedPayload)) {
+        try { payload = decryptJson(contact.encryptedPayload); } catch (_err) { payload = null; }
+      }
+      const conversations = Array.isArray(payload?.conversations) ? [...payload.conversations] : [];
+      for (let i = 0; i < sends; i++) {
+        conversations.push({
+          id: new Types.ObjectId().toString(),
+          date: touchedAt,
+          platform: 'gmail',
+          purpose: '',
+          note: '',
+          applicationIds: [],
+          source: 'reachflow_email',
+          createdAt: touchedAt,
+        });
+      }
+      const emailCount = conversations.filter((c) => c.platform === 'gmail').length;
+      const linkedInCount = conversations.filter((c) => c.platform === 'linkedin').length;
+
+      contact.encryptedPayload = encryptJson({
+        name: payload?.name || '',
+        email: payload?.email || '',
+        linkedin: payload?.linkedin || '',
+        mobile: typeof payload?.mobile === 'string' ? payload.mobile : '',
+        conversations,
+      });
+      contact.emailCount = emailCount;
+      contact.linkedInCount = linkedInCount;
+      contact.lastContactedDate = touchedAt;
+      contact.name = undefined;
+      contact.email = undefined;
+      contact.linkedin = undefined;
+      contact.contactHistory = undefined;
+      mutated = true;
+    }
+    if (mutated) await group.save();
+  }
 }
 
 async function sendCampaign(campaignId, user) {

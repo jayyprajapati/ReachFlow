@@ -415,7 +415,7 @@
 .rf-shell__sidebar:hover .rf-sidebar__collapse { opacity: 1; }
 .rf-sidebar__collapse:hover { color: var(--rf-text); border-color: var(--rf-border); }
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-shell__sidebar {
     overflow-y: auto;
     overflow-x: hidden;
@@ -592,7 +592,7 @@
   min-width: 0;
 }
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-page {
     padding-top: var(--rf-page-padding-y);
     padding-bottom: var(--rf-sp-5);
@@ -676,7 +676,7 @@
   border-radius: 2px 2px 0 0;
 }
 
-@media (min-width: 1025px) and (max-height: 900px) {
+@media (min-width: 1025px) and (max-width: 1440px) and (max-height: 900px) {
   .rf-subnav {
     margin-bottom: var(--rf-sp-4);
   }

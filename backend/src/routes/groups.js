@@ -1,6 +1,6 @@
 const express = require('express');
 const { Types } = require('mongoose');
-const { Group } = require('../db');
+const { Group, Application } = require('../db');
 const {
   encryptJson,
   decryptJson,
@@ -14,43 +14,99 @@ const {
 const router = express.Router();
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_GROUP_CONTACTS = 300;
+const PURPOSE_MAX = 100;
+const NOTE_MAX = 2000;
+const PLATFORM_VALUES = new Set(['gmail', 'linkedin']);
+const SOURCE_VALUES = new Set(['manual', 'reachflow_email', 'reachflow_linkedin']);
 
-function sanitizeHistoryEntry(entry) {
-  const type = ['email', 'linkedin'].includes(entry?.type) ? entry.type : null;
-  const parsedDate = entry?.date ? new Date(entry.date) : null;
-  if (!type || !parsedDate || Number.isNaN(parsedDate.getTime())) return null;
-  return { type, date: parsedDate };
+function sanitizeMobile(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return '';
+  return raw.slice(0, 40);
 }
 
-function sanitizeContactHistory(history) {
-  if (!Array.isArray(history)) return [];
-  return history
-    .map(sanitizeHistoryEntry)
-    .filter(Boolean)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-}
+function sanitizeConversation(entry, { allowAutoSource = false } = {}) {
+  if (!entry || typeof entry !== 'object') return null;
+  const parsedDate = entry.date ? new Date(entry.date) : null;
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) return null;
 
-function deriveContactMetrics(contactHistory) {
-  const history = sanitizeContactHistory(contactHistory);
-  const emailCount = history.filter(h => h.type === 'email').length;
-  const linkedinCount = history.filter(h => h.type === 'linkedin').length;
-  const last = history.length ? history[history.length - 1] : null;
+  const platform = PLATFORM_VALUES.has(entry.platform) ? entry.platform : 'gmail';
+  let source = SOURCE_VALUES.has(entry.source) ? entry.source : 'manual';
+  if (!allowAutoSource && source !== 'manual') source = 'manual';
+
+  const purpose = String(entry.purpose || '').slice(0, PURPOSE_MAX).trim();
+  const note = String(entry.note || '').slice(0, NOTE_MAX);
+
+  const appIds = Array.isArray(entry.applicationIds) ? entry.applicationIds : [];
+  const applicationIds = appIds
+    .map((id) => String(id || ''))
+    .filter((id) => Types.ObjectId.isValid(id));
+
+  const createdAt = entry.createdAt ? new Date(entry.createdAt) : parsedDate;
+
   return {
-    lastContacted: last ? { type: last.type, date: last.date } : null,
+    id: entry.id ? String(entry.id) : new Types.ObjectId().toString(),
+    date: parsedDate,
+    platform,
+    purpose,
+    note,
+    applicationIds,
+    source,
+    createdAt: Number.isNaN(createdAt.getTime()) ? parsedDate : createdAt,
+  };
+}
+
+function sanitizeConversations(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((entry) => sanitizeConversation(entry, { allowAutoSource: true })).filter(Boolean);
+}
+
+function deriveContactMetrics(conversations) {
+  const list = sanitizeConversations(conversations);
+  const emailCount = list.filter((c) => c.platform === 'gmail').length;
+  const linkedInCount = list.filter((c) => c.platform === 'linkedin').length;
+  const sorted = [...list].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const last = sorted.length ? sorted[sorted.length - 1] : null;
+  return {
+    lastContacted: last ? { type: last.platform === 'linkedin' ? 'linkedin' : 'email', date: last.date } : null,
     emailCount,
-    linkedinCount,
+    linkedInCount,
   };
 }
 
 function decryptContactPayload(contact) {
   if (isEncryptedEnvelope(contact.encryptedPayload)) {
-    return decryptJson(contact.encryptedPayload);
+    const payload = decryptJson(contact.encryptedPayload) || {};
+    // Back-compat: older payloads may still hold contactHistory instead of conversations.
+    let conversations = Array.isArray(payload.conversations) ? payload.conversations : null;
+    if (!conversations && Array.isArray(payload.contactHistory)) {
+      conversations = payload.contactHistory.map((h) => ({
+        id: new Types.ObjectId().toString(),
+        date: h?.date,
+        platform: h?.type === 'linkedin' ? 'linkedin' : 'gmail',
+        purpose: '',
+        note: '',
+        applicationIds: [],
+        source: h?.type === 'linkedin' ? 'reachflow_linkedin' : 'reachflow_email',
+        createdAt: h?.date,
+      }));
+    }
+    return {
+      name: payload.name || '',
+      email: normalizeEmail(payload.email || ''),
+      linkedin: payload.linkedin || '',
+      mobile: typeof payload.mobile === 'string' ? payload.mobile : '',
+      conversations: conversations || [],
+    };
   }
   return {
     name: contact.name || '',
     email: normalizeEmail(contact.email || ''),
     linkedin: contact.linkedin || '',
-    contactHistory: sanitizeContactHistory(contact.contactHistory || []),
+    mobile: '',
+    conversations: [],
   };
 }
 
@@ -63,21 +119,22 @@ function sanitizeContactInput(raw) {
     ? (raw.connectionStatus === 'pending' ? 'request_sent' : raw.connectionStatus)
     : '';
 
-  const history = sanitizeContactHistory(raw.contactHistory || []);
+  const conversations = sanitizeConversations(raw.conversations || []);
+  const metrics = deriveContactMetrics(conversations);
   const lastDate = raw.lastContactedDate ? new Date(raw.lastContactedDate) : null;
-  const metrics = deriveContactMetrics(history);
 
   return {
     name: String(raw.name || '').trim(),
     email: normalizeEmail(raw.email || ''),
     role: String(raw.role || '').trim(),
     linkedin: String(raw.linkedin || '').trim(),
+    mobile: sanitizeMobile(raw.mobile),
     connectionStatus: normalizedConnectionStatus,
     email_status: normalizedEmailStatus,
-    contactHistory: history,
+    conversations,
     lastContactedDate: lastDate && !Number.isNaN(lastDate.getTime()) ? lastDate : (metrics.lastContacted?.date || null),
     emailCount: Number.isFinite(Number(raw.emailCount)) ? Math.max(0, Number(raw.emailCount)) : metrics.emailCount,
-    linkedInCount: Number.isFinite(Number(raw.linkedInCount)) ? Math.max(0, Number(raw.linkedInCount)) : metrics.linkedinCount,
+    linkedInCount: Number.isFinite(Number(raw.linkedInCount)) ? Math.max(0, Number(raw.linkedInCount)) : metrics.linkedInCount,
   };
 }
 
@@ -87,10 +144,23 @@ function validateContact(contact) {
   return null;
 }
 
+function toConversationResponse(conv) {
+  return {
+    id: String(conv.id),
+    date: conv.date,
+    platform: conv.platform,
+    purpose: conv.purpose || '',
+    note: conv.note || '',
+    applicationIds: (conv.applicationIds || []).map((id) => String(id)),
+    source: conv.source || 'manual',
+    createdAt: conv.createdAt || conv.date,
+  };
+}
+
 function toContactPayload(contact) {
   const decrypted = decryptContactPayload(contact);
-  const history = sanitizeContactHistory(decrypted.contactHistory || []);
-  const metrics = deriveContactMetrics(history);
+  const conversations = sanitizeConversations(decrypted.conversations || []);
+  const metrics = deriveContactMetrics(conversations);
 
   const manualDate = contact.lastContactedDate ? new Date(contact.lastContactedDate) : null;
   const safeManualDate = manualDate && !Number.isNaN(manualDate.getTime()) ? manualDate : null;
@@ -106,13 +176,14 @@ function toContactPayload(contact) {
     email: normalizeEmail(decrypted.email || ''),
     role: contact.role || '',
     linkedin: decrypted.linkedin || '',
+    mobile: decrypted.mobile || '',
     connectionStatus: contact.connectionStatus === 'pending' ? 'request_sent' : (contact.connectionStatus || ''),
     email_status: normalizedEmailStatus,
-    contactHistory: history.map(h => ({ type: h.type, date: h.date })),
+    conversations: conversations.map(toConversationResponse),
     lastContacted,
     lastContactedDate: lastContacted?.date || null,
     emailCount: Number.isFinite(Number(contact.emailCount)) ? Number(contact.emailCount) : metrics.emailCount,
-    linkedInCount: Number.isFinite(Number(contact.linkedInCount)) ? Number(contact.linkedInCount) : metrics.linkedinCount,
+    linkedInCount: Number.isFinite(Number(contact.linkedInCount)) ? Number(contact.linkedInCount) : metrics.linkedInCount,
   };
 }
 
@@ -128,7 +199,8 @@ function toEncryptedContact(input) {
       name: clean.name,
       email: clean.email,
       linkedin: clean.linkedin,
-      contactHistory: clean.contactHistory,
+      mobile: clean.mobile,
+      conversations: clean.conversations,
     }),
     role: clean.role,
     connectionStatus: clean.connectionStatus,
@@ -141,6 +213,39 @@ function toEncryptedContact(input) {
     linkedin: undefined,
     contactHistory: undefined,
   };
+}
+
+async function filterOwnedApplicationIds(userId, ids) {
+  const candidate = (ids || []).map((id) => String(id || '')).filter((id) => Types.ObjectId.isValid(id));
+  if (!candidate.length) return [];
+  const owned = await Application.find({ _id: { $in: candidate }, userId }).select('_id');
+  const ownedSet = new Set(owned.map((doc) => doc._id.toString()));
+  return candidate.filter((id) => ownedSet.has(id));
+}
+
+// Mutate a contact's encryptedPayload + counters + lastContactedDate in-place.
+function applyConversationUpdate(contact, mutator) {
+  const decrypted = decryptContactPayload(contact);
+  const list = sanitizeConversations(decrypted.conversations || []);
+  const next = mutator(list);
+  const sanitizedNext = sanitizeConversations(next);
+  const metrics = deriveContactMetrics(sanitizedNext);
+
+  contact.encryptedPayload = encryptJson({
+    name: decrypted.name || '',
+    email: decrypted.email || '',
+    linkedin: decrypted.linkedin || '',
+    mobile: decrypted.mobile || '',
+    conversations: sanitizedNext,
+  });
+  contact.emailCount = metrics.emailCount;
+  contact.linkedInCount = metrics.linkedInCount;
+  contact.lastContactedDate = metrics.lastContacted?.date || null;
+  // Top-level legacy plaintext stays cleared.
+  contact.name = undefined;
+  contact.email = undefined;
+  contact.linkedin = undefined;
+  contact.contactHistory = undefined;
 }
 
 router.get('/', async (req, res) => {
@@ -323,6 +428,129 @@ router.delete('/:id/contacts/:contactId', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to delete contact' });
+  }
+});
+
+// ─── Conversations ─────────────────────────────────────────
+
+router.post('/:id/contacts/:contactId/conversations', async (req, res) => {
+  const { id, contactId } = req.params;
+  if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(contactId)) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  try {
+    const group = await Group.findOne({ _id: id, userId: req.user._id });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    const contact = group.contacts.id(contactId);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+    const body = req.body || {};
+    if (!body.date) return res.status(400).json({ error: 'Date is required' });
+    if (!PLATFORM_VALUES.has(body.platform)) return res.status(400).json({ error: 'Invalid platform' });
+
+    const ownedAppIds = await filterOwnedApplicationIds(req.user._id, body.applicationIds);
+
+    const draft = sanitizeConversation({
+      id: new Types.ObjectId().toString(),
+      date: body.date,
+      platform: body.platform,
+      purpose: body.purpose,
+      note: body.note,
+      applicationIds: ownedAppIds,
+      source: 'manual',
+      createdAt: new Date(),
+    });
+    if (!draft) return res.status(400).json({ error: 'Invalid conversation' });
+
+    applyConversationUpdate(contact, (list) => [...list, draft]);
+    await group.save();
+
+    const saved = toContactPayload(contact).conversations.find((c) => c.id === draft.id);
+    res.json(saved);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to add conversation' });
+  }
+});
+
+router.patch('/:id/contacts/:contactId/conversations/:convId', async (req, res) => {
+  const { id, contactId, convId } = req.params;
+  if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(contactId)) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  try {
+    const group = await Group.findOne({ _id: id, userId: req.user._id });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    const contact = group.contacts.id(contactId);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+    const decrypted = decryptContactPayload(contact);
+    const list = sanitizeConversations(decrypted.conversations || []);
+    const existing = list.find((c) => String(c.id) === String(convId));
+    if (!existing) return res.status(404).json({ error: 'Conversation not found' });
+    if (existing.source !== 'manual') {
+      return res.status(403).json({ error: 'Auto-tracked records cannot be edited' });
+    }
+
+    const body = req.body || {};
+    const platform = body.platform !== undefined
+      ? (PLATFORM_VALUES.has(body.platform) ? body.platform : null)
+      : existing.platform;
+    if (!platform) return res.status(400).json({ error: 'Invalid platform' });
+
+    const ownedAppIds = body.applicationIds !== undefined
+      ? await filterOwnedApplicationIds(req.user._id, body.applicationIds)
+      : existing.applicationIds;
+
+    const updated = sanitizeConversation({
+      id: existing.id,
+      date: body.date !== undefined ? body.date : existing.date,
+      platform,
+      purpose: body.purpose !== undefined ? body.purpose : existing.purpose,
+      note: body.note !== undefined ? body.note : existing.note,
+      applicationIds: ownedAppIds,
+      source: 'manual',
+      createdAt: existing.createdAt,
+    });
+    if (!updated) return res.status(400).json({ error: 'Invalid conversation' });
+
+    applyConversationUpdate(contact, (entries) =>
+      entries.map((c) => (String(c.id) === String(convId) ? updated : c))
+    );
+    await group.save();
+
+    const saved = toContactPayload(contact).conversations.find((c) => c.id === updated.id);
+    res.json(saved);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to update conversation' });
+  }
+});
+
+router.delete('/:id/contacts/:contactId/conversations/:convId', async (req, res) => {
+  const { id, contactId, convId } = req.params;
+  if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(contactId)) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  try {
+    const group = await Group.findOne({ _id: id, userId: req.user._id });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    const contact = group.contacts.id(contactId);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+    const decrypted = decryptContactPayload(contact);
+    const list = sanitizeConversations(decrypted.conversations || []);
+    const existing = list.find((c) => String(c.id) === String(convId));
+    if (!existing) return res.status(404).json({ error: 'Conversation not found' });
+    if (existing.source !== 'manual') {
+      return res.status(403).json({ error: 'Auto-tracked records cannot be deleted' });
+    }
+
+    applyConversationUpdate(contact, (entries) =>
+      entries.filter((c) => String(c.id) !== String(convId))
+    );
+    await group.save();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to delete conversation' });
   }
 });
 

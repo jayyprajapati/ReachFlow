@@ -4,8 +4,9 @@ import { useRouter } from '../router.jsx';
 import {
   Plus, Trash2, Pencil, Check, X, Copy, Search, Linkedin, ClipboardPaste,
   FileDown, Upload, ExternalLink, Loader, Users, Building2, Mail, ArrowUpRight,
-  Send, Briefcase, Info, ArrowUpDown,
+  Send, Briefcase, Info, ArrowUpDown, MessageSquare, Phone,
 } from 'lucide-react';
+import ConversationsDrawer from '../components/ConversationsDrawer.jsx';
 
 const API = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -41,7 +42,42 @@ function normalizeContactPayload(contact, defaultRole = '') {
     name: capitalizeDisplayName(contact.name),
     role: contact.role || defaultRole,
     email: String(contact.email || '').trim().toLowerCase(),
+    mobile: sanitizeMobileInput(contact.mobile),
   };
+}
+
+function extractMobile(text) {
+  if (!text) return { mobile: '', raw: '' };
+  const patterns = [
+    /\+\d[\d\s\-.()]{6,}\d/,                       // +1 415-555-1234
+    /\(\d{2,5}\)[\s.-]*\d[\d\s\-.()]{4,}/,         // (415) 555-1234
+    /\b\d{3}[\s.\-/]\d{3}[\s.\-/]\d{4}\b/,         // 415-555-1234
+    /\b\d{10,15}\b/,                                // 9876543210
+  ];
+  for (const re of patterns) {
+    const m = String(text).match(re);
+    if (m) {
+      const raw = m[0];
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length >= 7 && digits.length <= 15) {
+        return { mobile: raw.trim(), raw };
+      }
+    }
+  }
+  return { mobile: '', raw: '' };
+}
+
+function sanitizeMobileInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return raw; // let server decide; show user as-typed
+  return raw;
+}
+
+function isValidMobile(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 0 || (digits.length >= 7 && digits.length <= 15);
 }
 
 function nameFromEmail(email) {
@@ -88,8 +124,11 @@ function parseContactLine(line) {
     verifiedFlag = true;
     working = rawLine.replace(/\s+[Vv]\s*$/, '');
   }
-  let cleaned = working
-    .replace(raw || '', ' ')
+  // Strip email first so it doesn't interfere with phone detection.
+  let cleaned = working.replace(raw || '', ' ');
+  const { mobile, raw: mobileRaw } = extractMobile(cleaned);
+  if (mobile && mobileRaw) cleaned = cleaned.replace(mobileRaw, ' ');
+  cleaned = cleaned
     .replace(/[<>()[\]{}"']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -98,8 +137,8 @@ function parseContactLine(line) {
     .map(s => s.trim())
     .filter(Boolean);
   const name = capitalizeDisplayName(segments[0] || (email ? nameFromEmail(email) : cleaned));
-  if (!name && !email) return null;
-  const result = { name, email, role: 'Recruiter', source: rawLine };
+  if (!name && !email && !mobile) return null;
+  const result = { name, email, mobile, role: 'Recruiter', source: rawLine };
   if (verifiedFlag) result.email_status = 'verified';
   return result;
 }
@@ -117,9 +156,17 @@ function parseCSVText(text) {
   return data.map(line => {
     const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
     const email = String(parts[1] || '').trim().toLowerCase();
+    const explicitMobile = String(parts[6] || '').trim();
+    let mobile = '';
+    if (explicitMobile) {
+      const found = extractMobile(explicitMobile);
+      mobile = found.mobile || (isValidMobile(explicitMobile) ? explicitMobile : '');
+    }
+    if (!mobile) mobile = extractMobile(parts.slice(2).join(' ')).mobile || '';
     return {
       name: capitalizeDisplayName(parts[0] || (email ? nameFromEmail(email) : '')),
       email,
+      mobile,
       role: parts[2] || '',
       linkedin: parts[3] || '',
       connectionStatus: parts[4] || '',
@@ -265,6 +312,39 @@ export default function ContactsPage() {
   const csvFileRef = useRef();
   const newCompanyShortcutLabel = getNewCompanyShortcutLabel();
 
+  // Conversations drawer
+  const [drawerContactId, setDrawerContactId] = useState(null);
+  const [apps, setApps] = useState([]);
+  const [appsLoaded, setAppsLoaded] = useState(false);
+
+  const drawerContact = useMemo(() => {
+    if (!drawerContactId || !detail) return null;
+    return (detail.contacts || []).find(c => c.id === drawerContactId) || null;
+  }, [drawerContactId, detail]);
+
+  async function loadApplicationsOnce() {
+    if (appsLoaded) return;
+    try {
+      const r = await authedFetch(`${API}/api/applications`);
+      const d = await r.json();
+      if (r.ok && Array.isArray(d)) setApps(d);
+    } catch { /* leave empty */ }
+    setAppsLoaded(true);
+  }
+
+  function openConversations(contact) {
+    setDrawerContactId(contact.id);
+    loadApplicationsOnce();
+  }
+
+  function closeConversations() {
+    setDrawerContactId(null);
+  }
+
+  function applyContactUpdate(updated) {
+    setDetail(p => p ? { ...p, contacts: (p.contacts || []).map(c => c.id === updated.id ? { ...c, ...updated } : c) } : p);
+  }
+
   const startCreateCompany = useCallback(() => {
     setCreating(true);
     setNewName('');
@@ -318,7 +398,7 @@ export default function ContactsPage() {
   }
 
   function contactFormDefaults() {
-    return { name: '', email: '', role: 'Recruiter', linkedin: '', connectionStatus: 'not_connected', email_status: 'tentative' };
+    return { name: '', email: '', mobile: '', role: 'Recruiter', linkedin: '', connectionStatus: 'not_connected', email_status: 'tentative' };
   }
 
   function getNameCopyTitle(contact) {
@@ -368,6 +448,7 @@ export default function ContactsPage() {
               body: JSON.stringify({
                 name: payload.name,
                 email: payload.email,
+                mobile: payload.mobile || '',
                 role: payload.role,
                 linkedin: payload.linkedin || '',
                 email_status: payload.email_status || 'tentative',
@@ -514,7 +595,7 @@ export default function ContactsPage() {
   function startEdit(c) {
     setEditingId(c.id);
     setContactForm({
-      name: c.name || '', email: c.email || '', role: c.role || '',
+      name: c.name || '', email: c.email || '', mobile: c.mobile || '', role: c.role || '',
       linkedin: c.linkedin || '', connectionStatus: c.connectionStatus || 'not_connected',
       email_status: c.email_status || 'tentative',
     });
@@ -597,8 +678,8 @@ export default function ContactsPage() {
 
   function exportCSV() {
     if (!detail?.contacts?.length) return;
-    const headers = ['Name', 'Email', 'Role', 'LinkedIn', 'Connection Status', 'Email Status'];
-    const rows = detail.contacts.map(c => [c.name, c.email, c.role, c.linkedin, c.connectionStatus, c.email_status]);
+    const headers = ['Name', 'Email', 'Role', 'LinkedIn', 'Connection Status', 'Email Status', 'Mobile'];
+    const rows = detail.contacts.map(c => [c.name, c.email, c.role, c.linkedin, c.connectionStatus, c.email_status, c.mobile || '']);
     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -614,7 +695,7 @@ export default function ContactsPage() {
     if (exportingAll || !groups.length) return;
     setExportingAll(true);
     try {
-      const headers = ['Company', 'Name', 'Email', 'Role', 'LinkedIn', 'Connection Status', 'Email Status'];
+      const headers = ['Company', 'Name', 'Email', 'Role', 'LinkedIn', 'Connection Status', 'Email Status', 'Mobile'];
       const rows = [];
       for (const g of groups) {
         if (!g.contactCount) continue;
@@ -623,7 +704,7 @@ export default function ContactsPage() {
           const data = await r.json();
           if (!r.ok) continue;
           for (const c of (data.contacts || [])) {
-            rows.push([data.companyName || g.companyName, c.name, c.email, c.role, c.linkedin, c.connectionStatus, c.email_status]);
+            rows.push([data.companyName || g.companyName, c.name, c.email, c.role, c.linkedin, c.connectionStatus, c.email_status, c.mobile || '']);
           }
         } catch {/* skip failed group */}
       }
@@ -668,7 +749,7 @@ export default function ContactsPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: payload.name, email: payload.email, role: payload.role,
+            name: payload.name, email: payload.email, mobile: payload.mobile || '', role: payload.role,
             linkedin: payload.linkedin || '', email_status: payload.email_status || 'tentative',
           }),
         });
@@ -1011,7 +1092,7 @@ export default function ContactsPage() {
                         <th>Email</th>
                         <th style={{ width: 180 }}>Role</th>
                         <th style={{ width: 130 }}>Email status</th>
-                        <th style={{ width: 80, textAlign: 'right' }}></th>
+                        <th style={{ width: 116, textAlign: 'right' }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1027,7 +1108,18 @@ export default function ContactsPage() {
                             </div>
                           </td>
                           <td>
-                            <input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="email@company.com" />
+                            <div className="rf-ct__edit-stack">
+                              <input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="email@company.com" />
+                              <div className="rf-ct__edit-mobile">
+                                <Phone size={12} />
+                                <input
+                                  className="rf-input rf-input--sm"
+                                  value={contactForm.mobile || ''}
+                                  onChange={e => setContactForm(f => ({ ...f, mobile: e.target.value }))}
+                                  placeholder="Mobile (optional)"
+                                />
+                              </div>
+                            </div>
                           </td>
                           <td>
                             <select className="rf-select rf-input--sm" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
@@ -1058,7 +1150,20 @@ export default function ContactsPage() {
                               </div>
                             </div>
                           </td>
-                          <td><input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} /></td>
+                          <td>
+                            <div className="rf-ct__edit-stack">
+                              <input className="rf-input rf-input--sm" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} />
+                              <div className="rf-ct__edit-mobile">
+                                <Phone size={12} />
+                                <input
+                                  className="rf-input rf-input--sm"
+                                  value={contactForm.mobile || ''}
+                                  onChange={e => setContactForm(f => ({ ...f, mobile: e.target.value }))}
+                                  placeholder="Mobile (optional)"
+                                />
+                              </div>
+                            </div>
+                          </td>
                           <td>
                             <select className="rf-select rf-input--sm" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
                               {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
@@ -1083,7 +1188,7 @@ export default function ContactsPage() {
                               <span style={{ fontWeight: 600 }}>{renderHighlightedText(c.name, <em style={{ color: 'var(--rf-text-faint)' }}>Unnamed</em>)}</span>
                               {c.linkedin && (
                                 <a href={c.linkedin} target="_blank" rel="noreferrer" title="LinkedIn">
-                                  <Linkedin size={12} style={{ color: 'var(--rf-info-text)' }} />
+                                  <ExternalLink size={12} style={{ color: 'var(--rf-info-text)' }} />
                                 </a>
                               )}
                               {c.name && (
@@ -1102,22 +1207,47 @@ export default function ContactsPage() {
                             </span>
                           </td>
                           <td>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                              <span className="rf-truncate" style={{ maxWidth: 240 }}>{renderHighlightedText(c.email, <em style={{ color: 'var(--rf-text-faint)' }}>—</em>)}</span>
-                              {c.email && (
-                                <button
-                                  className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
-                                  onClick={() => copyVal(c.email, `e-${c.id}`)}
-                                  title={copiedField === `e-${c.id}` ? 'Email copied' : 'Copy email'}
-                                >
-                                  {copiedField === `e-${c.id}` ? <Check size={11} /> : <Copy size={11} />}
-                                </button>
+                            <div className="rf-ct__email-stack">
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <span className="rf-truncate" style={{ maxWidth: 240 }}>{renderHighlightedText(c.email, <em style={{ color: 'var(--rf-text-faint)' }}>—</em>)}</span>
+                                {c.email && (
+                                  <button
+                                    className={`rf-copy-btn ${copiedField === `e-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
+                                    onClick={() => copyVal(c.email, `e-${c.id}`)}
+                                    title={copiedField === `e-${c.id}` ? 'Email copied' : 'Copy email'}
+                                  >
+                                    {copiedField === `e-${c.id}` ? <Check size={11} /> : <Copy size={11} />}
+                                  </button>
+                                )}
+                              </span>
+                              {c.mobile && (
+                                <span className="rf-ct__mobile-line">
+                                  <Phone size={11} />
+                                  <span className="rf-truncate" style={{ maxWidth: 220 }}>{c.mobile}</span>
+                                  <button
+                                    className={`rf-copy-btn ${copiedField === `m-${c.id}` ? 'rf-copy-btn--copied' : ''}`}
+                                    onClick={() => copyVal(c.mobile, `m-${c.id}`)}
+                                    title={copiedField === `m-${c.id}` ? 'Mobile copied' : 'Copy mobile'}
+                                  >
+                                    {copiedField === `m-${c.id}` ? <Check size={11} /> : <Copy size={11} />}
+                                  </button>
+                                </span>
                               )}
-                            </span>
+                            </div>
                           </td>
                           <td><span className="rf-badge rf-badge--neutral">{c.role || '—'}</span></td>
                           <td><EmailStatusBadge status={c.email_status} /></td>
                           <td style={{ textAlign: 'right' }}>
+                            <button
+                              className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__conv-btn"
+                              onClick={() => openConversations(c)}
+                              title={`Conversations${(c.conversations || []).length ? ` (${c.conversations.length})` : ''}`}
+                            >
+                              <MessageSquare size={13} />
+                              {(c.conversations || []).length > 0 && (
+                                <span className="rf-ct__conv-badge">{c.conversations.length}</span>
+                              )}
+                            </button>
                             <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => startEdit(c)} title="Edit"><Pencil size={13} /></button>
                             <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => deleteContact(c.id)} title="Delete"><Trash2 size={13} /></button>
                           </td>
@@ -1174,10 +1304,15 @@ export default function ContactsPage() {
               <p className="rf-help" style={{ marginTop: 0 }}>
                 Paste people from any company. Matching companies are added to existing groups; unmatched rows need a company created first.
               </p>
+              <ul className="rf-help-tips">
+                <li>One contact per line. Email anywhere on the line; name &amp; company keywords are auto-detected.</li>
+                <li>Append <code>V</code> at the end of a row to mark the email as <strong>Valid</strong>. Example: <code>Jane jane@acme.com V</code>.</li>
+                <li>Phone numbers are auto-extracted (international too): <code>+1 415-555-1234</code>, <code>(555) 123-4567</code>, <code>9876543210</code>.</li>
+              </ul>
               <textarea
                 className="rf-textarea"
                 style={{ fontFamily: 'var(--rf-font-mono)', fontSize: 13, minHeight: 150 }}
-                placeholder={"Jane Smith jane@stripe.com\nAcme, John Doe, john@acme.com\nalex@unknown.com"}
+                placeholder={"Jane Smith jane@stripe.com +1 415-555-1234\nAcme, John Doe, john@acme.com V\nalex@unknown.com 9876543210"}
                 value={globalPasteText}
                 onChange={e => setGlobalPasteText(e.target.value)}
                 disabled={globalAdding}
@@ -1188,6 +1323,11 @@ export default function ContactsPage() {
                     <div key={`${p.source}-${i}`} className={`rf-bulk-row${!p.targetGroup ? ' rf-bulk-row--dupe' : ''}`}>
                       <span style={{ flex: 1, fontWeight: 600 }}>{p.name || <span style={{ color: 'var(--rf-text-faint)' }}>—</span>}</span>
                       <span style={{ flex: 1, color: 'var(--rf-text-muted)' }}>{p.email || 'No email'}</span>
+                      {p.mobile && (
+                        <span className="rf-badge rf-badge--neutral" title="Detected mobile">
+                          <Phone size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />{p.mobile}
+                        </span>
+                      )}
                       <span className={`rf-badge ${p.targetGroup ? 'rf-badge--success' : 'rf-badge--warning'}`}>
                         {p.targetGroup ? p.targetGroup.companyName : 'create company first'}
                       </span>
@@ -1233,10 +1373,14 @@ export default function ContactsPage() {
               <p className="rf-help" style={{ marginTop: 0 }}>
                 One contact per line. Formats accepted: <code>Name, email</code>, <code>Name &lt;email&gt;</code>, or just an email. Role defaults to Recruiter.
               </p>
+              <ul className="rf-help-tips">
+                <li>Append <code>V</code> at the end of a row to mark the email <strong>Valid</strong>. Example: <code>Jane jane@acme.com V</code>.</li>
+                <li>Phone numbers auto-detected — international &amp; common formats supported.</li>
+              </ul>
               <textarea
                 className="rf-textarea"
                 style={{ fontFamily: 'var(--rf-font-mono)', fontSize: 13, minHeight: 140 }}
-                placeholder={"John Smith, john@company.com\nJane Doe <jane@corp.io>\nalice@example.com"}
+                placeholder={"John Smith, john@company.com, +1 415-555-1234\nJane Doe <jane@corp.io> V\nalice@example.com 9876543210"}
                 value={bulkPasteText}
                 onChange={e => setBulkPasteText(e.target.value)}
               />
@@ -1246,6 +1390,12 @@ export default function ContactsPage() {
                     <div key={i} className={`rf-bulk-row${isDupe(p) ? ' rf-bulk-row--dupe' : ''}`}>
                       <span style={{ flex: 1, fontWeight: 600 }}>{p.name || <span style={{ color: 'var(--rf-text-faint)' }}>—</span>}</span>
                       <span style={{ flex: 1, color: 'var(--rf-text-muted)' }}>{p.email}</span>
+                      {p.mobile && (
+                        <span className="rf-badge rf-badge--neutral" title="Detected mobile">
+                          <Phone size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />{p.mobile}
+                        </span>
+                      )}
+                      {p.email_status === 'verified' && <span className="rf-badge rf-badge--success" title="Marked Valid via V flag">V</span>}
                       {isDupe(p)         && <span className="rf-badge rf-badge--neutral">duplicate</span>}
                       {!p.name && !isDupe(p) && <span className="rf-badge rf-badge--warning">no name</span>}
                     </div>
@@ -1269,6 +1419,23 @@ export default function ContactsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Conversations drawer */}
+      {drawerContact && detail && (
+        <ConversationsDrawer
+          contact={drawerContact}
+          groupId={detail.id}
+          companyName={detail.companyName}
+          applications={apps}
+          authedFetch={authedFetch}
+          apiBase={API}
+          onClose={closeConversations}
+          onContactUpdated={applyContactUpdate}
+          setNotice={setNotice}
+          setWarningDialog={setWarningDialog}
+          onNavigate={(path) => navigateTo(path)}
+        />
       )}
 
       {/* CSV preview modal */}

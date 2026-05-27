@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const {
   encryptJson,
+  decryptJson,
   isEncryptedEnvelope,
   normalizeEmail,
   computeEmailHash,
@@ -451,6 +452,27 @@ async function migrateCollectionNames() {
   }
 }
 
+function historyEntriesToConversations(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map((entry) => {
+      const type = entry?.type === 'linkedin' ? 'linkedin' : (entry?.type === 'email' ? 'email' : null);
+      const date = entry?.date ? new Date(entry.date) : null;
+      if (!type || !date || Number.isNaN(date.getTime())) return null;
+      return {
+        id: new mongoose.Types.ObjectId().toString(),
+        date,
+        platform: type === 'linkedin' ? 'linkedin' : 'gmail',
+        purpose: '',
+        note: '',
+        applicationIds: [],
+        source: type === 'linkedin' ? 'reachflow_linkedin' : 'reachflow_email',
+        createdAt: date,
+      };
+    })
+    .filter(Boolean);
+}
+
 async function migrateGroupContactFields() {
   const rows = await Group.find({});
   for (const group of rows) {
@@ -464,24 +486,45 @@ async function migrateGroupContactFields() {
 
     const nextContacts = (group.contacts || []).map((contact) => {
       const plainEmail = normalizeEmail(contact.email || '');
+      const legacyHistory = Array.isArray(contact.contactHistory) ? contact.contactHistory : [];
+      let priorPayload = null;
+      if (isEncryptedEnvelope(contact.encryptedPayload)) {
+        try { priorPayload = decryptJson(contact.encryptedPayload); } catch (_err) { priorPayload = null; }
+      }
+
+      const priorConversations = Array.isArray(priorPayload?.conversations) ? priorPayload.conversations : null;
+      const conversationsFromHistory = priorConversations
+        ? priorConversations
+        : historyEntriesToConversations(priorPayload?.contactHistory || legacyHistory);
+
       const payload = {
-        name: contact.name || '',
-        email: plainEmail,
-        role: contact.role || '',
-        linkedin: contact.linkedin || '',
-        connectionStatus: contact.connectionStatus || '',
-        email_status: contact.email_status || 'tentative',
-        contactHistory: Array.isArray(contact.contactHistory) ? contact.contactHistory : [],
-        lastContactedDate: contact.lastContactedDate || null,
-        emailCount: Number.isFinite(Number(contact.emailCount)) ? Number(contact.emailCount) : 0,
-        linkedInCount: Number.isFinite(Number(contact.linkedInCount)) ? Number(contact.linkedInCount) : 0,
+        name: priorPayload?.name || contact.name || '',
+        email: priorPayload?.email || plainEmail,
+        role: priorPayload?.role || contact.role || '',
+        linkedin: priorPayload?.linkedin || contact.linkedin || '',
+        mobile: typeof priorPayload?.mobile === 'string' ? priorPayload.mobile : '',
+        connectionStatus: priorPayload?.connectionStatus || contact.connectionStatus || '',
+        email_status: priorPayload?.email_status || contact.email_status || 'tentative',
+        conversations: conversationsFromHistory,
+        lastContactedDate: priorPayload?.lastContactedDate || contact.lastContactedDate || null,
+        emailCount: Number.isFinite(Number(priorPayload?.emailCount))
+          ? Number(priorPayload.emailCount)
+          : (Number.isFinite(Number(contact.emailCount)) ? Number(contact.emailCount) : 0),
+        linkedInCount: Number.isFinite(Number(priorPayload?.linkedInCount))
+          ? Number(priorPayload.linkedInCount)
+          : (Number.isFinite(Number(contact.linkedInCount)) ? Number(contact.linkedInCount) : 0),
       };
 
       const next = contact.toObject ? contact.toObject() : { ...contact };
       const nextHash = plainEmail ? computeEmailHash(plainEmail) : '';
       const nextCompanyKey = deriveCompanyKeyFromEmail(plainEmail) || normalizedCompany;
 
-      if (!isEncryptedEnvelope(next.encryptedPayload)) {
+      // Re-encrypt if not encrypted yet, OR if we've added conversations/mobile fields that weren't there.
+      const needsReencrypt = !isEncryptedEnvelope(next.encryptedPayload)
+        || !priorPayload
+        || !Array.isArray(priorPayload.conversations)
+        || typeof priorPayload.mobile !== 'string';
+      if (needsReencrypt) {
         next.encryptedPayload = encryptJson(payload);
         changed = true;
       }
