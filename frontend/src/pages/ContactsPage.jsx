@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Pencil, Check, X, Copy, Search, Linkedin, ClipboardPaste,
   FileDown, Upload, ExternalLink, Loader, Users, Building2, Mail, ArrowUpRight,
   Send, Briefcase, Info, ArrowUpDown, MessageSquare, Phone, ChevronLeft, ChevronRight,
-  MoreVertical,
+  MoreVertical, Minus,
 } from 'lucide-react';
 import ConversationsDrawer from '../components/ConversationsDrawer.jsx';
 
@@ -21,14 +21,27 @@ const EMAIL_STATUS_OPTIONS = [
   { value: 'not_valid', label: 'Invalid' },
 ];
 
-function EmailStatusBadge({ status }) {
+// Inline status indicator shown right before the email. Cycle on click.
+const EMAIL_STATUS_ORDER = ['verified', 'tentative', 'not_valid'];
+function EmailStatusIcon({ status, onCycle }) {
+  const s = EMAIL_STATUS_ORDER.includes(status) ? status : 'verified';
   const map = {
-    verified:  ['Valid', 'success'],
-    tentative: ['Tentative', 'neutral'],
-    not_valid: ['Invalid', 'error'],
+    verified:  { Icon: Check,  cls: 'rf-ct__email-flag--ok',   label: 'Valid' },
+    tentative: { Icon: Minus,  cls: 'rf-ct__email-flag--mid',  label: 'Tentative' },
+    not_valid: { Icon: X,      cls: 'rf-ct__email-flag--bad',  label: 'Invalid' },
   };
-  const [label, cls] = map[status] || map.tentative;
-  return <span className={`rf-badge rf-badge--${cls}`}>{label}</span>;
+  const { Icon, cls, label } = map[s];
+  return (
+    <button
+      type="button"
+      className={`rf-ct__email-flag ${cls}`}
+      onClick={(e) => { e.stopPropagation(); onCycle?.(); }}
+      title={`Email: ${label} · click to change`}
+      aria-label={`Email status: ${label}`}
+    >
+      <Icon size={12} strokeWidth={2.5} />
+    </button>
+  );
 }
 
 function capitalizeDisplayName(value) {
@@ -337,6 +350,15 @@ export default function ContactsPage() {
   const [detailMenuOpen, setDetailMenuOpen] = useState(false);
   const detailMenuRef = useRef(null);
 
+  // Fixed-position hover tooltip — escapes all overflow:hidden ancestors
+  const [hoverTip, setHoverTip] = useState(null);
+  const showHoverTip = (e, text) => {
+    if (!text) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2 });
+  };
+  const hideHoverTip = () => setHoverTip(null);
+
   // Global contact search
   const [globalSearch, setGlobalSearch] = useState('');
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
@@ -530,7 +552,7 @@ export default function ContactsPage() {
   }
 
   function contactFormDefaults() {
-    return { name: '', email: '', mobile: '', role: 'Recruiter', linkedin: '', connectionStatus: 'not_connected', email_status: 'tentative' };
+    return { name: '', email: '', mobile: '', role: 'Recruiter', linkedin: '', connectionStatus: 'not_connected', email_status: 'verified' };
   }
 
   function getNameCopyTitle(contact) {
@@ -791,6 +813,27 @@ export default function ContactsPage() {
     finally { setSavingContact(false); }
   }
 
+  async function cycleEmailStatus(c) {
+    if (!detail) return;
+    const cur = EMAIL_STATUS_ORDER.includes(c.email_status) ? c.email_status : 'verified';
+    const next = EMAIL_STATUS_ORDER[(EMAIL_STATUS_ORDER.indexOf(cur) + 1) % EMAIL_STATUS_ORDER.length];
+    // Optimistic update
+    setDetail(p => ({ ...p, contacts: (p?.contacts || []).map(x => x.id === c.id ? { ...x, email_status: next } : x) }));
+    try {
+      const r = await authedFetch(`${API}/api/groups/${detail.id}/contacts/${c.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_status: next }),
+      });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
+      setDetail(p => ({ ...p, contacts: (p?.contacts || []).map(x => x.id === c.id ? d : x) }));
+    } catch (e) {
+      // revert
+      setDetail(p => ({ ...p, contacts: (p?.contacts || []).map(x => x.id === c.id ? { ...x, email_status: cur } : x) }));
+      setNotice({ type: 'error', message: e.message });
+    }
+  }
+
   async function deleteContact(cid) {
     if (!detail) return;
     setWarningDialog({
@@ -959,6 +1002,15 @@ export default function ContactsPage() {
           {copyTip.text}
         </div>
       )}
+      {hoverTip && (
+        <div
+          className="rf-hover-tip"
+          role="tooltip"
+          style={{ top: hoverTip.y, left: hoverTip.x }}
+        >
+          {hoverTip.text}
+        </div>
+      )}
       <header className="rf-page-header rf-ct__page-header">
         <div className="rf-page-header__lead">
           <div className="rf-page-header__eyebrow"><DotMark /> Contacts</div>
@@ -1072,8 +1124,9 @@ export default function ContactsPage() {
         {/* Edge-hugging collapse pill (mirrors the main app sidebar pattern) */}
         <button
           className="rf-ct__edge-collapse"
-          onClick={() => (sidebarCollapsed ? setSidebarCollapsed(false) : handleCollapse())}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={() => { (sidebarCollapsed ? setSidebarCollapsed(false) : handleCollapse()); hideHoverTip(); }}
+          onMouseEnter={(e) => showHoverTip(e, sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+          onMouseLeave={hideHoverTip}
           aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{ left: `${(sidebarCollapsed ? 52 : sidebarWidth) - 12}px` }}
         >
@@ -1084,31 +1137,52 @@ export default function ContactsPage() {
         {sidebarCollapsed ? (
           <aside className="rf-ct__sidebar rf-ct__sidebar--collapsed">
             <div className="rf-ct__collapsed-head">
-              <button className="rf-ct__collapsed-action" onClick={expandAndFocusSearch} title="Search companies">
+              <button
+                className="rf-ct__collapsed-action"
+                onClick={() => { expandAndFocusSearch(); hideHoverTip(); }}
+                onMouseEnter={(e) => showHoverTip(e, 'Search companies')}
+                onMouseLeave={hideHoverTip}
+                aria-label="Search companies"
+              >
                 <Search size={14} />
               </button>
               <button
                 className={`rf-ct__collapsed-action${sortCompaniesAZ ? ' rf-ct__collapsed-action--active' : ''}`}
                 onClick={() => setSortCompaniesAZ(v => !v)}
-                title={sortCompaniesAZ ? 'Sorted A–Z (click to reset)' : 'Sort companies A–Z'}
+                onMouseEnter={(e) => showHoverTip(e, sortCompaniesAZ ? 'Sorted A–Z (click to reset)' : 'Sort companies A–Z')}
+                onMouseLeave={hideHoverTip}
+                aria-label="Sort companies A-Z"
               >
                 <ArrowUpDown size={14} />
               </button>
-              <button className="rf-ct__collapsed-action" onClick={expandAndStartCreate} title="New company">
+              <button
+                className="rf-ct__collapsed-action"
+                onClick={() => { expandAndStartCreate(); hideHoverTip(); }}
+                onMouseEnter={(e) => showHoverTip(e, 'New company')}
+                onMouseLeave={hideHoverTip}
+                aria-label="New company"
+              >
                 <Plus size={14} />
               </button>
             </div>
             <div className="rf-ct__collapsed-list">
-              {filtered.map(g => (
-                <button
-                  key={g.id}
-                  className={`rf-ct__collapsed-company${selectedId === g.id ? ' rf-ct__collapsed-company--active' : ''}`}
-                  onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); }}
-                  title={`${g.companyName} · ${g.contactCount || 0} contact${(g.contactCount || 0) === 1 ? '' : 's'}`}
-                >
-                  {g.logoUrl ? <img src={g.logoUrl} alt={g.companyName} /> : <Building2 size={16} />}
-                </button>
-              ))}
+              {filtered.map(g => {
+                const tip = `${g.companyName} · ${g.contactCount || 0} contact${(g.contactCount || 0) === 1 ? '' : 's'}`;
+                return (
+                  <button
+                    key={g.id}
+                    className={`rf-ct__collapsed-company${selectedId === g.id ? ' rf-ct__collapsed-company--active' : ''}`}
+                    onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); hideHoverTip(); }}
+                    onMouseEnter={(e) => showHoverTip(e, tip)}
+                    onMouseLeave={hideHoverTip}
+                    onFocus={(e) => showHoverTip(e, tip)}
+                    onBlur={hideHoverTip}
+                    aria-label={g.companyName}
+                  >
+                    {g.logoUrl ? <img src={g.logoUrl} alt="" /> : <Building2 size={16} />}
+                  </button>
+                );
+              })}
             </div>
           </aside>
         ) : (
@@ -1415,9 +1489,8 @@ export default function ContactsPage() {
                           </button>
                         </th>
                         <th>Email</th>
-                        <th style={{ width: 180 }}>Role</th>
-                        <th style={{ width: 130 }}>Email status</th>
-                        <th style={{ width: 116, textAlign: 'right' }}></th>
+                        <th style={{ width: 140 }}>Role</th>
+                        <th style={{ width: 150, textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1449,11 +1522,6 @@ export default function ContactsPage() {
                           <td>
                             <select className="rf-select rf-input--sm" value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
                               {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
-                            </select>
-                          </td>
-                          <td>
-                            <select className="rf-select rf-input--sm" value={contactForm.email_status} onChange={e => setContactForm(f => ({ ...f, email_status: e.target.value }))}>
-                              {EMAIL_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                             </select>
                           </td>
                           <td style={{ textAlign: 'right' }}>
@@ -1494,11 +1562,6 @@ export default function ContactsPage() {
                               {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r || '—'}</option>)}
                             </select>
                           </td>
-                          <td>
-                            <select className="rf-select rf-input--sm" value={contactForm.email_status} onChange={e => setContactForm(f => ({ ...f, email_status: e.target.value }))}>
-                              {EMAIL_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </select>
-                          </td>
                           <td style={{ textAlign: 'right' }}>
                             <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={saveContact} disabled={savingContact}>
                               {savingContact ? <Loader size={13} className="rf-spin" /> : <Check size={13} />}
@@ -1534,6 +1597,7 @@ export default function ContactsPage() {
                           <td>
                             <div className="rf-ct__email-stack">
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <EmailStatusIcon status={c.email_status} onCycle={() => cycleEmailStatus(c)} />
                                 <span className="rf-truncate" style={{ maxWidth: 240 }}>{renderHighlightedText(c.email, <em style={{ color: 'var(--rf-text-faint)' }}>—</em>)}</span>
                                 {c.email && (
                                   <button
@@ -1561,7 +1625,6 @@ export default function ContactsPage() {
                             </div>
                           </td>
                           <td><span className="rf-badge rf-badge--neutral">{c.role || '—'}</span></td>
-                          <td><EmailStatusBadge status={c.email_status} /></td>
                           <td style={{ textAlign: 'right' }}>
                             <button
                               className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__conv-btn"

@@ -98,7 +98,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
       </button>
 
       {/* Command palette */}
-      <button className="rf-sidebar__cmd" onClick={onOpenCommand} title="Search & jump (⌘K)">
+      <button
+        className="rf-sidebar__cmd"
+        onClick={onOpenCommand}
+        title="Search & jump (⌘K)"
+        onMouseEnter={collapsed ? (e) => showHoverTip(e, 'Search & jump (⌘K)') : undefined}
+        onMouseLeave={collapsed ? hideHoverTip : undefined}
+        onFocus={collapsed ? (e) => showHoverTip(e, 'Search & jump (⌘K)') : undefined}
+        onBlur={collapsed ? hideHoverTip : undefined}
+      >
         <Search size={15} />
         <span className="rf-sidebar__cmd-text">Search…</span>
         <span className="rf-sidebar__cmd-shortcut">⌘K</span>
@@ -134,7 +142,11 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
             <button
               key={item.path}
               className={`rf-sidebar__link${active ? ' rf-sidebar__link--active' : ''}`}
-              onClick={() => goTo(item.path)}
+              onClick={() => { goTo(item.path); hideHoverTip(); }}
+              onMouseEnter={collapsed ? (e) => showHoverTip(e, item.label) : undefined}
+              onMouseLeave={collapsed ? hideHoverTip : undefined}
+              onFocus={collapsed ? (e) => showHoverTip(e, item.label) : undefined}
+              onBlur={collapsed ? hideHoverTip : undefined}
             >
               <span className="rf-sidebar__link-icon"><Icon size={18} strokeWidth={1.8} /></span>
               <span className="rf-sidebar__link-label">{item.label}</span>
@@ -150,7 +162,11 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
         {/* Settings */}
         <button
           className={`rf-sidebar__link${path === '/settings' ? ' rf-sidebar__link--active' : ''}`}
-          onClick={() => goTo('/settings')}
+          onClick={() => { goTo('/settings'); hideHoverTip(); }}
+          onMouseEnter={collapsed ? (e) => showHoverTip(e, 'Settings') : undefined}
+          onMouseLeave={collapsed ? hideHoverTip : undefined}
+          onFocus={collapsed ? (e) => showHoverTip(e, 'Settings') : undefined}
+          onBlur={collapsed ? hideHoverTip : undefined}
         >
           <span className="rf-sidebar__link-icon">
             <Settings size={18} strokeWidth={1.8} />
@@ -169,7 +185,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
         </button>
 
         {/* Theme toggle as a row */}
-        <button className="rf-sidebar__theme-row" onClick={toggleTheme} aria-label="Toggle theme">
+        <button
+          className="rf-sidebar__theme-row"
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          onMouseEnter={collapsed ? (e) => showHoverTip(e, `Appearance: ${theme === 'dark' ? 'Dark' : 'Light'}`) : undefined}
+          onMouseLeave={collapsed ? hideHoverTip : undefined}
+          onFocus={collapsed ? (e) => showHoverTip(e, `Appearance: ${theme === 'dark' ? 'Dark' : 'Light'}`) : undefined}
+          onBlur={collapsed ? hideHoverTip : undefined}
+        >
           <span className="rf-sidebar__theme-icon">
             {theme === 'dark' ? <Moon size={18} strokeWidth={1.8} /> : <Sun size={18} strokeWidth={1.8} />}
           </span>
@@ -179,7 +203,12 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
 
         {/* User */}
         <div ref={menuRef} className="rf-sidebar__user-wrap">
-          <button className="rf-sidebar__user" onClick={() => setUserMenuOpen(v => !v)}>
+          <button
+            className="rf-sidebar__user"
+            onClick={() => { setUserMenuOpen(v => !v); hideHoverTip(); }}
+            onMouseEnter={collapsed && !userMenuOpen ? (e) => showHoverTip(e, displayName) : undefined}
+            onMouseLeave={collapsed ? hideHoverTip : undefined}
+          >
             <span className="rf-avatar rf-avatar--sm">{initial}</span>
             <span className="rf-sidebar__user-info">
               <span className="rf-sidebar__user-name">{displayName}</span>
