@@ -359,58 +359,66 @@ export default function PipelinePage() {
 
   return (
     <div className="rf-page rf-page--wide rf-pipeline-page">
-      {/* Header */}
-      <header className="rf-page-header">
-        <div className="rf-page-header__lead">
+      {/* sec1: title left, stats right */}
+      <div className="rf-pl-sec1">
+        <div className="rf-pl-sec1__lead">
           <div className="rf-page-header__eyebrow"><DotMark /> Applications</div>
-          <h1 className="rf-page-header__title">Pipeline</h1>
+          <h1 className="rf-page-header__title">Application pipeline</h1>
           <p className="rf-page-header__subtitle">
             Every application you've sent, organized by stage. Drag cards between columns to update status, or switch to table for bulk edits.
           </p>
         </div>
-        <div className="rf-page-header__actions">
-          <div className="rf-tabs" role="tablist" aria-label="View mode">
-            <button
-              className={`rf-tab${viewMode === 'kanban' ? ' rf-tab--active' : ''}`}
-              onClick={() => setViewMode('kanban')}
-            ><LayoutGrid size={13} /> Board</button>
-            <button
-              className={`rf-tab${viewMode === 'table' ? ' rf-tab--active' : ''}`}
-              onClick={() => setViewMode('table')}
-            ><List size={13} /> Table</button>
+        {apps.length > 0 && (
+          <div className="rf-pl-sec1__stats">
+            <SummaryStat label="Total" value={summary.total} active={!statusFilter} onClick={() => setStatusFilter('')} />
+            <SummaryStat label="In-flight" value={summary.inFlight} sub="Applied · OA · Interviewing" />
+            <SummaryStat label="Offers" value={summary.offers} accent onClick={() => setStatusFilter('offer')} active={statusFilter === 'offer'} />
+            <SummaryStat label="Closed" value={summary.closed} sub="Rejected · Ghosted" />
           </div>
+        )}
+      </div>
+
+      {/* sec2: actions left, filters right */}
+      <div className="rf-pl-sec2">
+        <div className="rf-pl-sec2__left">
           <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setInputOpen(v => !v)}>
             <Plus size={14} /> {inputOpen ? 'Close' : 'Add applications'}
           </button>
+          <div className="rf-pl-view-toggle">
+            <span className="rf-tooltip-wrap" data-tooltip="Board view">
+              <button
+                className={`rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm${viewMode === 'kanban' ? ' rf-pl-view-btn--active' : ''}`}
+                onClick={() => setViewMode('kanban')}
+                aria-label="Board view"
+              ><LayoutGrid size={15} /></button>
+            </span>
+            <span className="rf-tooltip-wrap" data-tooltip="Table view">
+              <button
+                className={`rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm${viewMode === 'table' ? ' rf-pl-view-btn--active' : ''}`}
+                onClick={() => setViewMode('table')}
+                aria-label="Table view"
+              ><List size={15} /></button>
+            </span>
+          </div>
         </div>
-      </header>
-
-      {/* Summary chips */}
-      {apps.length > 0 && (
-        <div className="rf-pl-summary">
-          <SummaryStat label="Total" value={summary.total} active={!statusFilter} onClick={() => setStatusFilter('')} />
-          <SummaryStat label="In-flight" value={summary.inFlight} sub="Applied · OA · Interviewing" />
-          <SummaryStat label="Offers" value={summary.offers} accent onClick={() => setStatusFilter('offer')} active={statusFilter === 'offer'} />
-          <SummaryStat label="Closed" value={summary.closed} sub="Rejected · Ghosted" />
-          <div style={{ flex: 1 }} />
-          <div className="rf-pl-summary__filters">
-            <select className="rf-select rf-input--sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ minWidth: 160 }}>
+        {apps.length > 0 && (
+          <div className="rf-pl-sec2__right">
+            <select className="rf-select rf-input--sm rf-pl-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
-            <div className="rf-search" style={{ width: 200 }}>
+            <div className="rf-search rf-pl-filter-search">
               <Filter size={14} className="rf-search__icon" />
               <input
                 className="rf-search__input"
-                style={{ height: 32, paddingLeft: 32, fontSize: 'var(--rf-text-sm)' }}
-                placeholder="Filter by company"
+                placeholder="Company"
                 value={companyFilter}
                 onChange={e => setCompanyFilter(e.target.value)}
               />
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Add input */}
       {inputOpen && (
