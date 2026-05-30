@@ -4,7 +4,8 @@ import { useRouter } from '../router.jsx';
 import {
   Plus, Trash2, Pencil, Check, X, Copy, Search, Linkedin, ClipboardPaste,
   FileDown, Upload, ExternalLink, Loader, Users, Building2, Mail, ArrowUpRight,
-  Send, Briefcase, Info, ArrowUpDown, MessageSquare, Phone,
+  Send, Briefcase, Info, ArrowUpDown, MessageSquare, Phone, ChevronLeft, ChevronRight,
+  MoreVertical,
 } from 'lucide-react';
 import ConversationsDrawer from '../components/ConversationsDrawer.jsx';
 
@@ -12,6 +13,7 @@ const API = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const looseEmailRegex = /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
 const looseEmailGlobalRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const looseLinkedinRegex = /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[\w-]+\/?/i;
 const ROLE_OPTIONS = ['', 'Recruiter', 'Senior Recruiter', 'Hiring Manager', 'HR', 'Talent Acquisition', 'Engineering Manager', 'Director', 'VP', 'Other'];
 const EMAIL_STATUS_OPTIONS = [
   { value: 'verified',  label: 'Valid' },
@@ -101,6 +103,12 @@ function extractEmails(text) {
     .filter(email => emailRegex.test(email));
 }
 
+function extractLinkedin(text) {
+  const match = String(text || '').match(looseLinkedinRegex);
+  if (!match) return { linkedin: '', raw: '' };
+  return { linkedin: match[0], raw: match[0] };
+}
+
 function splitPasteRows(text) {
   return String(text || '').split('\n').map(l => l.trim()).filter(Boolean).flatMap(line => {
     const emails = extractEmails(line);
@@ -113,16 +121,19 @@ function splitPasteRows(text) {
 function parseContactLine(line) {
   const rawLine = String(line || '').trim();
   if (!rawLine) return null;
-  const { email, raw } = extractEmail(rawLine);
+  // Extract LinkedIn URL first so it doesn't interfere with name/email detection.
+  const { linkedin, raw: linkedinRaw } = extractLinkedin(rawLine);
+  const withoutLinkedin = linkedinRaw ? rawLine.replace(linkedinRaw, ' ').replace(/\s+/g, ' ').trim() : rawLine;
+  const { email, raw } = extractEmail(withoutLinkedin);
   // Detect trailing " V"/" v" marker — flags email as verified.
   // Only treat it as the verified-marker when there's an email AND the V is the
   // very last token, so legitimate names like "Andrew V" don't false-positive
   // when there's no email present.
   let verifiedFlag = false;
-  let working = rawLine;
-  if (email && /\s+[Vv]\s*$/.test(rawLine)) {
+  let working = withoutLinkedin;
+  if (email && /\s+[Vv]\s*$/.test(withoutLinkedin)) {
     verifiedFlag = true;
-    working = rawLine.replace(/\s+[Vv]\s*$/, '');
+    working = withoutLinkedin.replace(/\s+[Vv]\s*$/, '');
   }
   // Strip email first so it doesn't interfere with phone detection.
   let cleaned = working.replace(raw || '', ' ');
@@ -137,8 +148,8 @@ function parseContactLine(line) {
     .map(s => s.trim())
     .filter(Boolean);
   const name = capitalizeDisplayName(segments[0] || (email ? nameFromEmail(email) : cleaned));
-  if (!name && !email && !mobile) return null;
-  const result = { name, email, mobile, role: 'Recruiter', source: rawLine };
+  if (!name && !email && !mobile && !linkedin) return null;
+  const result = { name, email, mobile, linkedin: linkedin || '', role: 'Recruiter', source: rawLine };
   if (verifiedFlag) result.email_status = 'verified';
   return result;
 }
@@ -233,10 +244,13 @@ function parseGlobalBulkText(text, groups) {
   const lookup = buildGroupLookup(groups);
   const seen = new Set();
   return splitPasteRows(text).map(line => {
-    const { email, raw } = extractEmail(line);
-    // Detect trailing " V"/" v" valid-marker on the original line (before email is stripped).
-    const verifiedFlag = !!email && /\s+[Vv]\s*$/.test(line);
-    const withoutVerified = verifiedFlag ? line.replace(/\s+[Vv]\s*$/, '') : line;
+    // Extract LinkedIn URL early so it doesn't interfere with company/name matching.
+    const { linkedin, raw: linkedinRaw } = extractLinkedin(line);
+    const withoutLinkedin = linkedinRaw ? line.replace(linkedinRaw, ' ').replace(/\s+/g, ' ').trim() : line;
+    const { email, raw } = extractEmail(withoutLinkedin);
+    // Detect trailing " V"/" v" valid-marker on the line (before email is stripped).
+    const verifiedFlag = !!email && /\s+[Vv]\s*$/.test(withoutLinkedin);
+    const withoutVerified = verifiedFlag ? withoutLinkedin.replace(/\s+[Vv]\s*$/, '') : withoutLinkedin;
     const emailKey = email.toLowerCase();
     if (emailKey) {
       if (seen.has(emailKey)) return null;
@@ -250,6 +264,7 @@ function parseGlobalBulkText(text, groups) {
     return {
       ...parsed,
       email,
+      linkedin: linkedin || parsed.linkedin || '',
       name: capitalizeDisplayName(parsed.name || (email ? nameFromEmail(email) : '')),
       ...(verifiedFlag ? { email_status: 'verified' } : {}),
       targetGroup: target,
@@ -312,6 +327,25 @@ export default function ContactsPage() {
   const csvFileRef = useRef();
   const newCompanyShortcutLabel = getNewCompanyShortcutLabel();
 
+  // Sidebar collapse / resize
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const resizingRef = useRef(false);
+  const searchInputRef = useRef(null);
+
+  // Company-detail kebab menu
+  const [detailMenuOpen, setDetailMenuOpen] = useState(false);
+  const detailMenuRef = useRef(null);
+
+  // Global contact search
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [allContactsFlat, setAllContactsFlat] = useState([]);
+  const [allContactsLoading, setAllContactsLoading] = useState(false);
+  const [allContactsLoaded, setAllContactsLoaded] = useState(false);
+  const globalSearchRef = useRef(null);
+  const globalSearchInputRef = useRef(null);
+
   // Conversations drawer
   const [drawerContactId, setDrawerContactId] = useState(null);
   const [apps, setApps] = useState([]);
@@ -352,8 +386,106 @@ export default function ContactsPage() {
     setNewCareers('');
   }, []);
 
+  // Sidebar collapse/expand helpers
+  function handleCollapse() {
+    if (creating) {
+      setCreating(false);
+      setNewName(''); setNewLogo(''); setNewCareers('');
+    }
+    setSidebarCollapsed(true);
+  }
+
+  function expandAndFocusSearch() {
+    setSidebarCollapsed(false);
+    setTimeout(() => searchInputRef.current?.focus(), 60);
+  }
+
+  function expandAndStartCreate() {
+    setSidebarCollapsed(false);
+    setTimeout(() => startCreateCompany(), 60);
+  }
+
+  // Resize drag handle
+  function startResize(e) {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMouseMove(ev) {
+      if (!resizingRef.current) return;
+      const delta = ev.clientX - startX;
+      const next = Math.min(300, Math.max(160, startWidth + delta));
+      setSidebarWidth(next);
+    }
+    function onMouseUp() {
+      resizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  // Load all contacts lazily for global search
+  async function loadAllContacts() {
+    if (allContactsLoading || allContactsLoaded) return;
+    setAllContactsLoading(true);
+    const flat = [];
+    await Promise.all(
+      groups.filter(g => g.contactCount > 0).map(async g => {
+        try {
+          const r = await authedFetch(`${API}/api/groups/${g.id}`);
+          const d = await r.json();
+          if (r.ok) {
+            for (const c of (d.contacts || [])) flat.push({ contact: c, group: g });
+          }
+        } catch { /* skip failed group */ }
+      })
+    );
+    setAllContactsFlat(flat);
+    setAllContactsLoaded(true);
+    setAllContactsLoading(false);
+  }
+
+  const globalSearchResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    return allContactsFlat.filter(({ contact, group }) => {
+      const hay = [contact.name || '', contact.email || '', group.companyName || '', contact.linkedin || ''].join(' ').toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 25);
+  }, [globalSearch, allContactsFlat]);
+
   useEffect(() => { loadGroups(); }, []);
   useEffect(() => { if (copiedField) { const t = setTimeout(() => setCopiedField(''), 2000); return () => clearTimeout(t); } }, [copiedField]);
+
+  // Close global search dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (globalSearchRef.current && !globalSearchRef.current.contains(e.target)) {
+        setGlobalSearchOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close company-detail kebab menu when clicking outside
+  useEffect(() => {
+    if (!detailMenuOpen) return;
+    function handleClickOutside(e) {
+      if (detailMenuRef.current && !detailMenuRef.current.contains(e.target)) {
+        setDetailMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [detailMenuOpen]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -523,6 +655,19 @@ export default function ContactsPage() {
     ));
   }
 
+  function highlightWithQuery(value, query) {
+    const text = String(value || '');
+    if (!text) return text;
+    const terms = String(query || '').trim().split(/\s+/).filter(Boolean);
+    if (!terms.length) return text;
+    const re = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'ig');
+    return text.split(re).map((part, i) => (
+      terms.some(term => part.toLowerCase() === term.toLowerCase())
+        ? <mark key={`${part}-${i}`} className="rf-ct__match">{part}</mark>
+        : part
+    ));
+  }
+
   async function openGroup(id) {
     resetContactsScroll();
     setSelectedId(id); setDetailLoading(true); setEditingId(null);
@@ -587,6 +732,34 @@ export default function ContactsPage() {
       if (field === 'companyName') setEditingName(false);
       if (field === 'logoUrl') setEditingLogo(false);
       if (field === 'careersPageUrl') setEditingCareers(false);
+      loadGroups();
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
+    finally { setSavingGroupField(false); }
+  }
+
+  async function saveDetailFields() {
+    if (!detail || savingGroupField) return;
+    const payload = {};
+    const nextName = capitalizeDisplayName(nameInput);
+    if (nextName && nextName !== detail.companyName) payload.companyName = nextName;
+    if (detail.careersPageUrl !== undefined && careersInput !== (detail.careersPageUrl || '')) {
+      payload.careersPageUrl = careersInput;
+    }
+    if (!Object.keys(payload).length) { setEditingName(false); return; }
+    setSavingGroupField(true);
+    try {
+      const r = await authedFetch(`${API}/api/groups/${detail.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
+      setDetail(p => ({
+        ...p,
+        ...(payload.companyName !== undefined ? { companyName: d.companyName ?? payload.companyName } : {}),
+        ...(payload.careersPageUrl !== undefined ? { careersPageUrl: d.careersPageUrl ?? payload.careersPageUrl } : {}),
+      }));
+      setEditingName(false);
       loadGroups();
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setSavingGroupField(false); }
@@ -786,7 +959,7 @@ export default function ContactsPage() {
           {copyTip.text}
         </div>
       )}
-      <header className="rf-page-header">
+      <header className="rf-page-header rf-ct__page-header">
         <div className="rf-page-header__lead">
           <div className="rf-page-header__eyebrow"><DotMark /> Contacts</div>
           <h1 className="rf-page-header__title">Companies & contacts</h1>
@@ -794,113 +967,243 @@ export default function ContactsPage() {
             Group HR, recruiters, and hiring managers by company. Import groups straight into Compose, or jump to your applications for any company.
           </p>
         </div>
-        <div className="rf-page-header__actions">
-          <span style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text-muted)' }}>
-            <span className="rf-num" style={{ color: 'var(--rf-text)', fontWeight: 600 }}>{groups.length}</span> companies · <span className="rf-num" style={{ color: 'var(--rf-text)', fontWeight: 600 }}>{totalContacts}</span> contacts
-          </span>
-          <button
-            className="rf-btn rf-btn--ghost rf-btn--sm"
-            onClick={exportAllCSV}
-            disabled={exportingAll || !totalContacts}
-            title={totalContacts ? 'Export every contact across all companies as CSV' : 'Add contacts first'}
-          >
-            {exportingAll ? <Loader size={14} className="rf-spin" /> : <FileDown size={14} />}
-            {exportingAll ? 'Exporting…' : 'Export all'}
-          </button>
-          <button
-            className="rf-btn rf-btn--ghost rf-btn--sm"
-            onClick={openGlobalPaste}
-          >
-            <ClipboardPaste size={14} /> Global paste
-          </button>
+        <div className="rf-page-header__actions rf-ct__header-side">
+          {/* Top row — global contact search */}
+          <div className="rf-ct__global-search-wrap" ref={globalSearchRef}>
+            <div className="rf-search rf-ct__global-search">
+              <Search size={14} className="rf-search__icon" />
+              <input
+                ref={globalSearchInputRef}
+                className="rf-search__input"
+                placeholder="Search all contacts…"
+                value={globalSearch}
+                onChange={e => { setGlobalSearch(e.target.value); setGlobalSearchOpen(true); }}
+                onFocus={() => { setGlobalSearchOpen(true); loadAllContacts(); }}
+                onKeyDown={e => { if (e.key === 'Escape') { setGlobalSearchOpen(false); setGlobalSearch(''); } }}
+              />
+              {globalSearch && (
+                <button className="rf-ct__search-clear" onClick={() => { setGlobalSearch(''); setGlobalSearchOpen(false); }} aria-label="Clear global search">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            {globalSearchOpen && (globalSearch.trim() || allContactsLoading) && (
+              <div className="rf-ct__global-dropdown">
+                {allContactsLoading ? (
+                  <div className="rf-ct__global-status"><Loader size={13} className="rf-spin" /> Loading contacts…</div>
+                ) : !globalSearch.trim() ? null : globalSearchResults.length === 0 ? (
+                  <div className="rf-ct__global-status">No results for "{globalSearch}"</div>
+                ) : (
+                  <>
+                    {globalSearchResults.map(({ contact, group }, i) => (
+                      <div
+                        key={`${group.id}-${contact.id || i}`}
+                        className="rf-ct__global-result"
+                        onClick={() => { openGroup(group.id); navigateTo(`/contacts/${group.id}`); setGlobalSearchOpen(false); }}
+                      >
+                        <span className="rf-ct__global-result-name" title={contact.name || ''}>
+                          {highlightWithQuery(contact.name || '—', globalSearch)}
+                          {contact.name && (
+                            <button
+                              className={`rf-copy-btn${copiedField === `gs-n-${i}` ? ' rf-copy-btn--copied' : ''}`}
+                              onClick={e => { e.stopPropagation(); copyVal(contact.name, `gs-n-${i}`); }}
+                              title="Copy name"
+                            >
+                              {copiedField === `gs-n-${i}` ? <Check size={11} /> : <Copy size={11} />}
+                            </button>
+                          )}
+                        </span>
+                        {contact.email && (
+                          <span className="rf-ct__global-result-email" title={contact.email}>
+                            <Mail size={11} />
+                            <span className="rf-ct__global-result-email-text">{highlightWithQuery(contact.email, globalSearch)}</span>
+                            <button
+                              className={`rf-copy-btn${copiedField === `gs-e-${i}` ? ' rf-copy-btn--copied' : ''}`}
+                              onClick={e => { e.stopPropagation(); copyVal(contact.email, `gs-e-${i}`); }}
+                              title="Copy email"
+                            >
+                              {copiedField === `gs-e-${i}` ? <Check size={11} /> : <Copy size={11} />}
+                            </button>
+                          </span>
+                        )}
+                        <span className="rf-ct__global-result-meta" title={group.companyName}>
+                          <Building2 size={11} />
+                          <span className="rf-truncate">{group.companyName}</span>
+                          {contact.linkedin && <ExternalLink size={11} />}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom row — stats + action buttons */}
+          <div className="rf-ct__header-meta">
+            <span className="rf-ct__header-stats">
+              <span className="rf-num rf-ct__header-stat-num">{groups.length}</span> companies
+              <span className="rf-ct__meta-dot">·</span>
+              <span className="rf-num rf-ct__header-stat-num">{totalContacts}</span> contacts
+            </span>
+            <button
+              className="rf-btn rf-btn--ghost rf-btn--sm"
+              onClick={exportAllCSV}
+              disabled={exportingAll || !totalContacts}
+              title={totalContacts ? 'Export every contact across all companies as CSV' : 'Add contacts first'}
+            >
+              {exportingAll ? <Loader size={14} className="rf-spin" /> : <FileDown size={14} />}
+              {exportingAll ? 'Exporting…' : 'Export all'}
+            </button>
+            <button
+              className="rf-btn rf-btn--ghost rf-btn--sm"
+              onClick={openGlobalPaste}
+            >
+              <ClipboardPaste size={14} /> Global paste
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="rf-ct">
+      <div
+        className="rf-ct"
+        style={{ gridTemplateColumns: sidebarCollapsed ? `52px var(--rf-sp-4) minmax(0,1fr)` : `${sidebarWidth}px 8px minmax(0,1fr)` }}
+      >
+        {/* Edge-hugging collapse pill (mirrors the main app sidebar pattern) */}
+        <button
+          className="rf-ct__edge-collapse"
+          onClick={() => (sidebarCollapsed ? setSidebarCollapsed(false) : handleCollapse())}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{ left: `${(sidebarCollapsed ? 52 : sidebarWidth) - 12}px` }}
+        >
+          {sidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+        </button>
+
         {/* Left pane — companies */}
-        <aside className="rf-ct__sidebar">
-          <div className="rf-ct__sidebar-head">
-            <div className="rf-ct__sidebar-tools">
-              <div className="rf-search">
-                <Search size={14} className="rf-search__icon" />
-                <input
-                  className="rf-search__input"
-                  placeholder="Search companies…"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-                {search && (
-                  <button
-                    className="rf-ct__search-clear"
-                    onClick={() => setSearch('')}
-                    aria-label="Clear company search"
-                    title="Clear search"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-              <div className="rf-ct__sidebar-actions">
+        {sidebarCollapsed ? (
+          <aside className="rf-ct__sidebar rf-ct__sidebar--collapsed">
+            <div className="rf-ct__collapsed-head">
+              <button className="rf-ct__collapsed-action" onClick={expandAndFocusSearch} title="Search companies">
+                <Search size={14} />
+              </button>
+              <button
+                className={`rf-ct__collapsed-action${sortCompaniesAZ ? ' rf-ct__collapsed-action--active' : ''}`}
+                onClick={() => setSortCompaniesAZ(v => !v)}
+                title={sortCompaniesAZ ? 'Sorted A–Z (click to reset)' : 'Sort companies A–Z'}
+              >
+                <ArrowUpDown size={14} />
+              </button>
+              <button className="rf-ct__collapsed-action" onClick={expandAndStartCreate} title="New company">
+                <Plus size={14} />
+              </button>
+            </div>
+            <div className="rf-ct__collapsed-list">
+              {filtered.map(g => (
                 <button
-                  className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
-                  onClick={() => setSortCompaniesAZ(v => !v)}
-                  title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
+                  key={g.id}
+                  className={`rf-ct__collapsed-company${selectedId === g.id ? ' rf-ct__collapsed-company--active' : ''}`}
+                  onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); }}
+                  title={`${g.companyName} · ${g.contactCount || 0} contact${(g.contactCount || 0) === 1 ? '' : 's'}`}
                 >
-                  <ArrowUpDown size={13} /> Sort
+                  {g.logoUrl ? <img src={g.logoUrl} alt={g.companyName} /> : <Building2 size={16} />}
                 </button>
-                <div className="rf-ct__new-company-action">
+              ))}
+            </div>
+          </aside>
+        ) : (
+          <aside className="rf-ct__sidebar">
+            <div className="rf-ct__sidebar-head">
+              <div className="rf-ct__sidebar-tools">
+                <div className="rf-search">
+                  <Search size={14} className="rf-search__icon" />
+                  <input
+                    ref={searchInputRef}
+                    className="rf-search__input"
+                    placeholder="Search companies…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  {search && (
+                    <button
+                      className="rf-ct__search-clear"
+                      onClick={() => setSearch('')}
+                      aria-label="Clear company search"
+                      title="Clear search"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+                <div className="rf-ct__sidebar-actions">
                   <button
-                    className="rf-btn rf-btn--primary rf-btn--sm rf-ct__new-company"
-                    onClick={startCreateCompany}
-                    title={`New company (${newCompanyShortcutLabel})`}
+                    className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
+                    onClick={() => setSortCompaniesAZ(v => !v)}
+                    title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
                   >
-                    <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
+                    <ArrowUpDown size={13} /> Sort
                   </button>
+                  <div className="rf-ct__new-company-action">
+                    <button
+                      className="rf-btn rf-btn--primary rf-btn--sm rf-ct__new-company"
+                      onClick={startCreateCompany}
+                      title={`New company (${newCompanyShortcutLabel})`}
+                    >
+                      <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {creating && (
-            <div className="rf-ct__creator">
-              <input className="rf-input rf-input--sm" placeholder="Company name (required)" value={newName} onChange={e => setNewName(e.target.value)} autoFocus
-                onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) createGroup(); if (e.key === 'Escape') setCreating(false); }}
-              />
-              <input className="rf-input rf-input--sm" placeholder="Logo URL (optional)" value={newLogo} onChange={e => setNewLogo(e.target.value)} />
-              <input className="rf-input rf-input--sm" placeholder="Careers page URL (optional)" value={newCareers} onChange={e => setNewCareers(e.target.value)} />
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={createGroup} disabled={createBusy || !newName.trim()}>
-                  {createBusy ? <Loader size={13} className="rf-spin" /> : <Check size={13} />} Create
-                </button>
-                <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setCreating(false)}>
-                  <X size={13} /> Cancel
-                </button>
+            {creating && (
+              <div className="rf-ct__creator">
+                <input className="rf-input rf-input--sm" placeholder="Company name (required)" value={newName} onChange={e => setNewName(e.target.value)} autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) createGroup(); if (e.key === 'Escape') setCreating(false); }}
+                />
+                <input className="rf-input rf-input--sm" placeholder="Logo URL (optional)" value={newLogo} onChange={e => setNewLogo(e.target.value)} />
+                <input className="rf-input rf-input--sm" placeholder="Careers page URL (optional)" value={newCareers} onChange={e => setNewCareers(e.target.value)} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={createGroup} disabled={createBusy || !newName.trim()}>
+                    {createBusy ? <Loader size={13} className="rf-spin" /> : <Check size={13} />} Create
+                  </button>
+                  <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setCreating(false)}>
+                    <X size={13} /> Cancel
+                  </button>
+                </div>
               </div>
+            )}
+
+            <div className="rf-ct__sidebar-scroll">
+              {filtered.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--rf-text-muted)', fontSize: 'var(--rf-text-sm)' }}>
+                  {search.trim() ? `No companies match "${search}"` : 'No companies yet. Click New company to get started.'}
+                </div>
+              ) : filtered.map(g => (
+                <button
+                  key={g.id}
+                  className={`rf-ct__company${selectedId === g.id ? ' rf-ct__company--active' : ''}`}
+                  onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); }}
+                >
+                  <span className="rf-ct__company-logo">
+                    {g.logoUrl ? <img src={g.logoUrl} alt="" /> : <Building2 size={14} />}
+                  </span>
+                  <span className="rf-ct__company-body">
+                    <span className="rf-ct__company-name">{g.companyName}</span>
+                    <span className="rf-ct__company-meta">{g.contactCount || 0} contact{(g.contactCount || 0) === 1 ? '' : 's'}</span>
+                  </span>
+                </button>
+              ))}
             </div>
-          )}
+          </aside>
+        )}
 
-          <div className="rf-ct__sidebar-scroll">
-            {filtered.length === 0 ? (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--rf-text-muted)', fontSize: 'var(--rf-text-sm)' }}>
-                {search.trim() ? `No companies match "${search}"` : 'No companies yet. Click New company to get started.'}
-              </div>
-            ) : filtered.map(g => (
-              <button
-                key={g.id}
-                className={`rf-ct__company${selectedId === g.id ? ' rf-ct__company--active' : ''}`}
-                onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); }}
-              >
-                <span className="rf-ct__company-logo">
-                  {g.logoUrl ? <img src={g.logoUrl} alt="" /> : <Building2 size={14} />}
-                </span>
-                <span className="rf-ct__company-body">
-                  <span className="rf-ct__company-name">{g.companyName}</span>
-                  <span className="rf-ct__company-meta">{g.contactCount || 0} contact{(g.contactCount || 0) === 1 ? '' : 's'}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </aside>
+        {/* Resize handle — always rendered so grid column count stays at 3 */}
+        <div
+          className="rf-ct__resize-handle"
+          style={sidebarCollapsed ? { cursor: 'default', pointerEvents: 'none' } : undefined}
+          onMouseDown={sidebarCollapsed ? undefined : startResize}
+        />
 
         {/* Right pane — detail */}
         <section className="rf-ct__detail">
@@ -946,102 +1249,76 @@ export default function ContactsPage() {
                       <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('logoUrl', logoInput)} disabled={savingGroupField}><Check size={13} /></button>
                       <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingLogo(false)}><X size={13} /></button>
                     </div>
+                  ) : editingName ? (
+                    <div className="rf-ct__name-edit">
+                      <input
+                        className="rf-input rf-input--sm"
+                        value={nameInput}
+                        onChange={e => setNameInput(e.target.value)}
+                        placeholder="Company name"
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') saveDetailFields(); if (e.key === 'Escape') setEditingName(false); }}
+                      />
+                      {detail.careersPageUrl ? (
+                        <input
+                          className="rf-input rf-input--sm"
+                          value={careersInput}
+                          onChange={e => setCareersInput(e.target.value)}
+                          placeholder="Careers page URL"
+                          onKeyDown={e => { if (e.key === 'Enter') saveDetailFields(); if (e.key === 'Escape') setEditingName(false); }}
+                        />
+                      ) : null}
+                      <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={saveDetailFields} disabled={savingGroupField || !nameInput.trim()} title="Save"><Check size={13} /></button>
+                      <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingName(false)} title="Cancel"><X size={13} /></button>
+                    </div>
                   ) : (
-                    <>
-                      {editingName ? (
-                        <div className="rf-ct__name-edit">
+                    <div className="rf-ct__title-meta-row">
+                      <h2 className="rf-ct__title">{detail.companyName}</h2>
+                      <span className="rf-ct__meta-dot">·</span>
+                      <span className="rf-ct__title-people">
+                        <span className="rf-num">{(detail.contacts || []).length}</span> people
+                      </span>
+                      <span className="rf-ct__meta-dot">·</span>
+                      {editingCareers ? (
+                        <span className="rf-ct__careers-edit">
                           <input
                             className="rf-input rf-input--sm"
-                            value={nameInput}
-                            onChange={e => setNameInput(e.target.value)}
-                            placeholder="Company name"
+                            style={{ width: 200 }}
+                            value={careersInput}
+                            onChange={e => setCareersInput(e.target.value)}
+                            placeholder="https://company.com/careers"
                             autoFocus
-                            onKeyDown={e => { if (e.key === 'Enter') saveGroupField('companyName', nameInput); if (e.key === 'Escape') setEditingName(false); }}
+                            onKeyDown={e => { if (e.key === 'Enter') saveGroupField('careersPageUrl', careersInput); if (e.key === 'Escape') setEditingCareers(false); }}
                           />
-                          <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('companyName', nameInput)} disabled={savingGroupField || !nameInput.trim()}><Check size={13} /></button>
-                          <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingName(false)}><X size={13} /></button>
-                        </div>
+                          <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('careersPageUrl', careersInput)} disabled={savingGroupField}><Check size={12} /></button>
+                          <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingCareers(false)}><X size={12} /></button>
+                        </span>
+                      ) : detail.careersPageUrl ? (
+                        <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
+                          <ExternalLink size={11} /> Careers page
+                        </a>
                       ) : (
-                        <div className="rf-ct__title-row">
-                          <h2 className="rf-ct__title">{detail.companyName}</h2>
-                          <button
-                            className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
-                            onClick={() => { setNameInput(detail.companyName || ''); setEditingName(true); }}
-                            title="Edit company name"
-                          ><Pencil size={12} /></button>
-                        </div>
+                        <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }}>
+                          <Plus size={11} /> Careers page
+                        </button>
                       )}
-                      <div className="rf-ct__meta">
-                        <span><span className="rf-num">{(detail.contacts || []).length}</span> people</span>
-                        <span className="rf-ct__meta-dot">·</span>
-                        {editingCareers ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <input
-                              className="rf-input rf-input--sm"
-                              style={{ width: 220 }}
-                              value={careersInput}
-                              onChange={e => setCareersInput(e.target.value)}
-                              placeholder="https://company.com/careers"
-                              autoFocus
-                              onKeyDown={e => { if (e.key === 'Enter') saveGroupField('careersPageUrl', careersInput); if (e.key === 'Escape') setEditingCareers(false); }}
-                            />
-                            <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('careersPageUrl', careersInput)} disabled={savingGroupField}><Check size={12} /></button>
-                            <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingCareers(false)}><X size={12} /></button>
-                          </span>
-                        ) : detail.careersPageUrl ? (
-                          <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
-                            <ExternalLink size={11} /> Careers page
-                            <button
-                              className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
-                              style={{ width: 18, height: 18 }}
-                              onClick={(e) => { e.preventDefault(); setCareersInput(detail.careersPageUrl || ''); setEditingCareers(true); }}
-                              title="Edit URL"
-                            ><Pencil size={10} /></button>
-                          </a>
-                        ) : (
-                          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }}>
-                            <Plus size={11} /> Careers page
-                          </button>
-                        )}
-                      </div>
-                    </>
+                      {/* Single combined edit pencil — edits name (and careers URL when present) */}
+                      <button
+                        className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__title-edit"
+                        onClick={() => {
+                          setNameInput(detail.companyName || '');
+                          setCareersInput(detail.careersPageUrl || '');
+                          setEditingName(true);
+                        }}
+                        title={detail.careersPageUrl ? 'Edit company name & careers URL' : 'Edit company name'}
+                      ><Pencil size={12} /></button>
+                    </div>
                   )}
                 </div>
 
                 <div className="rf-ct__detail-actions">
-                  <button
-                    className="rf-btn rf-btn--secondary rf-btn--sm"
-                    onClick={() => navigateTo(`/pipeline?company=${encodeURIComponent(detail.companyName)}`)}
-                    title="See applications at this company"
-                  >
-                    <Briefcase size={13} /> View pipeline
-                  </button>
-                  <button
-                    className="rf-btn rf-btn--primary rf-btn--sm"
-                    onClick={composeToCompany}
-                    disabled={!(detail.contacts || []).length}
-                    title={(detail.contacts || []).length ? 'Open Compose, then import this group' : 'Add contacts first'}
-                  >
-                    <Send size={13} /> Compose to group
-                  </button>
-                  <button
-                    className="rf-btn rf-btn--danger rf-btn--icon rf-btn--sm"
-                    onClick={deleteGroup}
-                    title="Delete company"
-                  ><Trash2 size={13} /></button>
-                </div>
-              </header>
-
-              <div className="rf-ct__detail-body" ref={detailBodyRef}>
-                <div className="rf-ct__people-head">
-                  <div className="rf-ct__people-title">
-                    <span>People</span>
-                    {(detail.contacts || []).length > 0 && (
-                      <span className="rf-ct__people-count rf-num">{detail.contacts.length}</span>
-                    )}
-                  </div>
-                  <div className="rf-search rf-ct__contact-search">
-                    <Search size={14} className="rf-search__icon" />
+                  <div className="rf-search rf-ct__contact-search rf-ct__contact-search--inline">
+                    <Search size={13} className="rf-search__icon" />
                     <input
                       className="rf-search__input"
                       placeholder="Search name or email…"
@@ -1059,25 +1336,73 @@ export default function ContactsPage() {
                       </button>
                     )}
                   </div>
-                  <div className="rf-ct__people-actions">
-                    <input ref={csvFileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={handleCSVFile} />
-                    <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => csvFileRef.current?.click()} title="Import from CSV (Name,Email,Role,LinkedIn,…)">
-                      <Upload size={13} /> Import CSV
-                    </button>
-                    <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={exportCSV} disabled={!detail.contacts?.length}>
-                      <FileDown size={13} /> Export
-                    </button>
-                    <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setBulkPasteText(''); setBulkPasteOpen(true); }}>
-                      <ClipboardPaste size={13} /> Paste
-                    </button>
+                  <input ref={csvFileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={handleCSVFile} />
+                  <button
+                    className="rf-btn rf-btn--ghost rf-btn--sm"
+                    onClick={() => { setBulkPasteText(''); setBulkPasteOpen(true); }}
+                  >
+                    <ClipboardPaste size={13} /> Paste
+                  </button>
+                  <button
+                    className="rf-btn rf-btn--primary rf-btn--sm"
+                    onClick={() => { setEditingId('__new__'); setContactForm(contactFormDefaults()); }}
+                  >
+                    <Plus size={13} /> Add contact
+                  </button>
+                  <div className="rf-ct__detail-menu" ref={detailMenuRef}>
                     <button
-                      className="rf-btn rf-btn--primary rf-btn--sm"
-                      onClick={() => { setEditingId('__new__'); setContactForm(contactFormDefaults()); }}
+                      className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                      onClick={() => setDetailMenuOpen(v => !v)}
+                      title="More actions"
+                      aria-haspopup="menu"
+                      aria-expanded={detailMenuOpen}
                     >
-                      <Plus size={13} /> Add contact
+                      <MoreVertical size={14} />
                     </button>
+                    {detailMenuOpen && (
+                      <div className="rf-ct__detail-menu-pop" role="menu">
+                        <button
+                          className="rf-ct__detail-menu-item"
+                          onClick={() => { setDetailMenuOpen(false); navigateTo(`/pipeline?company=${encodeURIComponent(detail.companyName)}`); }}
+                        >
+                          <Briefcase size={13} /> View applications
+                        </button>
+                        <button
+                          className="rf-ct__detail-menu-item"
+                          onClick={() => { setDetailMenuOpen(false); composeToCompany(); }}
+                          disabled={!(detail.contacts || []).length}
+                          title={(detail.contacts || []).length ? 'Open Compose, then import this group' : 'Add contacts first'}
+                        >
+                          <Send size={13} /> Compose to group
+                        </button>
+                        <div className="rf-ct__detail-menu-sep" role="separator" />
+                        <button
+                          className="rf-ct__detail-menu-item"
+                          onClick={() => { setDetailMenuOpen(false); csvFileRef.current?.click(); }}
+                        >
+                          <Upload size={13} /> Import CSV
+                        </button>
+                        <button
+                          className="rf-ct__detail-menu-item"
+                          onClick={() => { setDetailMenuOpen(false); exportCSV(); }}
+                          disabled={!detail.contacts?.length}
+                        >
+                          <FileDown size={13} /> Export
+                        </button>
+                        <div className="rf-ct__detail-menu-sep" role="separator" />
+                        <button
+                          className="rf-ct__detail-menu-item rf-ct__detail-menu-item--danger"
+                          onClick={() => { setDetailMenuOpen(false); deleteGroup(); }}
+                        >
+                          <Trash2 size={13} /> Delete company
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
+              </header>
+
+              <div className="rf-ct__detail-body" ref={detailBodyRef}>
 
                 <div className="rf-ct__table-wrap">
                   <table className="rf-ct__table">
@@ -1184,8 +1509,8 @@ export default function ContactsPage() {
                       ) : (
                         <tr key={c.id}>
                           <td>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontWeight: 600 }}>{renderHighlightedText(c.name, <em style={{ color: 'var(--rf-text-faint)' }}>Unnamed</em>)}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6 }}>
+                              <span className="rf-ct__contact-name" style={{ fontWeight: 600 }}>{renderHighlightedText(c.name, <em style={{ color: 'var(--rf-text-faint)' }}>Unnamed</em>)}</span>
                               {c.linkedin && (
                                 <a href={c.linkedin} target="_blank" rel="noreferrer" title="LinkedIn">
                                   <ExternalLink size={12} style={{ color: 'var(--rf-info-text)' }} />
@@ -1308,11 +1633,12 @@ export default function ContactsPage() {
                 <li>One contact per line. Email anywhere on the line; name &amp; company keywords are auto-detected.</li>
                 <li>Append <code>V</code> at the end of a row to mark the email as <strong>Valid</strong>. Example: <code>Jane jane@acme.com V</code>.</li>
                 <li>Phone numbers are auto-extracted (international too): <code>+1 415-555-1234</code>, <code>(555) 123-4567</code>, <code>9876543210</code>.</li>
+                <li>LinkedIn URLs are auto-extracted: <code>linkedin.com/in/username</code> or full https URL.</li>
               </ul>
               <textarea
                 className="rf-textarea"
                 style={{ fontFamily: 'var(--rf-font-mono)', fontSize: 13, minHeight: 150 }}
-                placeholder={"Jane Smith jane@stripe.com +1 415-555-1234\nAcme, John Doe, john@acme.com V\nalex@unknown.com 9876543210"}
+                placeholder={"Jane Smith jane@stripe.com linkedin.com/in/janesmith +1 415-555-1234\nAcme, John Doe, john@acme.com V\nalex@unknown.com 9876543210"}
                 value={globalPasteText}
                 onChange={e => setGlobalPasteText(e.target.value)}
                 disabled={globalAdding}
@@ -1326,6 +1652,11 @@ export default function ContactsPage() {
                       {p.mobile && (
                         <span className="rf-badge rf-badge--neutral" title="Detected mobile">
                           <Phone size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />{p.mobile}
+                        </span>
+                      )}
+                      {p.linkedin && (
+                        <span className="rf-badge rf-badge--neutral" title={p.linkedin}>
+                          <Linkedin size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />LinkedIn
                         </span>
                       )}
                       <span className={`rf-badge ${p.targetGroup ? 'rf-badge--success' : 'rf-badge--warning'}`}>
@@ -1376,11 +1707,12 @@ export default function ContactsPage() {
               <ul className="rf-help-tips">
                 <li>Append <code>V</code> at the end of a row to mark the email <strong>Valid</strong>. Example: <code>Jane jane@acme.com V</code>.</li>
                 <li>Phone numbers auto-detected — international &amp; common formats supported.</li>
+                <li>LinkedIn URLs auto-detected: <code>linkedin.com/in/username</code> or full URL.</li>
               </ul>
               <textarea
                 className="rf-textarea"
                 style={{ fontFamily: 'var(--rf-font-mono)', fontSize: 13, minHeight: 140 }}
-                placeholder={"John Smith, john@company.com, +1 415-555-1234\nJane Doe <jane@corp.io> V\nalice@example.com 9876543210"}
+                placeholder={"John Smith, john@company.com, +1 415-555-1234\nJane Doe <jane@corp.io> linkedin.com/in/janedoe V\nalice@example.com 9876543210"}
                 value={bulkPasteText}
                 onChange={e => setBulkPasteText(e.target.value)}
               />
@@ -1393,6 +1725,11 @@ export default function ContactsPage() {
                       {p.mobile && (
                         <span className="rf-badge rf-badge--neutral" title="Detected mobile">
                           <Phone size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />{p.mobile}
+                        </span>
+                      )}
+                      {p.linkedin && (
+                        <span className="rf-badge rf-badge--neutral" title={p.linkedin}>
+                          <Linkedin size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />LinkedIn
                         </span>
                       )}
                       {p.email_status === 'verified' && <span className="rf-badge rf-badge--success" title="Marked Valid via V flag">V</span>}
