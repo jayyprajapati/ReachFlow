@@ -1898,6 +1898,30 @@
 .rf-ct__table-edit { background: var(--rf-bg-surface); }
 .rf-ct__table-edit:hover { background: var(--rf-bg-surface) !important; }
 
+/* Actions cell — keep all icons on one line, never wrap */
+.rf-ct__table td:last-child {
+  white-space: nowrap;
+}
+.rf-ct__table td:last-child .rf-btn { display: inline-flex; vertical-align: middle; }
+
+/* Inline email-status flag — shown right before the email value */
+.rf-ct__email-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--rf-radius-full);
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background var(--rf-duration-fast), border-color var(--rf-duration-fast);
+}
+.rf-ct__email-flag--ok  { color: var(--rf-success-text); background: var(--rf-success-muted); }
+.rf-ct__email-flag--mid { color: var(--rf-text-muted);   background: var(--rf-bg-overlay); }
+.rf-ct__email-flag--bad { color: var(--rf-error-text);   background: var(--rf-error-muted); }
+.rf-ct__email-flag:hover { border-color: currentColor; }
+
 /* Resize handle between sidebar and detail */
 .rf-ct__resize-handle {
   align-self: stretch;
@@ -1943,14 +1967,15 @@
 .rf-ct__edge-collapse:hover { color: var(--rf-text); border-color: var(--rf-border); }
 .rf-ct__edge-collapse:focus-visible { opacity: 1; }
 
-/* Collapsed icon-only sidebar */
+/* Collapsed icon-only sidebar — overflow visible so right-edge tooltips
+   can escape the narrow column */
 .rf-ct__sidebar--collapsed {
   background: var(--rf-bg-canvas);
   border: 1px solid var(--rf-border-subtle);
   border-radius: var(--rf-radius-lg);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   min-height: 0;
 }
 .rf-ct__collapsed-head {
@@ -1980,6 +2005,7 @@
 .rf-ct__collapsed-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: visible;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2005,6 +2031,9 @@
 .rf-ct__collapsed-company:hover { background: var(--rf-bg-hover); }
 .rf-ct__collapsed-company--active { background: var(--rf-bg-active); color: var(--rf-accent-text); }
 .rf-ct__collapsed-company img { width: 100%; height: 100%; object-fit: contain; border-radius: var(--rf-radius-xs); }
+
+/* Tooltips for collapsed-sidebar buttons are rendered as a fixed-position
+   .rf-hover-tip element controlled by React state — see ContactsPage.jsx. */
 
 /* Contact name two-line clamp */
 .rf-ct__contact-name {
@@ -3085,8 +3114,7 @@
   .rf-ct__table td:nth-child(1)::before { content: 'Name'; }
   .rf-ct__table td:nth-child(2)::before { content: 'Email'; }
   .rf-ct__table td:nth-child(3)::before { content: 'Role'; }
-  .rf-ct__table td:nth-child(4)::before { content: 'Email status'; }
-  .rf-ct__table td:nth-child(5)::before { content: ''; display: none; }
+  .rf-ct__table td:nth-child(4)::before { content: ''; display: none; }
   .rf-ct__table td[colspan]::before { content: ''; display: none; }
 
   .rf-ct__table td:last-child {

@@ -26,6 +26,7 @@
 
 .rf-shell__sidebar--collapsed {
   width: var(--rf-sidebar-collapsed);
+  overflow: visible;
 }
 
 .rf-shell__main {
@@ -499,6 +500,17 @@
 .rf-shell__sidebar--collapsed .rf-sidebar__brand {
   justify-content: center;
   padding: 8px;
+}
+
+/* When sidebar is collapsed, the user-menu popover must escape the narrow
+   parent column instead of inheriting its width (otherwise labels clip). */
+.rf-shell__sidebar--collapsed .rf-sidebar__user-menu {
+  left: calc(100% + 6px);
+  right: auto;
+  bottom: 0;
+  min-width: 200px;
+  white-space: nowrap;
+  z-index: var(--rf-z-modal);
 }
 
 /* ── Page ──────────────────────────────────────────────────── */
