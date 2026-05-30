@@ -122,6 +122,8 @@ kbd {
 /* ── Resets ── */
 
 img, svg { display: block; max-width: 100%; }
+/* Lucide icons use explicit pixel sizes — prevent font-size scaling from shrinking them */
+svg.lucide { max-width: none; flex-shrink: 0; }
 ul, ol { list-style: none; }
 table { border-collapse: collapse; border-spacing: 0; width: 100%; }
 
