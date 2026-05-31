@@ -361,6 +361,7 @@ export default function ContactsPage() {
 
   // Global contact search
   const [globalSearch, setGlobalSearch] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [allContactsFlat, setAllContactsFlat] = useState([]);
   const [allContactsLoading, setAllContactsLoading] = useState(false);
@@ -474,14 +475,19 @@ export default function ContactsPage() {
     setAllContactsLoading(false);
   }
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(globalSearch), 300);
+    return () => clearTimeout(t);
+  }, [globalSearch]);
+
   const globalSearchResults = useMemo(() => {
-    const q = globalSearch.trim().toLowerCase();
-    if (!q) return [];
+    const q = debouncedQuery.trim().toLowerCase();
+    if (q.length < 3) return [];
     return allContactsFlat.filter(({ contact, group }) => {
       const hay = [contact.name || '', contact.email || '', group.companyName || '', contact.linkedin || ''].join(' ').toLowerCase();
       return hay.includes(q);
     }).slice(0, 25);
-  }, [globalSearch, allContactsFlat]);
+  }, [debouncedQuery, allContactsFlat]);
 
   useEffect(() => { loadGroups(); }, []);
   useEffect(() => { if (copiedField) { const t = setTimeout(() => setCopiedField(''), 2000); return () => clearTimeout(t); } }, [copiedField]);
@@ -1043,8 +1049,12 @@ export default function ContactsPage() {
               <div className="rf-ct__global-dropdown">
                 {allContactsLoading ? (
                   <div className="rf-ct__global-status"><Loader size={13} className="rf-spin" /> Loading contacts…</div>
-                ) : !globalSearch.trim() ? null : globalSearchResults.length === 0 ? (
-                  <div className="rf-ct__global-status">No results for "{globalSearch}"</div>
+                ) : !globalSearch.trim() ? null : globalSearch.trim().length < 3 ? (
+                  <div className="rf-ct__global-status rf-ct__global-status--hint">
+                    {3 - globalSearch.trim().length} more character{3 - globalSearch.trim().length === 1 ? '' : 's'} to search
+                  </div>
+                ) : globalSearchResults.length === 0 ? (
+                  <div className="rf-ct__global-status">No results for "{debouncedQuery}"</div>
                 ) : (
                   <>
                     {globalSearchResults.map(({ contact, group }, i) => (
@@ -1054,7 +1064,7 @@ export default function ContactsPage() {
                         onClick={() => { openGroup(group.id); navigateTo(`/contacts/${group.id}`); setGlobalSearchOpen(false); }}
                       >
                         <span className="rf-ct__global-result-name" title={contact.name || ''}>
-                          {highlightWithQuery(contact.name || '—', globalSearch)}
+                          {highlightWithQuery(contact.name || '—', debouncedQuery)}
                           {contact.name && (
                             <button
                               className={`rf-copy-btn${copiedField === `gs-n-${i}` ? ' rf-copy-btn--copied' : ''}`}
@@ -1068,7 +1078,7 @@ export default function ContactsPage() {
                         {contact.email && (
                           <span className="rf-ct__global-result-email" title={contact.email}>
                             <Mail size={11} />
-                            <span className="rf-ct__global-result-email-text">{highlightWithQuery(contact.email, globalSearch)}</span>
+                            <span className="rf-ct__global-result-email-text">{highlightWithQuery(contact.email, debouncedQuery)}</span>
                             <button
                               className={`rf-copy-btn${copiedField === `gs-e-${i}` ? ' rf-copy-btn--copied' : ''}`}
                               onClick={e => { e.stopPropagation(); copyVal(contact.email, `gs-e-${i}`); }}
@@ -1426,7 +1436,7 @@ export default function ContactsPage() {
                   <div className="rf-ct__detail-menu" ref={detailMenuRef}>
                     <button
                       className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
-                      onClick={() => setDetailMenuOpen(v => !v)}
+                      onClick={() => { setDetailMenuOpen(v => !v); loadApplicationsOnce(); }}
                       title="More actions"
                       aria-haspopup="menu"
                       aria-expanded={detailMenuOpen}
@@ -1435,12 +1445,30 @@ export default function ContactsPage() {
                     </button>
                     {detailMenuOpen && (
                       <div className="rf-ct__detail-menu-pop" role="menu">
-                        <button
-                          className="rf-ct__detail-menu-item"
-                          onClick={() => { setDetailMenuOpen(false); navigateTo(`/pipeline?company=${encodeURIComponent(detail.companyName)}`); }}
-                        >
-                          <Briefcase size={13} /> View applications
-                        </button>
+                        {(() => {
+                          const companyAppCount = appsLoaded
+                            ? apps.filter(a =>
+                                (a.companyGroupId && String(a.companyGroupId) === String(detail.id)) ||
+                                String(a.companyNameSnapshot || '').toLowerCase() === String(detail.companyName || '').toLowerCase()
+                              ).length
+                            : null;
+                          const noApps = appsLoaded && companyAppCount === 0;
+                          return (
+                            <button
+                              className="rf-ct__detail-menu-item"
+                              onClick={() => { setDetailMenuOpen(false); navigateTo(`/pipeline?company=${encodeURIComponent(detail.companyName)}`); }}
+                              disabled={noApps}
+                              title={noApps ? 'No applications tracked for this company' : undefined}
+                            >
+                              <Briefcase size={13} />
+                              {appsLoaded
+                                ? companyAppCount === 0
+                                  ? 'No applications'
+                                  : `View ${companyAppCount} application${companyAppCount === 1 ? '' : 's'}`
+                                : 'View applications'}
+                            </button>
+                          );
+                        })()}
                         <button
                           className="rf-ct__detail-menu-item"
                           onClick={() => { setDetailMenuOpen(false); composeToCompany(); }}
