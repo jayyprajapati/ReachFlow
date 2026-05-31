@@ -1335,6 +1335,32 @@
 }
 .rf-pl-card:hover .rf-pl-card__actions { opacity: 1; }
 
+.rf-pl-card__status-select {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: var(--rf-font-base);
+  color: var(--rf-text-muted);
+  background: var(--rf-bg-overlay);
+  border: 1px solid var(--rf-border-subtle);
+  border-radius: var(--rf-radius-xs);
+  cursor: pointer;
+  appearance: auto;
+  opacity: 0;
+  transition: opacity var(--rf-duration-fast), border-color var(--rf-duration-fast);
+}
+.rf-pl-card:hover .rf-pl-card__status-select {
+  opacity: 1;
+}
+.rf-pl-card__status-select:hover,
+.rf-pl-card__status-select:focus {
+  border-color: var(--rf-border-hover);
+  color: var(--rf-text);
+  outline: none;
+}
+
 /* Table */
 .rf-pl-table-wrap {
   background: var(--rf-bg-canvas);
@@ -2196,6 +2222,11 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+.rf-ct__global-status--hint {
+  color: var(--rf-text-faint);
+  font-style: italic;
+  padding: 14px 20px;
 }
 /* Single-row result: name · email · company  (highlighted matches, copy buttons inline) */
 .rf-ct__global-result {

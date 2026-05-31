@@ -155,7 +155,7 @@ function relDate(d) {
 
 export default function PipelinePage() {
   const { authedFetch, setNotice, setWarningDialog, groups, loadGroups } = useApp();
-  const { navigateTo } = useRouter();
+  const { search, navigateTo } = useRouter();
 
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -177,6 +177,13 @@ export default function PipelinePage() {
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
   useEffect(() => { loadApps(); loadGroups(); }, []);
+
+  useEffect(() => {
+    if (!search) return;
+    const params = new URLSearchParams(search);
+    const company = params.get('company');
+    if (company) setCompanyFilter(company);
+  }, [search]);
   useEffect(() => { if (copiedId) { const t = setTimeout(() => setCopiedId(''), 1500); return () => clearTimeout(t); } }, [copiedId]);
 
   async function loadApps() {
@@ -562,6 +569,16 @@ Product Manager - Linear`}
                             </button>
                           </div>
                         </div>
+                        <select
+                          className="rf-pl-card__status-select"
+                          value={app.status || 'applied'}
+                          onChange={e => { e.stopPropagation(); updateStatus(app.id, e.target.value); }}
+                          onClick={e => e.stopPropagation()}
+                          onMouseDown={e => e.stopPropagation()}
+                          title="Move to another stage"
+                        >
+                          {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                        </select>
                       </div>
                     );
                   })}
