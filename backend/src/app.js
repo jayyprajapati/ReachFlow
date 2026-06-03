@@ -17,6 +17,7 @@ const resumelabRoutes = require('./routes/resumelab');
 const settingsRoutes = require('./routes/settings');
 const roadmapRoutes = require('./routes/roadmaps');
 const dsaRoutes = require('./routes/dsa');
+const todayRoutes = require('./routes/today');
 const {
   connectMongo,
   User,
@@ -429,6 +430,7 @@ app.use('/api/resumelab', requireAuth, resumelabRoutes);
 app.use('/api/settings', requireAuth, settingsRoutes);
 app.use('/api/roadmaps', requireAuth, roadmapRoutes);
 app.use('/api/dsa', requireAuth, dsaRoutes);
+app.use('/api/today', requireAuth, todayRoutes);
 
 connectMongo()
   .then(() => {

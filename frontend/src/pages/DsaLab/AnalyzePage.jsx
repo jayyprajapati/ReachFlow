@@ -8,7 +8,18 @@ import { makeDsaApi } from '../../services/dsaApi.js';
 import CodeEditor from '../../components/dsa/CodeEditor.jsx';
 import DsaResult from '../../components/dsa/DsaResult.jsx';
 
-const DSA_LANGUAGE = 'java';
+const OUTPUT_OPTIONS = [
+  { value: 'java',   label: 'Java only' },
+  { value: 'python', label: 'Python only' },
+  { value: 'both',   label: 'Java + Python' },
+];
+
+// Whichever output pref is chosen, the user's submitted code editor uses the
+// first language in that pref so the safety checker and prompt agree.
+function editorLangFor(outputPref) {
+  if (outputPref === 'python') return 'python';
+  return 'java';
+}
 
 export default function AnalyzePage() {
   const { authedFetch, setNotice } = useApp();
@@ -17,6 +28,7 @@ export default function AnalyzePage() {
 
   const [problem, setProblem] = useState('');
   const [code, setCode] = useState('');
+  const [outputLang, setOutputLang] = useState('java');
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -24,6 +36,7 @@ export default function AnalyzePage() {
 
   const canAnalyze = problem.trim().length > 15 && !loading;
   const hasCode = code.trim().length > 0;
+  const editorLang = editorLangFor(outputLang);
 
   async function handleAnalyze() {
     if (!canAnalyze) return;
@@ -31,10 +44,10 @@ export default function AnalyzePage() {
     setError(null);
     setResult(null);
     try {
-      const body = { problemStatement: problem.trim(), outputLanguage: DSA_LANGUAGE };
+      const body = { problemStatement: problem.trim(), outputLanguage: outputLang };
       if (hasCode) {
         body.code = code;
-        body.language = DSA_LANGUAGE;
+        body.language = editorLang;
       }
       const data = await api.analyze(body);
       setResult(data);
@@ -90,10 +103,19 @@ export default function AnalyzePage() {
       {error && <ErrorBanner error={error} onClose={() => setError(null)} navigateTo={navigateTo} />}
 
       <div className="dsa-compose__toolbar">
-        <div className="dsa-prefs">
+        <label className="dsa-prefs">
           <span className="dsa-prefs__label">Solution language</span>
-          <span className="dsa-prefs__value">Java only</span>
-        </div>
+          <select
+            className="dsa-prefs__select"
+            value={outputLang}
+            onChange={(e) => setOutputLang(e.target.value)}
+            disabled={loading}
+          >
+            {OUTPUT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </label>
 
         <button
           className="rf-btn rf-btn--primary"
@@ -126,11 +148,11 @@ export default function AnalyzePage() {
           <CodeEditor
             value={code}
             onChange={setCode}
-            language={DSA_LANGUAGE}
+            language={editorLang}
           />
           {!code && (
             <p className="dsa-pane__hint">
-              Paste Java code to get it reviewed for correctness, bugs, and whether it's already optimal. ReachFlow treats pasted code as text only and never runs it.
+              Paste {editorLang === 'python' ? 'Python' : 'Java'} code to get it reviewed for correctness, bugs, and whether it's already optimal. ReachFlow treats pasted code as text only and never runs it.
             </p>
           )}
         </section>

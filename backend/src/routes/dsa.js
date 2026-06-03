@@ -27,12 +27,15 @@ const router = express.Router();
 
 const PROBLEM_MAX_LENGTH = 20_000;
 const CODE_MAX_LENGTH = 30_000;
-const VALID_LANGUAGES = new Set(['java']);
-const VALID_OUTPUT_PREFS = new Set(['java']);
+const VALID_LANGUAGES = new Set(['java', 'python']);
+const VALID_OUTPUT_PREFS = new Set(['java', 'python', 'both']);
 
 // Map the user's output-language preference to the concrete list of languages
-// the solutions should be generated in.
+// the solutions should be generated in. Honoured strictly so the LLM doesn't
+// spend tokens on languages the user didn't ask for.
 function outputLanguagesFor(pref) {
+  if (pref === 'python') return ['python'];
+  if (pref === 'both') return ['java', 'python'];
   return ['java'];
 }
 
@@ -73,10 +76,10 @@ router.post('/analyze', async (req, res) => {
   const userCode = code ? String(code).slice(0, CODE_MAX_LENGTH) : '';
   const hasUserCode = !!userCode.trim();
   if (rawLanguage && !VALID_LANGUAGES.has(rawLanguage)) {
-    return res.status(400).json({ error: 'DSA Analysis currently supports Java only.', code: 'UNSUPPORTED_LANGUAGE' });
+    return res.status(400).json({ error: 'Submitted code language must be Java or Python.', code: 'UNSUPPORTED_LANGUAGE' });
   }
   if (rawOutputLanguage && !VALID_OUTPUT_PREFS.has(rawOutputLanguage)) {
-    return res.status(400).json({ error: 'DSA Analysis currently generates Java solutions only.', code: 'UNSUPPORTED_LANGUAGE' });
+    return res.status(400).json({ error: 'Output language must be java, python, or both.', code: 'UNSUPPORTED_LANGUAGE' });
   }
 
   if (hasUserCode) {
@@ -87,9 +90,15 @@ router.post('/analyze', async (req, res) => {
     }
   }
 
-  const outputLanguage = 'java';
+  const outputLanguage = rawOutputLanguage && VALID_OUTPUT_PREFS.has(rawOutputLanguage)
+    ? rawOutputLanguage
+    : 'java';
   const outputLanguages = outputLanguagesFor(outputLanguage);
-  const language = 'java';
+  // Submitted-code language defaults to the first requested output language so
+  // the safety checker and prompt stay in sync. Caller can override.
+  const language = rawLanguage && VALID_LANGUAGES.has(rawLanguage)
+    ? rawLanguage
+    : outputLanguages[0];
 
   console.log(`[dsa] POST /analyze — userId: ${userId}, problemLen: ${problem.length}, hasCode: ${hasUserCode}, lang: ${language}, out: ${outputLanguage}`);
 

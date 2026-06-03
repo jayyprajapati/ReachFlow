@@ -393,50 +393,87 @@
   margin-top: 2px;
 }
 
-/* ── Toast ───────────────────────────────────────────────── */
+/* ── Toast ───────────────────────────────────────────────────
+   Top-center, pill-shaped, on-theme.
+   Single instance — the AppContext only renders one notice.
+   ──────────────────────────────────────────────────────────── */
 
-.rf-toast-container {
+.rf-toast-mount {
   position: fixed;
-  bottom: var(--rf-sp-6);
-  right: var(--rf-sp-6);
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: var(--rf-z-toast);
   display: flex;
-  flex-direction: column;
-  gap: var(--rf-sp-2);
+  justify-content: center;
   pointer-events: none;
+  max-width: calc(100vw - var(--rf-sp-6));
 }
 
 .rf-toast {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--rf-sp-3);
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
   background: var(--rf-bg-canvas);
-  border: 1px solid var(--rf-border);
-  border-radius: var(--rf-radius-lg);
-  box-shadow: var(--rf-shadow-lg);
-  font-size: var(--rf-text-base);
+  border: 1px solid var(--rf-border-subtle);
+  border-radius: var(--rf-radius-full);
+  box-shadow:
+    0 1px 2px rgba(15, 18, 30, 0.06),
+    0 12px 30px rgba(15, 18, 30, 0.14);
+  font-family: var(--rf-font-body);
+  font-size: var(--rf-text-sm);
+  font-weight: 500;
   color: var(--rf-text);
   pointer-events: auto;
-  animation: rf-slideUp var(--rf-duration-slow) var(--rf-ease-out);
-  max-width: 420px;
+  animation: rf-toast-in 320ms var(--rf-ease-spring) both;
+  max-width: 100%;
 }
 
-.rf-toast--success { border-left: 3px solid var(--rf-success); padding-left: 14px; }
-.rf-toast--error   { border-left: 3px solid var(--rf-error);   padding-left: 14px; }
-.rf-toast--info    { border-left: 3px solid var(--rf-info);    padding-left: 14px; }
-.rf-toast--warning { border-left: 3px solid var(--rf-warning); padding-left: 14px; }
+.rf-toast__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--rf-radius-full);
+  flex-shrink: 0;
+}
+.rf-toast--success .rf-toast__icon { background: var(--rf-accent-muted);  color: var(--rf-accent-text); }
+.rf-toast--error   .rf-toast__icon { background: var(--rf-error-muted);   color: var(--rf-error-text); }
+.rf-toast--info    .rf-toast__icon { background: var(--rf-info-muted);    color: var(--rf-info-text); }
+.rf-toast--warning .rf-toast__icon { background: var(--rf-warning-muted); color: var(--rf-warning-text); }
 
-.rf-toast__message { flex: 1; min-width: 0; }
+.rf-toast__message {
+  min-width: 0;
+  max-width: 540px;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .rf-toast__close {
   flex-shrink: 0;
-  color: var(--rf-text-muted);
-  padding: 4px;
-  border-radius: var(--rf-radius-xs);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rf-text-faint);
+  background: transparent;
+  border: none;
+  border-radius: var(--rf-radius-full);
+  cursor: pointer;
   transition: color var(--rf-duration-fast), background var(--rf-duration-fast);
 }
 .rf-toast__close:hover { color: var(--rf-text); background: var(--rf-bg-hover); }
+
+@keyframes rf-toast-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 /* ── Dialog / Modal ──────────────────────────────────────── */
 
@@ -829,18 +866,6 @@
   flex-shrink: 0;
 }
 
-/* Locked home tile */
-.rf-home__tile--locked,
-.rf-home__tile--locked:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.rf-home__tile--locked:hover {
-  transform: none;
-  border-color: var(--rf-border-subtle);
-  box-shadow: none;
-}
-
 /* Locked command palette item */
 .rf-command__item--locked,
 .rf-command__item--locked:disabled {
@@ -1074,8 +1099,9 @@
     overflow-y: auto;
   }
   .rf-dialog__actions { flex-wrap: wrap; }
-  .rf-toast-container { left: var(--rf-sp-3); right: var(--rf-sp-3); bottom: var(--rf-sp-3); }
-  .rf-toast { max-width: none; width: 100%; }
+  .rf-toast-mount { top: 12px; max-width: calc(100vw - var(--rf-sp-4)); }
+  .rf-toast { width: auto; max-width: 100%; padding: 8px 8px 8px 10px; }
+  .rf-toast__message { max-width: 60vw; }
 
   .rf-drawer {
     width: 100%;

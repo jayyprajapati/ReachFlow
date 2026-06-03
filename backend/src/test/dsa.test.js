@@ -17,11 +17,17 @@ const { findUnsafeDsaCodeReason } = require('../services/dsaSafety');
 
 // ── Route logic mirrored for isolated testing (see routes/dsa.js) ────────────
 
-const VALID_LANGUAGES = new Set(['java']);
+const VALID_LANGUAGES = new Set(['java', 'python']);
 const PROBLEM_MAX_LENGTH = 20_000;
 
 function clampLanguage(raw) {
   return VALID_LANGUAGES.has(raw) ? raw : 'java';
+}
+
+function outputLanguagesFor(pref) {
+  if (pref === 'python') return ['python'];
+  if (pref === 'both') return ['java', 'python'];
+  return ['java'];
 }
 
 // Mirrors the gatekeeper + persistence branch of POST /analyze.
@@ -91,16 +97,21 @@ describe('dsaAnalysisPrompt', () => {
   });
 
   test('exports the supported languages', () => {
-    assert.deepEqual([...DSA_LANGUAGES].sort(), ['java']);
+    assert.deepEqual([...DSA_LANGUAGES].sort(), ['java', 'python']);
   });
 
-  test('outputLanguages ignores unsupported languages and stays Java only', () => {
+  test('python-only request strips Java from the prompt', () => {
     const { system, prompt } = dsaAnalysisPrompt({ problemStatement: 'Two Sum', outputLanguages: ['python'] });
-    assert.match(system, /in Java only/i);
+    assert.match(system, /in Python only/i);
     assert.doesNotMatch(system, /Java and Python/i);
-    // The approach "code" object should carry only the java key.
-    assert.match(prompt, /"code": \{ "java": "" \}/);
-    assert.doesNotMatch(prompt, /"python":/);
+    assert.match(prompt, /"code": \{ "python": "" \}/);
+    assert.doesNotMatch(prompt, /"java":/);
+  });
+
+  test('both-languages request includes Java and Python keys', () => {
+    const { system, prompt } = dsaAnalysisPrompt({ problemStatement: 'Two Sum', outputLanguages: ['java', 'python'] });
+    assert.match(system, /Java and Python/i);
+    assert.match(prompt, /"code": \{ "java": "", "python": "" \}/);
   });
 
   test('outputLanguages defaults to Java when unset', () => {
@@ -112,11 +123,19 @@ describe('dsaAnalysisPrompt', () => {
 // ── Language + length handling ───────────────────────────────────────────────
 
 describe('input handling', () => {
-  test('clampLanguage accepts Java and defaults everything else to Java', () => {
-    assert.equal(clampLanguage('python'), 'java');
+  test('clampLanguage accepts Java and Python, falls back to Java otherwise', () => {
+    assert.equal(clampLanguage('python'), 'python');
     assert.equal(clampLanguage('java'), 'java');
     assert.equal(clampLanguage('c++'), 'java');
     assert.equal(clampLanguage(undefined), 'java');
+  });
+
+  test('outputLanguagesFor maps each pref to its language list', () => {
+    assert.deepEqual(outputLanguagesFor('java'), ['java']);
+    assert.deepEqual(outputLanguagesFor('python'), ['python']);
+    assert.deepEqual(outputLanguagesFor('both'), ['java', 'python']);
+    assert.deepEqual(outputLanguagesFor('rust'), ['java']);
+    assert.deepEqual(outputLanguagesFor(undefined), ['java']);
   });
 
   test('problem statement is capped at the max length', () => {
