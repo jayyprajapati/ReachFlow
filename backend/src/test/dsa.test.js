@@ -13,10 +13,11 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { dsaAnalysisPrompt, DSA_LANGUAGES } = require('../services/brainPrompts');
+const { findUnsafeDsaCodeReason } = require('../services/dsaSafety');
 
 // ── Route logic mirrored for isolated testing (see routes/dsa.js) ────────────
 
-const VALID_LANGUAGES = new Set(['java', 'python']);
+const VALID_LANGUAGES = new Set(['java']);
 const PROBLEM_MAX_LENGTH = 20_000;
 
 function clampLanguage(raw) {
@@ -52,28 +53,36 @@ function toSummary(doc) {
 // ── dsaAnalysisPrompt (real builder) ─────────────────────────────────────────
 
 describe('dsaAnalysisPrompt', () => {
-  test('problem-only mode requests both languages and gates non-DSA input', () => {
+  test('problem-only mode requests Java only and gates non-DSA input', () => {
     const { system, prompt } = dsaAnalysisPrompt({ problemStatement: 'Given an array, find two numbers that sum to a target.' });
     assert.match(system, /is_dsa_problem/);
-    assert.match(system, /Java and Python/i);
+    assert.match(system, /Java only/i);
+    assert.doesNotMatch(system, /Java and Python/i);
     assert.match(system, /brute force/i);
+    assert.match(system, /Avoid dense paragraphs/i);
     // No user code → review must be null in the schema.
     assert.match(prompt, /"review": null/);
     assert.match(prompt, /"has_user_code": false/);
+    assert.match(prompt, /"problem_breakdown":/);
+    assert.match(prompt, /"example_walkthrough":/);
+    assert.match(prompt, /"key_points": \["string"\]/);
+    assert.match(prompt, /"how_to_think": \["string"\]/);
+    assert.match(prompt, /"explanation": \["string"\]/);
     assert.match(prompt, /find two numbers/);
   });
 
   test('review mode embeds the user code and a review block', () => {
     const { system, prompt } = dsaAnalysisPrompt({
       problemStatement: 'Two Sum',
-      userCode: 'def two_sum(a, t): ...',
-      language: 'python',
+      userCode: 'class Solution { int[] twoSum(int[] a, int t) { return new int[0]; } }',
+      language: 'java',
     });
     assert.match(prompt, /"has_user_code": true/);
-    assert.match(prompt, /"language": "python"/);
-    assert.match(prompt, /def two_sum/);
+    assert.match(prompt, /"language": "java"/);
+    assert.match(prompt, /twoSum/);
     assert.match(system, /submitted their own solution/i);
     assert.match(system, /already optimal/i);
+    assert.match(system, /Never execute/i);
   });
 
   test('invalid language falls back to java', () => {
@@ -82,29 +91,29 @@ describe('dsaAnalysisPrompt', () => {
   });
 
   test('exports the supported languages', () => {
-    assert.deepEqual([...DSA_LANGUAGES].sort(), ['java', 'python']);
+    assert.deepEqual([...DSA_LANGUAGES].sort(), ['java']);
   });
 
-  test('outputLanguages restricts generated code to the requested language only', () => {
+  test('outputLanguages ignores unsupported languages and stays Java only', () => {
     const { system, prompt } = dsaAnalysisPrompt({ problemStatement: 'Two Sum', outputLanguages: ['python'] });
-    assert.match(system, /in Python only/i);
+    assert.match(system, /in Java only/i);
     assert.doesNotMatch(system, /Java and Python/i);
-    // The approach "code" object should carry only the python key.
-    assert.match(prompt, /"code": \{ "python": "" \}/);
-    assert.doesNotMatch(prompt, /"java":/);
+    // The approach "code" object should carry only the java key.
+    assert.match(prompt, /"code": \{ "java": "" \}/);
+    assert.doesNotMatch(prompt, /"python":/);
   });
 
-  test('outputLanguages defaults to both when unset', () => {
+  test('outputLanguages defaults to Java when unset', () => {
     const { system } = dsaAnalysisPrompt({ problemStatement: 'Two Sum' });
-    assert.match(system, /Java and Python only/i);
+    assert.match(system, /Java only/i);
   });
 });
 
 // ── Language + length handling ───────────────────────────────────────────────
 
 describe('input handling', () => {
-  test('clampLanguage accepts java/python, rejects others', () => {
-    assert.equal(clampLanguage('python'), 'python');
+  test('clampLanguage accepts Java and defaults everything else to Java', () => {
+    assert.equal(clampLanguage('python'), 'java');
     assert.equal(clampLanguage('java'), 'java');
     assert.equal(clampLanguage('c++'), 'java');
     assert.equal(clampLanguage(undefined), 'java');
@@ -113,6 +122,31 @@ describe('input handling', () => {
   test('problem statement is capped at the max length', () => {
     const huge = 'x'.repeat(PROBLEM_MAX_LENGTH + 500);
     assert.equal(huge.slice(0, PROBLEM_MAX_LENGTH).length, PROBLEM_MAX_LENGTH);
+  });
+});
+
+// ── Submitted-code safety gate ───────────────────────────────────────────────
+
+describe('findUnsafeDsaCodeReason', () => {
+  test('allows ordinary Java DSA code', () => {
+    const code = 'class Solution { int[] twoSum(int[] nums, int target) { return new int[] {0, 1}; } }';
+    assert.equal(findUnsafeDsaCodeReason(code), null);
+  });
+
+  test('rejects process execution before analysis', () => {
+    const reason = findUnsafeDsaCodeReason('class X { void f() throws Exception { Runtime.getRuntime().exec("rm -rf /"); } }');
+    assert.match(reason, /process execution/i);
+    assert.match(reason, /never executes/i);
+  });
+
+  test('rejects filesystem mutation before analysis', () => {
+    const reason = findUnsafeDsaCodeReason('Files.delete(Path.of("/tmp/a"));');
+    assert.match(reason, /file deletion or mutation/i);
+  });
+
+  test('rejects network APIs before analysis', () => {
+    const reason = findUnsafeDsaCodeReason('import java.net.Socket; class X { Socket s = new Socket(); }');
+    assert.match(reason, /network access/i);
   });
 });
 
@@ -156,7 +190,7 @@ describe('toSummary', () => {
       _id: { toString: () => 'dsa-1' },
       problemTitle: 'Two Sum',
       hasUserCode: 1,
-      language: 'python',
+      language: 'java',
       isOptimal: false,
       status: 'analyzed',
       createdAt: now,
@@ -166,7 +200,7 @@ describe('toSummary', () => {
     assert.equal(s.id, 'dsa-1');
     assert.equal(s.problemTitle, 'Two Sum');
     assert.equal(s.hasUserCode, true);
-    assert.equal(s.language, 'python');
+    assert.equal(s.language, 'java');
     assert.equal(s.isOptimal, false);
     assert.equal(s.status, 'analyzed');
   });

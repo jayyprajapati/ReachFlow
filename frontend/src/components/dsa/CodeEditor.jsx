@@ -18,6 +18,8 @@ export default function CodeEditor({
   onChange,
   language = 'java',
   height = 320,
+  readOnly = false,
+  className = '',
 }) {
   const [theme, setTheme] = useState(resolveTheme);
 
@@ -28,17 +30,25 @@ export default function CodeEditor({
     return () => obs.disconnect();
   }, []);
 
+  const editorClassName = [
+    'dsa-editor',
+    readOnly ? 'dsa-editor--readonly' : '',
+    className,
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="dsa-editor">
+    <div className={editorClassName}>
       <Editor
         height={height}
         language={language === 'python' ? 'python' : 'java'}
         theme={theme}
         value={value}
-        onChange={(v) => onChange(v ?? '')}
+        onChange={readOnly ? undefined : (v) => onChange?.(v ?? '')}
         loading={<div className="dsa-editor__loading"><Loader size={16} className="rf-spin" /> Loading editor…</div>}
         options={{
           minimap: { enabled: false },
+          readOnly,
+          domReadOnly: readOnly,
           fontSize: 13,
           lineNumbersMinChars: 3,
           folding: false,
@@ -53,6 +63,7 @@ export default function CodeEditor({
           automaticLayout: true,
           fontFamily: 'var(--rf-font-mono), ui-monospace, monospace',
           smoothScrolling: true,
+          renderValidationDecorations: 'off',
         }}
       />
     </div>

@@ -268,14 +268,14 @@ async function deleteAllUserVectors({ userId }) {
 
 // ── DSA / algorithm analysis ──────────────────────────────────────────────────
 
-// Analyze a DSA problem (and optionally the user's Java/Python solution). Returns
+// Analyze a DSA problem (and optionally the user's Java solution). Returns
 // the parsed JSON described by prompts.dsaAnalysisPrompt — including the
 // is_dsa_problem gate the caller uses to refuse non-DSA input. maxTokens is
-// generous because 2–3 approaches × two languages of real code is large.
+// generous because 2–3 approaches with detailed teaching notes and real code can be large.
 async function analyzeDsa({ userId, problemStatement, userCode, language, outputLanguages, llm }) {
   const label = `analyzeDsa (user: ${userId})`;
   const { system, prompt } = prompts.dsaAnalysisPrompt({ problemStatement, userCode, language, outputLanguages });
-  return withRetry(() => generate({ system, prompt, llm, json: true, maxTokens: 8000 }), label);
+  return withRetry(() => generate({ system, prompt, llm, json: true, maxTokens: 10000 }), label);
 }
 
 // ── BYOK connection test ──────────────────────────────────────────────────────

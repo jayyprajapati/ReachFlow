@@ -2,22 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Binary, Loader, RotateCcw, Ban, ArrowUpRight, Sparkles, X,
+  Binary, Loader, RotateCcw, Ban, ArrowUpRight, Sparkles, X, ShieldAlert,
 } from 'lucide-react';
 import { makeDsaApi } from '../../services/dsaApi.js';
 import CodeEditor from '../../components/dsa/CodeEditor.jsx';
 import DsaResult from '../../components/dsa/DsaResult.jsx';
 
-const OUTPUT_LANGUAGES = [
-  { value: 'both',   label: 'Java & Python' },
-  { value: 'java',   label: 'Java only' },
-  { value: 'python', label: 'Python only' },
-];
-
-const CODE_PLACEHOLDER = {
-  java: '// Optional — paste your solution to have it reviewed\nclass Solution {\n    public int[] twoSum(int[] nums, int target) {\n\n    }\n}',
-  python: '# Optional — paste your solution to have it reviewed\nclass Solution:\n    def twoSum(self, nums, target):\n        pass',
-};
+const DSA_LANGUAGE = 'java';
 
 export default function AnalyzePage() {
   const { authedFetch, setNotice } = useApp();
@@ -26,15 +17,11 @@ export default function AnalyzePage() {
 
   const [problem, setProblem] = useState('');
   const [code, setCode] = useState('');
-  const [outputPref, setOutputPref] = useState('both'); // java | python | both
-  const [codeLang, setCodeLang] = useState('java');      // language of the user's own code
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [error, setError] = useState(null); // { kind: 'notDsa' | 'byok' | 'generic', message }
+  const [error, setError] = useState(null); // { kind: 'notDsa' | 'unsafe' | 'byok' | 'generic', message }
 
-  // When a single output language is chosen, the user's code is in that language too.
-  const editorLang = outputPref === 'both' ? codeLang : outputPref;
   const canAnalyze = problem.trim().length > 15 && !loading;
   const hasCode = code.trim().length > 0;
 
@@ -44,16 +31,18 @@ export default function AnalyzePage() {
     setError(null);
     setResult(null);
     try {
-      const body = { problemStatement: problem.trim(), outputLanguage: outputPref };
+      const body = { problemStatement: problem.trim(), outputLanguage: DSA_LANGUAGE };
       if (hasCode) {
         body.code = code;
-        body.language = editorLang;
+        body.language = DSA_LANGUAGE;
       }
       const data = await api.analyze(body);
       setResult(data);
     } catch (err) {
-      if (err.code === 'NOT_DSA_PROBLEM' || err.status === 422) {
+      if (err.code === 'NOT_DSA_PROBLEM') {
         setError({ kind: 'notDsa', message: err.message });
+      } else if (err.code === 'UNSAFE_CODE_REJECTED') {
+        setError({ kind: 'unsafe', message: err.message });
       } else if (err.status === 402 || err.code === 'LLM_NOT_CONFIGURED' || err.code === 'LLM_NOT_VALIDATED') {
         setError({ kind: 'byok', message: err.message });
       } else {
@@ -101,14 +90,10 @@ export default function AnalyzePage() {
       {error && <ErrorBanner error={error} onClose={() => setError(null)} navigateTo={navigateTo} />}
 
       <div className="dsa-compose__toolbar">
-        <label className="dsa-prefs">
+        <div className="dsa-prefs">
           <span className="dsa-prefs__label">Solution language</span>
-          <div className="dsa-select">
-            <select value={outputPref} onChange={(e) => setOutputPref(e.target.value)}>
-              {OUTPUT_LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-            </select>
-          </div>
-        </label>
+          <span className="dsa-prefs__value">Java only</span>
+        </div>
 
         <button
           className="rf-btn rf-btn--primary"
@@ -137,30 +122,15 @@ export default function AnalyzePage() {
         <section className="dsa-pane">
           <div className="dsa-pane__head">
             <span className="dsa-pane__title">Your solution <span className="dsa-pane__opt">optional</span></span>
-            {outputPref === 'both' && (
-              <div className="dsa-seg" role="tablist" aria-label="Your code language">
-                {['java', 'python'].map((l) => (
-                  <button
-                    key={l}
-                    role="tab"
-                    aria-selected={codeLang === l}
-                    className={`dsa-seg__btn${codeLang === l ? ' dsa-seg__btn--active' : ''}`}
-                    onClick={() => setCodeLang(l)}
-                  >
-                    {l === 'python' ? 'Python' : 'Java'}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
           <CodeEditor
             value={code}
             onChange={setCode}
-            language={editorLang}
+            language={DSA_LANGUAGE}
           />
           {!code && (
             <p className="dsa-pane__hint">
-              Paste your code to get it reviewed for correctness, bugs, and whether it's already optimal. Leave it empty for a fresh walkthrough.
+              Paste Java code to get it reviewed for correctness, bugs, and whether it's already optimal. ReachFlow treats pasted code as text only and never runs it.
             </p>
           )}
         </section>
@@ -177,6 +147,17 @@ function ErrorBanner({ error, onClose, navigateTo }) {
         <Ban size={16} />
         <div>
           <strong>Not a DSA problem.</strong> {error.message}
+        </div>
+        <button className="dsa-banner__x" onClick={onClose} aria-label="Dismiss"><X size={14} /></button>
+      </div>
+    );
+  }
+  if (error.kind === 'unsafe') {
+    return (
+      <div className="dsa-banner dsa-banner--warn">
+        <ShieldAlert size={16} />
+        <div>
+          <strong>Code rejected for safety.</strong> {error.message}
         </div>
         <button className="dsa-banner__x" onClick={onClose} aria-label="Dismiss"><X size={14} /></button>
       </div>

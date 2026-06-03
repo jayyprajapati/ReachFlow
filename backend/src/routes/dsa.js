@@ -4,9 +4,12 @@
  * dsa.js — DSA Lab routes.
  *
  * A user pastes a Data-Structures-&-Algorithms problem and, optionally, their own
- * Java/Python solution. We run a single stateless LLM call through Brain's generic
+ * Java solution. We run a single stateless LLM call through Brain's generic
  * /v1/generate (composed in brainClient.analyzeDsa + brainPrompts.dsaAnalysisPrompt)
  * and persist the result per-user so it can be revisited from the History tab.
+ *
+ * Submitted code is never executed, compiled, or sandbox-run by this service. It
+ * is treated as text and rejected early if it contains high-risk system APIs.
  *
  * BYOK is enforced exactly like Resume Lab via the shared resolveUserLlm helper.
  * Non-DSA input is refused: the model returns is_dsa_problem=false and we surface
@@ -18,20 +21,19 @@ const { Types } = require('mongoose');
 const { DsaAnalysis } = require('../db');
 const { analyzeDsa, BrainError, brainDetail } = require('../services/brainClient');
 const { resolveUserLlm, isByokError } = require('../services/llmSettings');
+const { findUnsafeDsaCodeReason } = require('../services/dsaSafety');
 
 const router = express.Router();
 
 const PROBLEM_MAX_LENGTH = 20_000;
 const CODE_MAX_LENGTH = 30_000;
-const VALID_LANGUAGES = new Set(['java', 'python']);
-const VALID_OUTPUT_PREFS = new Set(['java', 'python', 'both']);
+const VALID_LANGUAGES = new Set(['java']);
+const VALID_OUTPUT_PREFS = new Set(['java']);
 
 // Map the user's output-language preference to the concrete list of languages
 // the solutions should be generated in.
 function outputLanguagesFor(pref) {
-  if (pref === 'java') return ['java'];
-  if (pref === 'python') return ['python'];
-  return ['java', 'python']; // 'both' (default)
+  return ['java'];
 }
 
 function toSummary(doc) {
@@ -40,7 +42,7 @@ function toSummary(doc) {
     problemTitle: doc.problemTitle || '',
     hasUserCode: !!doc.hasUserCode,
     language: doc.language || 'java',
-    outputLanguage: doc.outputLanguage || 'both',
+    outputLanguage: doc.outputLanguage || 'java',
     isOptimal: doc.isOptimal,
     status: doc.status,
     createdAt: doc.createdAt,
@@ -70,13 +72,24 @@ router.post('/analyze', async (req, res) => {
   const problem = String(problemStatement).trim().slice(0, PROBLEM_MAX_LENGTH);
   const userCode = code ? String(code).slice(0, CODE_MAX_LENGTH) : '';
   const hasUserCode = !!userCode.trim();
-  const outputLanguage = VALID_OUTPUT_PREFS.has(rawOutputLanguage) ? rawOutputLanguage : 'both';
+  if (rawLanguage && !VALID_LANGUAGES.has(rawLanguage)) {
+    return res.status(400).json({ error: 'DSA Analysis currently supports Java only.', code: 'UNSUPPORTED_LANGUAGE' });
+  }
+  if (rawOutputLanguage && !VALID_OUTPUT_PREFS.has(rawOutputLanguage)) {
+    return res.status(400).json({ error: 'DSA Analysis currently generates Java solutions only.', code: 'UNSUPPORTED_LANGUAGE' });
+  }
+
+  if (hasUserCode) {
+    const unsafeReason = findUnsafeDsaCodeReason(userCode);
+    if (unsafeReason) {
+      console.log(`[dsa] Rejected unsafe submitted code — userId: ${userId}`);
+      return res.status(422).json({ error: unsafeReason, code: 'UNSAFE_CODE_REJECTED' });
+    }
+  }
+
+  const outputLanguage = 'java';
   const outputLanguages = outputLanguagesFor(outputLanguage);
-  // The user's submitted-code language: respect an explicit pick, otherwise infer
-  // from the output preference (a single-language pref implies that language).
-  const language = VALID_LANGUAGES.has(rawLanguage)
-    ? rawLanguage
-    : (outputLanguage === 'python' ? 'python' : 'java');
+  const language = 'java';
 
   console.log(`[dsa] POST /analyze — userId: ${userId}, problemLen: ${problem.length}, hasCode: ${hasUserCode}, lang: ${language}, out: ${outputLanguage}`);
 

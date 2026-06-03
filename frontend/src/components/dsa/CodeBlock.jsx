@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
 import { ClipboardCopy, CheckCheck } from 'lucide-react';
+import CodeEditor from './CodeEditor.jsx';
 
 const LANG_LABELS = { java: 'Java', python: 'Python' };
 
+function editorHeightFor(source) {
+  const lines = String(source || '').split('\n').length;
+  return Math.min(460, Math.max(220, lines * 20 + 32));
+}
+
 /**
- * CodeBlock — read-only output code with a Java/Python tab switch and a copy
- * button. `code` is the { java, python } object from the analysis result.
+ * CodeBlock — read-only Monaco output code with a tab switch and a copy button.
+ * `code` is the analysis result's language-keyed code object.
  */
 export default function CodeBlock({ code }) {
   const langs = ['java', 'python'].filter((l) => code && typeof code[l] === 'string' && code[l].trim());
@@ -13,7 +19,9 @@ export default function CodeBlock({ code }) {
   const [copied, setCopied] = useState(false);
 
   if (!langs.length) return null;
-  const current = code[active] || '';
+  const activeLang = langs.includes(active) ? active : langs[0];
+  const current = code[activeLang] || '';
+  const editorHeight = editorHeightFor(current);
 
   function copy() {
     navigator.clipboard?.writeText(current).catch(() => {});
@@ -29,7 +37,7 @@ export default function CodeBlock({ code }) {
             <button
               key={l}
               type="button"
-              className={`dsa-codeblock__tab${active === l ? ' dsa-codeblock__tab--active' : ''}`}
+              className={`dsa-codeblock__tab${activeLang === l ? ' dsa-codeblock__tab--active' : ''}`}
               onClick={() => setActive(l)}
             >
               {LANG_LABELS[l]}
@@ -41,7 +49,7 @@ export default function CodeBlock({ code }) {
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <pre className="dsa-codeblock__pre"><code>{current}</code></pre>
+      <CodeEditor value={current} language={activeLang} height={editorHeight} readOnly />
     </div>
   );
 }

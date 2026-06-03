@@ -4,6 +4,7 @@ import {
   Clock, Database, Trophy, Sparkles, ChevronDown, FileText,
 } from 'lucide-react';
 import CodeBlock from './CodeBlock.jsx';
+import CodeEditor from './CodeEditor.jsx';
 
 // Verdict → visual tone. The three states the user cares about:
 //   error (red)    → won't work as written (incorrect / only partially correct)
@@ -22,6 +23,51 @@ const TONE_META = {
 };
 
 const LANG_LABEL = { java: 'Java', python: 'Python' };
+
+function editorHeightFor(source) {
+  const lines = String(source || '').split('\n').length;
+  return Math.min(360, Math.max(180, lines * 20 + 32));
+}
+
+function asBulletItems(value) {
+  if (Array.isArray(value)) return value.map((v) => String(v || '').trim()).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  const text = value.trim();
+  if (!text) return [];
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean);
+  return lines.length > 1 ? lines : [text];
+}
+
+function ExplainText({ value }) {
+  const items = asBulletItems(value);
+  if (!items.length) return null;
+  if (!Array.isArray(value) && items.length === 1) {
+    return <p className="dsa-prose">{items[0]}</p>;
+  }
+  return (
+    <ul className="dsa-explain-list">
+      {items.map((item, i) => <li key={i}>{item}</li>)}
+    </ul>
+  );
+}
+
+function normalizeSteps(steps) {
+  if (!Array.isArray(steps)) return [];
+  return steps.map((step, index) => {
+    if (typeof step === 'string') {
+      return { step: `Step ${index + 1}`, state: step.trim(), why: '' };
+    }
+    if (!step || typeof step !== 'object') return null;
+    return {
+      step: String(step.step || `Step ${index + 1}`).trim(),
+      state: String(step.state || step.what_happens || '').trim(),
+      why: String(step.why || step.why_it_matters || step.reason || '').trim(),
+    };
+  }).filter((step) => step && (step.step || step.state || step.why));
+}
 
 // ── Small building blocks ─────────────────────────────────────────────────────
 
@@ -42,6 +88,73 @@ function ComplexityBlock({ complexity, label }) {
       </div>
       {complexity.explanation && <p className="dsa-complexity__explain">{complexity.explanation}</p>}
     </div>
+  );
+}
+
+function LearningBreakdown({ result }) {
+  const breakdown = result?.problem_breakdown || {};
+  const plain = String(breakdown.plain_english || '').trim();
+  const keyPoints = asBulletItems(breakdown.key_points);
+  const watchOut = asBulletItems(breakdown.watch_out_for);
+  const walkthrough = result?.example_walkthrough || {};
+  const example = String(walkthrough.example || '').trim();
+  const steps = normalizeSteps(walkthrough.steps);
+  const takeaway = String(walkthrough.takeaway || '').trim();
+
+  if (!plain && !keyPoints.length && !watchOut.length && !example && !steps.length && !takeaway) return null;
+
+  return (
+    <section className="dsa-teach">
+      <div className="dsa-teach__head">
+        <h3 className="dsa-teach__title">Understand the problem</h3>
+      </div>
+
+      {plain && <p className="dsa-prose">{plain}</p>}
+
+      {(keyPoints.length > 0 || watchOut.length > 0) && (
+        <div className="dsa-teach__grid">
+          {keyPoints.length > 0 && (
+            <div className="dsa-teach__block">
+              <div className="dsa-teach__label">What matters</div>
+              <ul className="dsa-explain-list">
+                {keyPoints.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {watchOut.length > 0 && (
+            <div className="dsa-teach__block">
+              <div className="dsa-teach__label">Watch out for</div>
+              <ul className="dsa-explain-list">
+                {watchOut.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(example || steps.length > 0 || takeaway) && (
+        <div className="dsa-walkthrough">
+          <div className="dsa-teach__label">Example breakdown</div>
+          {example && <div className="dsa-walkthrough__example">{example}</div>}
+          {steps.length > 0 && (
+            <ol className="dsa-steps">
+              {steps.map((step, i) => (
+                <li key={i}>
+                  <span className="dsa-steps__num">{i + 1}</span>
+                  <div className="dsa-steps__body">
+                    {step.step && <div className="dsa-steps__title">{step.step}</div>}
+                    {step.state && <div className="dsa-steps__state">{step.state}</div>}
+                    {step.why && <div className="dsa-steps__why">{step.why}</div>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+          {takeaway && <p className="dsa-walkthrough__takeaway">{takeaway}</p>}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -70,7 +183,7 @@ function ProblemPanel({ title, summary, problemStatement, userCode, language }) 
           {userCode && (
             <div className="dsa-submitted">
               <div className="dsa-submitted__label">Your submitted solution{language ? ` · ${LANG_LABEL[language] || ''}` : ''}</div>
-              <pre className="dsa-codeblock__pre"><code>{userCode}</code></pre>
+              <CodeEditor value={userCode} language={language || 'java'} height={editorHeightFor(userCode)} readOnly />
             </div>
           )}
         </div>
@@ -132,6 +245,9 @@ function VerdictPanel({ review }) {
 
 function ApproachCard({ approach, index }) {
   if (!approach) return null;
+  const hasHowToThink = asBulletItems(approach.how_to_think).length > 0;
+  const hasExplanation = asBulletItems(approach.explanation).length > 0;
+
   return (
     <article className={`dsa-approach${approach.is_optimal ? ' dsa-approach--optimal' : ''}`}>
       <div className="dsa-approach__head">
@@ -139,16 +255,16 @@ function ApproachCard({ approach, index }) {
         {approach.is_optimal && <span className="dsa-approach__tag"><Trophy size={11} /> Optimal</span>}
       </div>
 
-      {approach.how_to_think && (
+      {hasHowToThink && (
         <div className="dsa-approach__block">
           <div className="dsa-approach__label">How to think about it</div>
-          <p className="dsa-prose">{approach.how_to_think}</p>
+          <ExplainText value={approach.how_to_think} />
         </div>
       )}
-      {approach.explanation && (
+      {hasExplanation && (
         <div className="dsa-approach__block">
           <div className="dsa-approach__label">Approach</div>
-          <p className="dsa-prose">{approach.explanation}</p>
+          <ExplainText value={approach.explanation} />
         </div>
       )}
 
@@ -176,6 +292,8 @@ export default function DsaResult({ result, problemStatement, userCode }) {
         userCode={userCode}
         language={reviewLang}
       />
+
+      <LearningBreakdown result={result} />
 
       {optimal && (optimal.time || optimal.space) && (
         <div className="dsa-optimal-chip">

@@ -3,7 +3,8 @@
  *
  * makeDsaApi(authedFetch) — returns JSON-only API helpers. The shared `call()`
  * propagates `err.status` and `err.code` so callers can distinguish a BYOK gate
- * (402 / LLM_NOT_*) from a refused non-DSA problem (422 / NOT_DSA_PROBLEM).
+ * (402 / LLM_NOT_*), a refused non-DSA problem (422 / NOT_DSA_PROBLEM), and
+ * an unsafe submitted-code rejection (422 / UNSAFE_CODE_REJECTED).
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';

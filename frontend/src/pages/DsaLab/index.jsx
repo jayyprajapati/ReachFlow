@@ -78,7 +78,7 @@ export default function DsaLabPage() {
           <h1 className="rf-page-header__title">Algorithm analysis</h1>
           <p className="rf-page-header__subtitle">
             Paste a Data Structures &amp; Algorithms problem — get clear approaches from brute force to optimal,
-            in Java, Python, or both. Add your own solution to have it reviewed for correctness, complexity, and optimality.
+            in Java. Add your own solution to have it reviewed for correctness, complexity, and optimality.
           </p>
         </div>
       </header>
