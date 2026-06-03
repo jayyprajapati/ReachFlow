@@ -14,11 +14,67 @@ const PROVIDER_LABELS = {
   ollama_local: 'Ollama Local',
 };
 
-const SETTINGS_SECTIONS = [
-  { id: 'integrations',    label: 'Integrations' },
-  { id: 'personalization', label: 'Personalization' },
-  { id: 'account',         label: 'Account' },
+const SETTINGS_PANELS = [
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    kicker: 'Delivery',
+    title: 'Mail connection',
+    description: 'Manage OAuth, sender identity, and Google permissions from one place.',
+    Icon: Mail,
+  },
+  {
+    id: 'ai',
+    label: 'AI Engine',
+    kicker: 'Provider',
+    title: 'Model provider',
+    description: 'Choose the AI backend, validate it, and keep generated work behind your own key.',
+    Icon: Brain,
+  },
+  {
+    id: 'voice',
+    label: 'AI Voice',
+    kicker: 'Writing',
+    title: 'Generated content style',
+    description: 'Tune the tone, length, and structure used across AI-assisted writing.',
+    Icon: Sliders,
+  },
+  {
+    id: 'account',
+    label: 'Account',
+    kicker: 'Access',
+    title: 'Session and data',
+    description: 'Leave this device or permanently remove the workspace and its data.',
+    Icon: ShieldAlert,
+  },
 ];
+
+function getPanelStatus(id, { gmailConnected, llmValid, llmConfigured }) {
+  switch (id) {
+    case 'gmail':
+      return gmailConnected
+        ? { label: 'Connected', tone: 'ok' }
+        : { label: 'Action needed', tone: 'error' };
+    case 'ai':
+      if (llmValid) return { label: 'Validated', tone: 'ok' };
+      if (llmConfigured) return { label: 'Test needed', tone: 'warn' };
+      return { label: 'Not set', tone: 'error' };
+    case 'voice':
+      return { label: 'Ready', tone: 'neutral' };
+    case 'account':
+    default:
+      return { label: 'Available', tone: 'neutral' };
+  }
+}
+
+function SettingsStatus({ label, tone = 'neutral' }) {
+  return (
+    <span className={`rf-settings-status rf-settings-status--${tone}`}>
+      <span className="rf-settings-status__dot" />
+      {label}
+    </span>
+  );
+}
 
 // ── AI Settings section ───────────────────────────────────────────────────────
 
@@ -98,8 +154,9 @@ function AISettingsSection({ authedFetch, cachedSettings, cachedLoading }) {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--rf-text-muted)', padding: '8px 0' }}>
-        <Loader size={14} className="rf-spin" /> Loading…
+      <div className="rf-set-loading">
+        <Loader size={14} className="rf-spin" />
+        <span>Loading AI provider settings...</span>
       </div>
     );
   }
@@ -110,91 +167,92 @@ function AISettingsSection({ authedFetch, cachedSettings, cachedLoading }) {
   const isValid = settings?.isValid;
 
   return (
-    <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-4)' }}>
+    <form onSubmit={handleSave} className="rf-ai-form">
 
       {/* Validation status */}
       {settings?.configured && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 'var(--rf-radius-md)', background: 'var(--rf-bg-root)', border: '1px solid var(--rf-border-subtle)' }}>
+        <div className={`rf-set-status ${isValid ? 'rf-set-status--ok' : 'rf-set-status--error'}`}>
           {isValid
-            ? <><CheckCircle2 size={13} style={{ color: 'var(--rf-success)', flexShrink: 0 }} /><span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-success-text)' }}>Validated{settings.validatedAt ? ` · ${new Date(settings.validatedAt).toLocaleDateString()}` : ''}</span></>
-            : <><XCircle size={13} style={{ color: 'var(--rf-error)', flexShrink: 0 }} /><span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-error-text)' }}>Not validated — Resume Lab is disabled until you test the connection</span></>
+            ? <><CheckCircle2 size={14} /><span>Validated{settings.validatedAt ? ` · ${new Date(settings.validatedAt).toLocaleDateString()}` : ''}</span></>
+            : <><XCircle size={14} /><span>Not validated. Resume Lab is disabled until you test the connection.</span></>
           }
         </div>
       )}
 
-      {/* Provider */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label className="rf-label">Provider</label>
-        <select className="rf-input" value={provider} onChange={e => { setProvider(e.target.value); setModel(''); }}>
-          {Object.keys(PROVIDER_LABELS).map(p => (
-            <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Model */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label className="rf-label">Model</label>
-        {models.length > 0 ? (
-          <select className="rf-input" value={model} onChange={e => setModel(e.target.value)}>
-            <option value="">Use provider default</option>
-            {models.map(m => <option key={m} value={m}>{m}</option>)}
+      <div className="rf-set-form-grid">
+        {/* Provider */}
+        <div className="rf-set-field">
+          <label className="rf-label">Provider</label>
+          <select className="rf-input" value={provider} onChange={e => { setProvider(e.target.value); setModel(''); }}>
+            {Object.keys(PROVIDER_LABELS).map(p => (
+              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+            ))}
           </select>
-        ) : (
-          <input
-            className="rf-input"
-            placeholder={needsEndpoint ? 'e.g. llama3.3:70b' : 'Model name'}
-            value={model}
-            onChange={e => setModel(e.target.value)}
-          />
+        </div>
+
+        {/* Model */}
+        <div className="rf-set-field">
+          <label className="rf-label">Model</label>
+          {models.length > 0 ? (
+            <select className="rf-input" value={model} onChange={e => setModel(e.target.value)}>
+              <option value="">Use provider default</option>
+              {models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : (
+            <input
+              className="rf-input"
+              placeholder={needsEndpoint ? 'e.g. llama3.3:70b' : 'Model name'}
+              value={model}
+              onChange={e => setModel(e.target.value)}
+            />
+          )}
+        </div>
+
+        {/* API key */}
+        {needsApiKey && (
+          <div className="rf-set-field rf-set-field--wide">
+            <label className="rf-label">API key</label>
+            <div className="rf-set-secret">
+              <input
+                className="rf-input"
+                type={showKey ? 'text' : 'password'}
+                placeholder={settings?.hasApiKey ? settings.apiKeyPreview || '••••••••' : 'Enter API key...'}
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                autoComplete="off"
+              />
+              <button type="button" className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}>
+                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            {settings?.hasApiKey && !apiKey && (
+              <p className="rf-settings__help">API key saved. Enter a new value to replace it.</p>
+            )}
+          </div>
+        )}
+
+        {/* Local endpoint */}
+        {needsEndpoint && (
+          <div className="rf-set-field rf-set-field--wide">
+            <label className="rf-label">Ollama endpoint</label>
+            <input
+              className="rf-input"
+              placeholder="http://localhost:11434"
+              value={localEndpoint}
+              onChange={e => setLocalEndpoint(e.target.value)}
+            />
+          </div>
         )}
       </div>
 
-      {/* API key */}
-      {needsApiKey && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label className="rf-label">API Key</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="rf-input"
-              type={showKey ? 'text' : 'password'}
-              placeholder={settings?.hasApiKey ? settings.apiKeyPreview || '••••••••' : 'Enter API key…'}
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              style={{ flex: 1 }}
-              autoComplete="off"
-            />
-            <button type="button" className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}>
-              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-          </div>
-          {settings?.hasApiKey && !apiKey && (
-            <p className="rf-settings__help">API key saved. Enter a new value to replace it.</p>
-          )}
-        </div>
-      )}
-
-      {/* Local endpoint */}
-      {needsEndpoint && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label className="rf-label">Ollama Endpoint</label>
-          <input
-            className="rf-input"
-            placeholder="http://localhost:11434"
-            value={localEndpoint}
-            onChange={e => setLocalEndpoint(e.target.value)}
-          />
-        </div>
-      )}
-
       {saveError && (
-        <div style={{ display: 'flex', gap: 6, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-error-text)', alignItems: 'center' }}>
+        <div className="rf-set-error">
           <AlertCircle size={13} /> {saveError}
         </div>
       )}
 
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div className="rf-set-actions">
         <button className="rf-btn rf-btn--secondary rf-btn--sm" type="submit" disabled={saving}>
           {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : <><Save size={13} /> Save Settings</>}
         </button>
@@ -210,25 +268,25 @@ function AISettingsSection({ authedFetch, cachedSettings, cachedLoading }) {
 
       {/* Test result timeline */}
       {testResult && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', borderRadius: 'var(--rf-radius-md)', background: 'var(--rf-bg-root)', border: `1px solid ${testResult.ok ? 'var(--rf-border-success, var(--rf-border-subtle))' : 'var(--rf-border-error, var(--rf-border-subtle))'}`, fontSize: 'var(--rf-text-sm)' }}>
+        <div className={`rf-test-result ${testResult.ok ? 'rf-test-result--ok' : 'rf-test-result--error'}`}>
           {/* Step-by-step timeline */}
           {(testResult.steps || []).map((s, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <div key={i} className="rf-test-result__step">
               {s.ok
-                ? <CheckCircle2 size={13} style={{ color: 'var(--rf-success)', flexShrink: 0, marginTop: 1 }} />
-                : <XCircle size={13} style={{ color: 'var(--rf-error)', flexShrink: 0, marginTop: 1 }} />
+                ? <CheckCircle2 size={13} />
+                : <XCircle size={13} />
               }
               <div>
-                <span style={{ color: s.ok ? 'var(--rf-text-secondary)' : 'var(--rf-error-text)' }}>{s.name}</span>
-                {s.error && <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-error-text)', marginTop: 2 }}>{s.error}</div>}
+                <span>{s.name}</span>
+                {s.error && <div className="rf-test-result__error">{s.error}</div>}
               </div>
             </div>
           ))}
           {/* Final status */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: (testResult.steps || []).length ? 4 : 0, paddingTop: (testResult.steps || []).length ? 6 : 0, borderTop: (testResult.steps || []).length ? '1px solid var(--rf-border-subtle)' : 'none' }}>
+          <div className="rf-test-result__final">
             {testResult.ok
-              ? <><CheckCircle2 size={13} style={{ color: 'var(--rf-success)', flexShrink: 0, marginTop: 1 }} /><span style={{ color: 'var(--rf-success-text)', fontWeight: 600 }}>{testResult.message}</span></>
-              : <><WifiOff size={13} style={{ color: 'var(--rf-error)', flexShrink: 0, marginTop: 1 }} /><span style={{ color: 'var(--rf-error-text)' }}>{testResult.error}</span></>
+              ? <><CheckCircle2 size={13} /><span>{testResult.message}</span></>
+              : <><WifiOff size={13} /><span>{testResult.error}</span></>
             }
           </div>
         </div>
@@ -261,24 +319,13 @@ const FORMAT_OPTIONS = [
 
 function RadioGroup({ label, options, value, onChange }) {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'var(--rf-sp-3)',
-      padding: 'var(--rf-sp-4)',
-      background: 'var(--rf-bg-root)',
-      borderRadius: 'var(--rf-radius-md)',
-      border: '1px solid var(--rf-border-subtle)',
-    }}>
-      <div className="rf-label" style={{ marginBottom: 0 }}>{label}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-2)' }}>
+    <div className="rf-choice-card">
+      <div className="rf-choice-card__label">{label}</div>
+      <div className="rf-choice-card__options">
         {options.map(opt => (
-          <label key={opt.value} className="rf-radio-label" style={{
-            fontSize: 'var(--rf-text-sm)',
-            color: value === opt.value ? 'var(--rf-text)' : 'var(--rf-text-secondary)',
-          }}>
+          <label key={opt.value} className={`rf-choice-option${value === opt.value ? ' rf-choice-option--active' : ''}`}>
             <input type="radio" name={label} value={opt.value} checked={value === opt.value} onChange={() => onChange(opt.value)} />
-            {opt.label}
+            <span>{opt.label}</span>
           </label>
         ))}
       </div>
@@ -324,39 +371,232 @@ function AIPersonalizationSection({ authedFetch, initialPrefs, initialSystemProm
   const charCount = systemPrompt.length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-5)' }}>
+    <div className="rf-personalization">
       {/* Radio groups in a 3-column grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--rf-sp-4)' }}>
+      <div className="rf-personalization__grid">
         <RadioGroup label="Tone" options={TONE_OPTIONS} value={tone} onChange={setTone} />
         <RadioGroup label="Verbosity" options={VERBOSITY_OPTIONS} value={verbosity} onChange={setVerbosity} />
         <RadioGroup label="Format" options={FORMAT_OPTIONS} value={formatPreference} onChange={setFormatPreference} />
       </div>
 
       {/* System prompt — narrower width */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 480 }}>
-        <div className="rf-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>AI System Prompt <span style={{ fontWeight: 400, color: 'var(--rf-text-secondary)' }}>(optional)</span></span>
-          <span style={{ fontSize: 'var(--rf-text-xs)', color: charCount > 1800 ? 'var(--rf-error-text)' : 'var(--rf-text-secondary)' }}>{charCount}/2000</span>
+      <div className="rf-set-field rf-personalization__prompt">
+        <div className="rf-field-head">
+          <label className="rf-label">AI system prompt <span>(optional)</span></label>
+          <span className={`rf-field-count${charCount > 1800 ? ' rf-field-count--warn' : ''}`}>{charCount}/2000</span>
         </div>
         <textarea
-          className="rf-input"
           rows={4}
           maxLength={2000}
           placeholder="Optional. Style or tone guidance the AI should follow. Avoid instructions that override grounding or accuracy rules."
           value={systemPrompt}
           onChange={e => setSystemPrompt(e.target.value)}
-          style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'var(--rf-text-sm)' }}
+          className="rf-input rf-set-textarea"
         />
       </div>
 
-      <div>
+      <div className="rf-set-actions rf-set-actions--stacked">
         <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={handleSave} disabled={saving}>
           {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : saved ? <><CheckCheck size={13} /> Saved</> : <><Save size={13} /> Save Preferences</>}
         </button>
-        <p className="rf-settings__help" style={{ marginTop: 'var(--rf-sp-2)' }}>
+        <p className="rf-settings__help">
           These preferences are passed to the AI when generating resumes, cover letters, and HR emails.
         </p>
       </div>
+    </div>
+  );
+}
+
+function GmailSettingsPanel({
+  gmailConnected,
+  gmailActionLoading,
+  connectGmail,
+  confirmDisconnectGmail,
+  confirmReconnectGmail,
+  senderName,
+  setSenderName,
+  savedSenderName,
+  savingSenderName,
+  saveSenderPreference,
+  grantedScopes,
+  requiredScopes,
+}) {
+  const scopesGranted = grantedScopes || [];
+  const visibleScopes = (requiredScopes || []).filter(scope => scope !== 'openid');
+
+  return (
+    <div className="rf-settings-panel-stack">
+      <section className="rf-settings-module rf-settings-module--split">
+        <div className="rf-settings-module__copy">
+          <span className="rf-settings-kicker">OAuth status</span>
+          <h3>{gmailConnected ? 'Gmail is ready to send' : 'Gmail is not connected'}</h3>
+          <p>
+            ReachFlow sends through Gmail OAuth, so your password never touches the app.
+            Reconnect when Google asks for a fresh grant or a permission goes missing.
+          </p>
+        </div>
+        <div className="rf-settings-action-stack">
+          {gmailConnected ? (
+            <button type="button" className="rf-btn rf-btn--danger rf-btn--sm" onClick={confirmDisconnectGmail} disabled={gmailActionLoading}>
+              {gmailActionLoading ? <><Loader size={13} className="rf-spin" /> Working…</> : <><WifiOff size={13} /> Disconnect</>}
+            </button>
+          ) : (
+            <button type="button" className="rf-btn rf-btn--primary rf-btn--sm" onClick={connectGmail} disabled={gmailActionLoading}>
+              {gmailActionLoading ? <><Loader size={13} className="rf-spin" /> Connecting…</> : <><Mail size={13} /> Connect Gmail</>}
+            </button>
+          )}
+          <button type="button" className="rf-btn rf-btn--secondary rf-btn--sm" onClick={confirmReconnectGmail} disabled={gmailActionLoading}>
+            <Wifi size={13} /> Reconnect
+          </button>
+        </div>
+      </section>
+
+      <section className="rf-settings-module">
+        <div className="rf-settings-module__head">
+          <div>
+            <span className="rf-settings-kicker">Identity</span>
+            <h3>Sender display name</h3>
+          </div>
+        </div>
+        <div className="rf-settings-input-line">
+          <input
+            className="rf-input"
+            value={senderName}
+            onChange={e => setSenderName(e.target.value)}
+            placeholder="Optional, e.g. Jay Prajapati"
+          />
+          <button
+            type="button"
+            className="rf-btn rf-btn--secondary rf-btn--sm"
+            onClick={saveSenderPreference}
+            disabled={savingSenderName || senderName.trim() === savedSenderName}
+          >
+            {savingSenderName ? <><Loader size={13} className="rf-spin" /> Saving…</> : <><Save size={13} /> Save</>}
+          </button>
+        </div>
+        <p className="rf-settings__help">
+          This appears as the From name on outgoing emails. Leave it empty to use the Gmail account name.
+        </p>
+      </section>
+
+      <section className="rf-settings-module">
+        <div className="rf-settings-module__head">
+          <div>
+            <span className="rf-settings-kicker">Permissions</span>
+            <h3>Google scopes</h3>
+          </div>
+          {gmailConnected && <SettingsStatus label="Granted by Google" tone="ok" />}
+        </div>
+
+        {gmailConnected && scopesGranted.length > 0 ? (
+          <>
+            <div className="rf-scope-list">
+              {visibleScopes.map(scope => {
+                const short = scope.startsWith('https://') ? scope.split('/').pop() : scope;
+                const granted = scopesGranted.includes(scope);
+                return (
+                  <div key={scope} className={`rf-scope-item ${granted ? 'rf-scope-item--granted' : 'rf-scope-item--missing'}`}>
+                    {granted ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                    <span className="rf-scope-item__name">{short}</span>
+                    <span className="rf-scope-item__status">{granted ? 'Granted' : 'Missing'}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="rf-settings__help">If a permission is missing, reconnect Gmail and approve the Google prompt.</p>
+          </>
+        ) : (
+          <div className="rf-settings-empty">
+            <WifiOff size={16} />
+            <span>Connect Gmail to review the permissions ReachFlow can use.</span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AIEnginePanel({ authedFetch, aiSettings, aiSettingsLoading, llmValid, llmConfigured }) {
+  return (
+    <div className="rf-settings-panel-stack">
+      <section className="rf-settings-module rf-settings-module--split">
+        <div className="rf-settings-module__copy">
+          <span className="rf-settings-kicker">Provider status</span>
+          <h3>{llmValid ? 'AI tools are unlocked' : llmConfigured ? 'One test away' : 'Bring your own provider'}</h3>
+          <p>
+            Resume Lab and DSA Analysis only run after your selected provider has been saved and validated.
+            No shared fallback key is used.
+          </p>
+        </div>
+        <SettingsStatus
+          label={llmValid ? 'Validated' : llmConfigured ? 'Test needed' : 'Not configured'}
+          tone={llmValid ? 'ok' : llmConfigured ? 'warn' : 'error'}
+        />
+      </section>
+
+      <section className="rf-settings-module">
+        <div className="rf-settings-module__head">
+          <div>
+            <span className="rf-settings-kicker">Configuration</span>
+            <h3>Model routing</h3>
+          </div>
+        </div>
+        <AISettingsSection authedFetch={authedFetch} cachedSettings={aiSettings} cachedLoading={aiSettingsLoading} />
+      </section>
+    </div>
+  );
+}
+
+function VoicePanel({ authedFetch, aiSettings }) {
+  return (
+    <div className="rf-settings-panel-stack">
+      <section className="rf-settings-module rf-settings-module--split">
+        <div className="rf-settings-module__copy">
+          <span className="rf-settings-kicker">Defaults</span>
+          <h3>Make generated writing sound right</h3>
+          <p>
+            These preferences guide resumes, cover letters, HR emails, and other AI-generated text.
+            They can still be overridden inside individual workflows.
+          </p>
+        </div>
+        <SettingsStatus label="Optional" tone="neutral" />
+      </section>
+
+      <section className="rf-settings-module">
+        <AIPersonalizationSection
+          authedFetch={authedFetch}
+          initialPrefs={aiSettings?.personalizationPrefs}
+          initialSystemPrompt={aiSettings?.systemPrompt}
+        />
+      </section>
+    </div>
+  );
+}
+
+function AccountPanel({ confirmLogout, deleteMyAccount }) {
+  return (
+    <div className="rf-settings-account-grid">
+      <section className="rf-settings-module rf-settings-module--split">
+        <div className="rf-settings-module__copy">
+          <span className="rf-settings-kicker">Session</span>
+          <h3>Sign out on this device</h3>
+          <p>Use this when you are done working or switching accounts.</p>
+        </div>
+        <button type="button" className="rf-btn rf-btn--secondary rf-btn--sm" onClick={confirmLogout}>
+          <LogOut size={13} /> Log out
+        </button>
+      </section>
+
+      <section className="rf-settings-module rf-settings-module--danger rf-settings-module--split">
+        <div className="rf-settings-module__copy">
+          <span className="rf-settings-kicker">Permanent</span>
+          <h3>Delete workspace data</h3>
+          <p>Deletes your account, contacts, applications, resumes, and related data. This cannot be undone.</p>
+        </div>
+        <button type="button" className="rf-btn rf-btn--danger rf-btn--sm" onClick={deleteMyAccount}>
+          <Trash2 size={13} /> Delete account
+        </button>
+      </section>
     </div>
   );
 }
@@ -376,215 +616,119 @@ export default function SettingsPage() {
   const llmValid = aiSettings?.isValid === true;
   const llmConfigured = !!aiSettings?.configured;
 
-  // Sticky "jump to" index with scroll-spy.
-  const [activeSection, setActiveSection] = useState(SETTINGS_SECTIONS[0].id);
-  const sectionRefs = useRef({});
-  const setSectionRef = (id) => (el) => { sectionRefs.current[id] = el; };
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter(e => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveSection(visible[0].target.id);
-      },
-      { rootMargin: '-72px 0px -68% 0px', threshold: 0 }
-    );
-    SETTINGS_SECTIONS.forEach(s => {
-      const el = sectionRefs.current[s.id];
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
-  }, []);
-
-  const jumpTo = (id) => {
-    sectionRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const [activePanel, setActivePanel] = useState(SETTINGS_PANELS[0].id);
+  const panels = useMemo(() => (
+    SETTINGS_PANELS.map(panel => ({
+      ...panel,
+      status: getPanelStatus(panel.id, { gmailConnected, llmValid, llmConfigured }),
+    }))
+  ), [gmailConnected, llmValid, llmConfigured]);
+  const activeMeta = panels.find(panel => panel.id === activePanel) || panels[0];
+  const ActiveIcon = activeMeta.Icon;
 
   return (
-    <div className="rf-page rf-page--wide rf-set-page">
-      <header className="rf-page-header">
-        <div className="rf-page-header__lead">
-          <div className="rf-page-header__eyebrow">
-            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} />
-            Settings
+    <div className="rf-page rf-page--wide rf-settings-page">
+      <div className="rf-settings-console">
+        <aside className="rf-settings-rail" aria-label="Settings navigation">
+          <div className="rf-settings-rail__brand">
+            <span>Settings</span>
+            <h1>Workspace controls</h1>
+            <p>Connection, AI, writing, and account controls without the clutter.</p>
           </div>
-          <h1 className="rf-page-header__title">Workspace settings</h1>
-          <p className="rf-page-header__subtitle">
-            Connections, AI, personalization, and account — grouped so you can find what you need.
-          </p>
-        </div>
-      </header>
 
-      <div className="rf-set-layout">
-        {/* Jump-to index (sticky rail on desktop, scrollable strip on mobile) */}
-        <nav className="rf-set-index" aria-label="Settings sections">
-          <span className="rf-set-index__label">On this page</span>
-          {SETTINGS_SECTIONS.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              className={`rf-set-index__link${activeSection === s.id ? ' rf-set-index__link--active' : ''}`}
-              aria-current={activeSection === s.id ? 'true' : undefined}
-              onClick={() => jumpTo(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="rf-set-content">
-          {/* ── Integrations ──────────────────────────────────────── */}
-          <section className="rf-set-group" id="integrations" ref={setSectionRef('integrations')}>
-            <div className="rf-set-group__head">
-              <h2 className="rf-set-group__title">Integrations</h2>
-              <p className="rf-set-group__desc">Connect Gmail for sending, and bring your own AI provider for Resume Lab.</p>
-            </div>
-
-            {/* Gmail card */}
-            <section className="rf-set-card">
-              <header className="rf-set-card__head">
-                <h3 className="rf-set-card__title"><Mail size={16} /> Gmail</h3>
-                <span className={`rf-badge ${gmailConnected ? 'rf-badge--success' : 'rf-badge--error'}`}>
-                  {gmailConnected ? 'Connected' : 'Disconnected'}
-                </span>
-              </header>
-
-              <div className="rf-set-row">
-                <div className="rf-set-row__body">
-                  <div className="rf-set-row__label">Connection</div>
-                  <p className="rf-set-row__help">
-                    ReachFlow sends from your Gmail using OAuth. Disconnecting revokes our access; we never store your password.
-                  </p>
-                </div>
-                <div className="rf-set-row__actions">
-                  {gmailConnected
-                    ? <button className="rf-btn rf-btn--danger rf-btn--sm" onClick={confirmDisconnectGmail} disabled={gmailActionLoading}>
-                        {gmailActionLoading ? <><Loader size={13} className="rf-spin" /> Working…</> : 'Disconnect'}
-                      </button>
-                    : <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={connectGmail} disabled={gmailActionLoading}>
-                        {gmailActionLoading ? <><Loader size={13} className="rf-spin" /> Connecting…</> : 'Connect Gmail'}
-                      </button>}
-                  <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={confirmReconnectGmail} disabled={gmailActionLoading} title="Force a fresh OAuth grant">
-                    Reconnect
-                  </button>
-                </div>
-              </div>
-
-              <hr className="rf-divider" />
-
-              <div className="rf-set-stack">
-                <label className="rf-label">Sender display name</label>
-                <div className="rf-set-inline-field">
-                  <input
-                    className="rf-input"
-                    style={{ flex: 1 }}
-                    value={senderName}
-                    onChange={e => setSenderName(e.target.value)}
-                    placeholder="Optional — e.g. Jay Prajapati"
-                  />
-                  <button
-                    className="rf-btn rf-btn--secondary rf-btn--sm"
-                    onClick={saveSenderPreference}
-                    disabled={savingSenderName || senderName.trim() === savedSenderName}
-                  >
-                    {savingSenderName ? <><Loader size={13} className="rf-spin" /> Saving…</> : <><Save size={13} /> Save</>}
-                  </button>
-                </div>
-                <p className="rf-set-row__help">
-                  Shown as the "From" name in outgoing emails. Leave empty to use your email address.
-                </p>
-              </div>
-
-              {gmailConnected && grantedScopes.length > 0 && (
-                <>
-                  <hr className="rf-divider" />
-                  <div className="rf-set-stack">
-                    <label className="rf-label">Google permissions</label>
-                    <div className="rf-scope-list">
-                      {requiredScopes.filter(s => s !== 'openid').map(scope => {
-                        const short = scope.startsWith('https://') ? scope.split('/').pop() : scope;
-                        const granted = grantedScopes.includes(scope);
-                        return (
-                          <div key={scope} className={`rf-scope-item ${granted ? 'rf-scope-item--granted' : 'rf-scope-item--missing'}`}>
-                            {granted ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                            <span style={{ flex: 1 }}>{short}</span>
-                            <span style={{ fontSize: 11, color: 'var(--rf-text-faint)' }}>
-                              {granted ? 'Granted' : 'Missing'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p className="rf-set-row__help">If a permission is missing, click <strong>Reconnect</strong> above and approve the prompt.</p>
-                  </div>
-                </>
-              )}
-            </section>
-
-            {/* AI provider card */}
-            <section className="rf-set-card">
-              <header className="rf-set-card__head">
-                <h3 className="rf-set-card__title"><Brain size={16} /> AI provider <span className="rf-set-card__sub">Resume Lab</span></h3>
-                <span className={`rf-badge ${llmValid ? 'rf-badge--success' : llmConfigured ? 'rf-badge--warning' : 'rf-badge--error'}`}>
-                  {llmValid ? 'Validated' : llmConfigured ? 'Untested' : 'Not configured'}
-                </span>
-              </header>
-              <p className="rf-set-row__help" style={{ marginTop: -4 }}>
-                Bring your own key. Resume Lab needs a validated provider before it will run — there is no shared fallback.
-              </p>
-              <hr className="rf-divider" />
-              <AISettingsSection authedFetch={authedFetch} cachedSettings={aiSettings} cachedLoading={aiSettingsLoading} />
-            </section>
-          </section>
-
-          {/* ── Personalization ───────────────────────────────────── */}
-          <section className="rf-set-group" id="personalization" ref={setSectionRef('personalization')}>
-            <div className="rf-set-group__head">
-              <h2 className="rf-set-group__title">Personalization</h2>
-              <p className="rf-set-group__desc">Default tone, length, and format for AI-generated resumes, cover letters, and outreach text.</p>
-            </div>
-            <section className="rf-set-card">
-              <header className="rf-set-card__head">
-                <h3 className="rf-set-card__title"><Sliders size={16} /> AI personalization</h3>
-              </header>
-              <hr className="rf-divider" />
-              <AIPersonalizationSection authedFetch={authedFetch} initialPrefs={aiSettings?.personalizationPrefs} initialSystemPrompt={aiSettings?.systemPrompt} />
-            </section>
-          </section>
-
-          {/* ── Account ───────────────────────────────────────────── */}
-          <section className="rf-set-group" id="account" ref={setSectionRef('account')}>
-            <div className="rf-set-group__head">
-              <h2 className="rf-set-group__title">Account</h2>
-              <p className="rf-set-group__desc">Sign out, or permanently remove your account and all of its data.</p>
-            </div>
-            <div className="rf-set-group__cols">
-              <section className="rf-set-card rf-set-card--inline">
-                <div>
-                  <h3 className="rf-set-card__title" style={{ marginBottom: 4 }}>Session</h3>
-                  <p className="rf-set-row__help">Sign out of your ReachFlow account on this device.</p>
-                </div>
-                <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={confirmLogout}>
-                  <LogOut size={13} /> Log out
+          <nav className="rf-settings-tabs" role="tablist" aria-label="Settings areas">
+            {panels.map(panel => {
+              const PanelIcon = panel.Icon;
+              const isActive = activePanel === panel.id;
+              return (
+                <button
+                  key={panel.id}
+                  id={`settings-tab-${panel.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`settings-panel-${panel.id}`}
+                  className={`rf-settings-tab${isActive ? ' rf-settings-tab--active' : ''}`}
+                  onClick={() => setActivePanel(panel.id)}
+                >
+                  <span className="rf-settings-tab__icon"><PanelIcon size={16} /></span>
+                  <span className="rf-settings-tab__label">
+                    <strong>{panel.label}</strong>
+                    <span>{panel.kicker}</span>
+                  </span>
+                  <SettingsStatus label={panel.status.label} tone={panel.status.tone} />
                 </button>
-              </section>
+              );
+            })}
+          </nav>
 
-              <section className="rf-set-card rf-set-card--inline rf-set-card--danger">
-                <div>
-                  <h3 className="rf-set-card__title" style={{ color: 'var(--rf-error-text)', marginBottom: 4 }}>
-                    <ShieldAlert size={16} /> Danger zone
-                  </h3>
-                  <p className="rf-set-row__help">Permanently delete your account, contacts, applications, and resumes. This cannot be undone.</p>
-                </div>
-                <button className="rf-btn rf-btn--danger rf-btn--sm" onClick={deleteMyAccount}>
-                  <Trash2 size={13} /> Delete account
-                </button>
-              </section>
+          <div className="rf-settings-rail__footer">
+            <div>
+              <span>Gmail</span>
+              <strong>{gmailConnected ? 'Connected' : 'Disconnected'}</strong>
             </div>
+            <div>
+              <span>AI</span>
+              <strong>{llmValid ? 'Validated' : llmConfigured ? 'Needs test' : 'Not set'}</strong>
+            </div>
+          </div>
+        </aside>
+
+        <main className="rf-settings-workbench">
+          <header className="rf-settings-mast">
+            <span className={`rf-settings-mast__icon rf-settings-mast__icon--${activeMeta.status.tone}`}>
+              <ActiveIcon size={22} />
+            </span>
+            <div className="rf-settings-mast__copy">
+              <span>{activeMeta.kicker}</span>
+              <h2>{activeMeta.title}</h2>
+              <p>{activeMeta.description}</p>
+            </div>
+            <SettingsStatus label={activeMeta.status.label} tone={activeMeta.status.tone} />
+          </header>
+
+          <section
+            id={`settings-panel-${activeMeta.id}`}
+            className="rf-settings-panel"
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${activeMeta.id}`}
+          >
+            {activePanel === 'gmail' && (
+              <GmailSettingsPanel
+                gmailConnected={gmailConnected}
+                gmailActionLoading={gmailActionLoading}
+                connectGmail={connectGmail}
+                confirmDisconnectGmail={confirmDisconnectGmail}
+                confirmReconnectGmail={confirmReconnectGmail}
+                senderName={senderName}
+                setSenderName={setSenderName}
+                savedSenderName={savedSenderName}
+                savingSenderName={savingSenderName}
+                saveSenderPreference={saveSenderPreference}
+                grantedScopes={grantedScopes}
+                requiredScopes={requiredScopes}
+              />
+            )}
+
+            {activePanel === 'ai' && (
+              <AIEnginePanel
+                authedFetch={authedFetch}
+                aiSettings={aiSettings}
+                aiSettingsLoading={aiSettingsLoading}
+                llmValid={llmValid}
+                llmConfigured={llmConfigured}
+              />
+            )}
+
+            {activePanel === 'voice' && (
+              <VoicePanel authedFetch={authedFetch} aiSettings={aiSettings} />
+            )}
+
+            {activePanel === 'account' && (
+              <AccountPanel confirmLogout={confirmLogout} deleteMyAccount={deleteMyAccount} />
+            )}
           </section>
-        </div>
+        </main>
       </div>
     </div>
   );
