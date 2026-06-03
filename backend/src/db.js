@@ -380,6 +380,27 @@ const aiSettingsSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
+// DSA Lab: a saved problem analysis (and optional code review). Problem text and
+// user code are stored plaintext — they carry no personal data, consistent with
+// ResumeAnalysis.jobDescriptionRaw. `result` holds the full analysis JSON.
+const dsaAnalysisSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    problemStatement: { type: String, default: '' },
+    userCode: { type: String, default: '' },
+    language: { type: String, enum: ['java', 'python'], default: 'java' },
+    hasUserCode: { type: Boolean, default: false },
+    problemTitle: { type: String, trim: true, default: '' },
+    result: { type: mongoose.Schema.Types.Mixed, default: null },
+    isOptimal: { type: Boolean, default: null },
+    status: { type: String, enum: ['analyzed', 'failed'], default: 'analyzed' },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+dsaAnalysisSchema.index({ userId: 1 });
+dsaAnalysisSchema.index({ userId: 1, createdAt: -1 });
+
 const User = mongoose.model('User', userSchema, 'reachflow_users');
 const Variable = mongoose.model('Variable', variableSchema, 'reachflow_variables');
 const Campaign = mongoose.model('Campaign', campaignSchema, 'reachflow_outreach_items');
@@ -392,6 +413,7 @@ const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSche
 const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema, 'reachflow_resume_analyses');
 const GeneratedResume = mongoose.model('GeneratedResume', generatedResumeSchema, 'reachflow_generated_resumes');
 const AISettings = mongoose.model('AISettings', aiSettingsSchema, 'reachflow_ai_settings');
+const DsaAnalysis = mongoose.model('DsaAnalysis', dsaAnalysisSchema, 'reachflow_dsa_analyses');
 const Roadmap = mongoose.model('Roadmap', roadmapSchema, 'reachflow_roadmaps');
 const RoadmapStage = mongoose.model('RoadmapStage', roadmapStageSchema, 'reachflow_roadmap_stages');
 const RoadmapItem = mongoose.model('RoadmapItem', roadmapItemSchema, 'reachflow_roadmap_items');
@@ -698,6 +720,7 @@ module.exports = {
   ResumeAnalysis,
   GeneratedResume,
   AISettings,
+  DsaAnalysis,
   Roadmap,
   RoadmapStage,
   RoadmapItem,

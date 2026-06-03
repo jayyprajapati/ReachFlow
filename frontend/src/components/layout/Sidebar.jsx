@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  LayoutGrid, PenLine, Briefcase, Users, FileText, Compass,
+  LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Binary,
   Search, ChevronsLeft, ChevronsRight,
   LogOut, XCircle, CheckCircle2,
   Sun, Moon, Settings, MailWarning, Sparkles, Lock,
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { path: '/pipeline',   label: 'Applications',  icon: Briefcase },
   { path: '/contacts',   label: 'Contacts',      icon: Users },
   { path: '/resume-lab', label: 'Resume Lab',    icon: FileText },
+  { path: '/dsa-lab',    label: 'DSA Lab',       icon: Binary },
   { path: '/roadmaps',   label: 'Roadmaps',      icon: Compass },
 ];
 

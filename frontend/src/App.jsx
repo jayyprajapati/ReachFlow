@@ -13,6 +13,7 @@ import HistoryPage from './pages/HistoryPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import RoadmapLabPage from './pages/RoadmapLab/index.jsx';
 import ResumeLabPage from './pages/ResumeLab/index.jsx';
+import DsaLabPage from './pages/DsaLab/index.jsx';
 import AboutPage from './components/AboutPage.jsx';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage.jsx';
 import TermsOfUsePage from './components/TermsOfUsePage.jsx';
@@ -33,6 +34,7 @@ function routeTitle(path, appUser, authLoading) {
     case cleanPath === '/history':             return `History - ${TITLE_SUFFIX}`;
     case cleanPath === '/settings':            return `Settings - ${TITLE_SUFFIX}`;
     case cleanPath.startsWith('/resume-lab'):  return `Resume Lab - ${TITLE_SUFFIX}`;
+    case cleanPath.startsWith('/dsa-lab'):     return `DSA Lab - ${TITLE_SUFFIX}`;
     case cleanPath.startsWith('/roadmaps'):    return `Roadmaps - ${TITLE_SUFFIX}`;
     case cleanPath === '/about':               return `About - ${TITLE_SUFFIX}`;
     case cleanPath === '/privacy-policy':      return `Privacy Policy - ${TITLE_SUFFIX}`;
@@ -53,6 +55,7 @@ function PageRouter() {
     case path === '/history':             return <HistoryPage />;
     case path === '/settings':            return <SettingsPage />;
     case path.startsWith('/resume-lab'):  return <ResumeLabPage />;
+    case path.startsWith('/dsa-lab'):     return <DsaLabPage />;
     case path.startsWith('/roadmaps'):    return <RoadmapLabPage />;
     default:                              return <HomePage />;
   }

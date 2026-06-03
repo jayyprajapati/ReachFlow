@@ -253,6 +253,100 @@ ${bodyHtml}
   return { system, prompt };
 }
 
+// ── DSA / algorithm analysis ──────────────────────────────────────────────────
+// Two modes from one schema:
+//   • problem only        → 2–3 approaches (brute force → optimal), each with
+//                           how-to-think, simple explanation, complexity, and
+//                           Java + Python code.
+//   • problem + user code → the above PLUS a review of the user's code
+//                           (correctness, bugs, improvements, its complexity, and
+//                           whether it's already optimal).
+// The model also gates non-DSA input: if the text isn't a genuine algorithmic /
+// data-structures problem it must refuse with is_dsa_problem=false + a reason.
+
+const DSA_LANGUAGES = ['java', 'python'];
+
+function dsaAnalysisPrompt({ problemStatement, userCode, language }) {
+  const hasCode = !!(userCode && String(userCode).trim());
+  const lang = DSA_LANGUAGES.includes(language) ? language : 'java';
+
+  const system =
+    'You are an expert competitive-programming and Data Structures & Algorithms ' +
+    'tutor. You explain in plain, simple language a beginner can follow — avoid ' +
+    'jargon, and when a technical term is unavoidable, explain it in a few words.\n\n' +
+    'STEP 1 — GATEKEEP: First decide whether the user input is a genuine ' +
+    'algorithmic / data-structures problem (something with inputs, expected ' +
+    'output, and an algorithm/efficiency angle — e.g. arrays, strings, trees, ' +
+    'graphs, DP, searching/sorting, etc.). If it is NOT a DSA problem (e.g. a ' +
+    'general coding/setup question, an essay, trivia, or nonsense), respond with ' +
+    'ONLY this JSON and nothing else: ' +
+    '{ "is_dsa_problem": false, "rejection_reason": "<one short sentence on why>" }.\n\n' +
+    'STEP 2 — If it IS a DSA problem, analyze it. Always provide 2–3 distinct ' +
+    'approaches ordered from brute force to most optimal, each with working, ' +
+    'compilable code in BOTH Java and Python, and its time & space complexity. ' +
+    (hasCode
+      ? 'The user ALSO submitted their own solution (in ' + lang + '): review it — ' +
+        'state whether it is correct, list concrete bugs/edge-cases it misses, ' +
+        'suggest improvements, give ITS time & space complexity, and decide whether ' +
+        'it is already optimal. If it is already optimal, set review.is_optimal=true ' +
+        'and put a brief, encouraging acknowledgement in review.optimality_note ' +
+        '(do not invent a "better" solution than one that is already optimal). If it ' +
+        'is not optimal, the optimal approach in "approaches" is the improved version.'
+      : 'No user code was submitted — focus on teaching how to think about the ' +
+        'problem from brute force toward the optimal solution.') +
+    '\n\n' + JSON_RULE;
+
+  const shape = `Return this exact JSON shape:
+{
+  "is_dsa_problem": true,
+  "rejection_reason": "",
+  "problem_title": "",
+  "problem_summary": "",
+  "has_user_code": ${hasCode},
+  "review": ${hasCode ? `{
+    "language": "${lang}",
+    "verdict": "correct | incorrect | partially_correct",
+    "verdict_explanation": "",
+    "bugs": [ { "issue": "", "fix": "" } ],
+    "improvements": ["string"],
+    "complexity": { "time": "O(...)", "space": "O(...)", "explanation": "" },
+    "is_optimal": false,
+    "optimality_note": ""
+  }` : 'null'},
+  "approaches": [
+    {
+      "name": "Brute force",
+      "is_optimal": false,
+      "how_to_think": "",
+      "explanation": "",
+      "complexity": { "time": "O(...)", "space": "O(...)", "explanation": "" },
+      "code": { "java": "", "python": "" }
+    }
+  ],
+  "optimal_complexity": { "time": "O(...)", "space": "O(...)" }
+}
+Rules:
+- "approaches" MUST be ordered brute force → optimal and contain 2 or 3 items; mark the best one with "is_optimal": true.
+- Every approach's "code" MUST include BOTH a "java" and a "python" implementation that actually solves the problem (not pseudocode).
+- "how_to_think" is the intuition/derivation for reaching that approach, in simple words.
+- "complexity.explanation" briefly says WHY the time/space bounds hold, without heavy jargon.
+- "optimal_complexity" mirrors the complexity of the approach marked is_optimal.
+- Keep all code as valid JSON string values: escape newlines and quotes properly.${hasCode ? '\n- "review" reflects ONLY the user\'s submitted code, not the approaches.' : '\n- "review" MUST be null when no user code is provided.'}`;
+
+  const codeBlock = hasCode
+    ? `\n\nUSER'S SUBMITTED SOLUTION (${lang}):\n"""\n${userCode}\n"""`
+    : '';
+
+  const prompt = `${shape}
+
+PROBLEM STATEMENT:
+"""
+${problemStatement}
+"""${codeBlock}`;
+
+  return { system, prompt };
+}
+
 module.exports = {
   buildStyleBlock,
   resumeExtractPrompt,
@@ -261,4 +355,6 @@ module.exports = {
   coverLetterPrompt,
   hrEmailPrompt,
   rewritePrompt,
+  dsaAnalysisPrompt,
+  DSA_LANGUAGES,
 };
