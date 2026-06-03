@@ -1,14 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import {
-  UploadCloud, FileText, Trash2, Tag,
-  RefreshCw, Loader, CheckCircle, AlertCircle, X, Search,
-  Pencil, ChevronDown,
+  UploadCloud, FileText, Trash2,
+  Loader, CheckCircle, AlertCircle, X, Search,
+  Pencil,
 } from 'lucide-react';
 
-const TYPE_OPTIONS = ['frontend', 'backend', 'fullstack', 'custom'];
 const STATUS_LABEL = { parsed: 'Parsed', uploaded: 'Processing', failed: 'Failed' };
-const TYPE_LABEL = { frontend: 'Frontend', backend: 'Backend', fullstack: 'Fullstack', custom: 'Custom' };
 
 function fmt(iso) {
   if (!iso) return '';
@@ -59,20 +57,11 @@ function UploadBanner({ state, onDismiss }) {
   );
 }
 
-// ── Resume Card ───────────────────────────────────────────────────────────────
+// ── Resume Row ────────────────────────────────────────────────────────────────
 
-function ResumeCard({ resume, onDelete, onUpdate }) {
+function ResumeRow({ resume, onDelete, onUpdate }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleVal, setTitleVal] = useState(resume.title || '');
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const actionsRef = useRef(null);
-
-  useEffect(() => {
-    if (!actionsOpen) return;
-    const fn = (e) => { if (!actionsRef.current?.contains(e.target)) setActionsOpen(false); };
-    document.addEventListener('mousedown', fn);
-    return () => document.removeEventListener('mousedown', fn);
-  }, [actionsOpen]);
 
   function commitTitle() {
     const t = titleVal.trim();
@@ -81,80 +70,71 @@ function ResumeCard({ resume, onDelete, onUpdate }) {
   }
 
   return (
-    <div className="rl-resume-card">
-      <div className="rl-resume-card__header">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {editingTitle ? (
-            <input
-              className="rl-inline-input rl-resume-card__title"
-              value={titleVal}
-              onChange={e => setTitleVal(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={e => { if (e.key === 'Enter') commitTitle(); if (e.key === 'Escape') setEditingTitle(false); }}
-              autoFocus
-            />
-          ) : (
-            <div
-              className="rl-resume-card__title"
-              title="Click to rename"
-              style={{ cursor: 'text' }}
-              onClick={() => { setEditingTitle(true); setTitleVal(resume.title || ''); }}
-            >
-              {resume.title || resume.fileName || 'Untitled'}
-            </div>
+    <div className="rl-resume-row">
+      <div className="rl-resume-row__icon">
+        <FileText size={16} />
+      </div>
+
+      <div className="rl-resume-row__main">
+        {editingTitle ? (
+          <input
+            className="rl-inline-input rl-resume-row__title"
+            value={titleVal}
+            onChange={e => setTitleVal(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={e => { if (e.key === 'Enter') commitTitle(); if (e.key === 'Escape') setEditingTitle(false); }}
+            autoFocus
+          />
+        ) : (
+          <div
+            className="rl-resume-row__title"
+            title="Click to rename"
+            onClick={() => { setEditingTitle(true); setTitleVal(resume.title || ''); }}
+          >
+            {resume.title || resume.fileName || 'Untitled'}
+          </div>
+        )}
+        <div className="rl-resume-row__meta">
+          <span>{fmt(resume.uploadedAt)}</span>
+          {resume.fileSize > 0 && (
+            <><span>·</span><span>{(resume.fileSize / 1024).toFixed(0)} KB</span></>
           )}
         </div>
       </div>
 
-      <div className="rl-resume-card__badges">
-        <span className={`rl-badge rl-badge--${resume.type}`}>{TYPE_LABEL[resume.type] || resume.type}</span>
-        <span className={`rl-badge rl-badge--${resume.status}`}>{STATUS_LABEL[resume.status] || resume.status}</span>
-      </div>
+      <span className={`rl-badge rl-badge--${resume.status}`}>{STATUS_LABEL[resume.status] || resume.status}</span>
 
-      <div className="rl-resume-card__tags">
-        {(resume.tags || []).map(t => (
-          <span key={t} className="rl-tag">{t}</span>
-        ))}
-      </div>
-
-      <div className="rl-resume-card__meta">
-        <span>{fmt(resume.uploadedAt)}</span>
-        {resume.fileSize > 0 && (
-          <><span>·</span><span>{(resume.fileSize / 1024).toFixed(0)} KB</span></>
-        )}
-      </div>
-
-      <div className="rl-resume-card__actions">
+      <div className="rl-resume-row__actions">
         <button
           className="rl-card-btn"
           onClick={() => { setEditingTitle(true); setTitleVal(resume.title || ''); }}
           title="Rename"
         >
-          <Pencil size={11} />
+          <Pencil size={12} />
         </button>
         <button
           className="rl-card-btn rl-card-btn--danger"
           onClick={() => onDelete(resume.id, resume.title)}
           title="Delete resume"
         >
-          <Trash2 size={11} />
+          <Trash2 size={12} />
         </button>
       </div>
     </div>
   );
 }
 
-// ── Skeleton cards ────────────────────────────────────────────────────────────
+// ── Skeleton rows ─────────────────────────────────────────────────────────────
 
-function SkeletonCard() {
+function SkeletonRow() {
   return (
-    <div className="rl-resume-card">
-      <div className="rl-skeleton" style={{ height: 18, width: '70%', marginBottom: 8 }} />
-      <div style={{ display: 'flex', gap: 6 }}>
-        <div className="rl-skeleton" style={{ height: 18, width: 64, borderRadius: 20 }} />
-        <div className="rl-skeleton" style={{ height: 18, width: 52, borderRadius: 20 }} />
+    <div className="rl-resume-row">
+      <div className="rl-skeleton" style={{ height: 32, width: 32, borderRadius: 8, flexShrink: 0 }} />
+      <div style={{ flex: 1 }}>
+        <div className="rl-skeleton" style={{ height: 15, width: '40%', marginBottom: 7 }} />
+        <div className="rl-skeleton" style={{ height: 11, width: '20%' }} />
       </div>
-      <div className="rl-skeleton" style={{ height: 12, width: '45%', marginTop: 6 }} />
+      <div className="rl-skeleton" style={{ height: 18, width: 56, borderRadius: 20 }} />
     </div>
   );
 }
@@ -168,7 +148,6 @@ export default function VaultPage() {
   } = useResumeLab();
 
   const [isDragging, setIsDragging] = useState(false);
-  const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const fileInputRef = useRef(null);
@@ -202,13 +181,10 @@ export default function VaultPage() {
   }
 
   const filtered = resumes.filter(r => {
-    const matchType = typeFilter === 'all' || r.type === typeFilter;
     const q = search.toLowerCase();
-    const matchSearch = !q
+    return !q
       || r.title?.toLowerCase().includes(q)
-      || r.fileName?.toLowerCase().includes(q)
-      || (r.tags || []).some(t => t.includes(q));
-    return matchType && matchSearch;
+      || r.fileName?.toLowerCase().includes(q);
   });
 
   const isUploading = uploadState.status === 'uploading';
@@ -287,20 +263,9 @@ export default function VaultPage() {
         </div>
       )}
 
-      {/* Filters + search */}
+      {/* Search */}
       {resumes.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-          <div className="rl-filter-bar" style={{ marginBottom: 0 }}>
-            {['all', ...TYPE_OPTIONS].map(t => (
-              <button
-                key={t}
-                className={`rl-filter-btn${typeFilter === t ? ' rl-filter-btn--active' : ''}`}
-                onClick={() => setTypeFilter(t)}
-              >
-                {t === 'all' ? 'All' : TYPE_LABEL[t]}
-              </button>
-            ))}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
           <div className="rl-search">
             <Search size={13} style={{ color: 'var(--rf-text-faint)', flexShrink: 0 }} />
             <input
@@ -317,18 +282,18 @@ export default function VaultPage() {
         </div>
       )}
 
-      {/* Resume grid */}
+      {/* Resume list */}
       {resumesLoading && resumes.length === 0 ? (
-        <div className="rl-resumes-grid">
-          {[...Array(3)].map((_, i) => <SkeletonCard key={i} />)}
+        <div className="rl-resumes-list">
+          {[...Array(3)].map((_, i) => <SkeletonRow key={i} />)}
         </div>
       ) : filtered.length === 0 && resumes.length > 0 ? (
         <div className="rl-empty">
           <div className="rl-empty__icon"><FileText size={22} /></div>
-          <p className="rl-empty__title">No resumes match your filter</p>
-          <p className="rl-empty__body">Try clearing the search or selecting a different type.</p>
-          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setSearch(''); setTypeFilter('all'); }}>
-            Clear filters
+          <p className="rl-empty__title">No resumes match your search</p>
+          <p className="rl-empty__body">Try a different search term.</p>
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setSearch('')}>
+            Clear search
           </button>
         </div>
       ) : resumes.length === 0 && !resumesLoading ? (
@@ -337,9 +302,9 @@ export default function VaultPage() {
           <p className="rl-empty__body">Upload your first resume above to start building your Career Profile.</p>
         </div>
       ) : (
-        <div className="rl-resumes-grid">
+        <div className="rl-resumes-list">
           {filtered.map(r => (
-            <ResumeCard
+            <ResumeRow
               key={r.id}
               resume={r}
               onDelete={requestDelete}

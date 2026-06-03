@@ -7,9 +7,9 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume, AISettings } = require('../db');
-const { decryptJson } = require('../utils/dataSecurity');
-const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateOptimizedResume, generateCoverLetter, generateHrEmail, CortexError, cortexDetail } = require('../services/cortexClient');
+const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume } = require('../db');
+const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateCoverLetter, generateHrEmail, deleteResumeVectors, deleteAllUserVectors, BrainError, brainDetail } = require('../services/brainClient');
+const { resolveUserLlm, isByokError } = require('../services/llmSettings');
 const { injectTemplate, compileToPdf, validateLatex } = require('../services/latexCompiler');
 
 const router = express.Router();
@@ -136,49 +136,8 @@ async function safeDeleteFile(filePath) {
   }
 }
 
-// Resolves the user's AI provider override from their saved AISettings.
-// Throws a typed error when no valid settings exist — enforces BYOK strictly.
-async function resolveUserLlm(userId) {
-  const doc = await AISettings.findOne({ userId });
-
-  if (!doc) {
-    const err = new Error(
-      'AI provider not configured. Go to Settings → AI · Resume Lab to add and test your API key before using Resume Lab.'
-    );
-    err.code = 'LLM_NOT_CONFIGURED';
-    throw err;
-  }
-
-  if (!doc.isValid) {
-    const err = new Error(
-      'AI provider connection not verified. Go to Settings → AI · Resume Lab and click "Test Connection" to validate your key.'
-    );
-    err.code = 'LLM_NOT_VALIDATED';
-    throw err;
-  }
-
-  const override = { provider: doc.provider };
-  if (doc.selectedModel) override.model = doc.selectedModel;
-  if (doc.provider === 'ollama_local' && doc.localEndpoint) override.base_url = doc.localEndpoint;
-  if (doc.apiKeyEncrypted) {
-    try {
-      const raw = decryptJson(doc.apiKeyEncrypted);
-      const key = typeof raw === 'string' ? raw : (raw?.key || '');
-      if (key) override.api_key = key;
-    } catch {
-      const err = new Error('API key decryption failed. Please re-save your API key in Settings.');
-      err.code = 'LLM_KEY_ERROR';
-      throw err;
-    }
-  }
-  override._personalizationPrefs = doc.personalizationPrefs || null;
-  override._userSystemPrompt = (doc.systemPrompt || '').trim() || null;
-  return override;
-}
-
-function isByokError(err) {
-  return err.code === 'LLM_NOT_CONFIGURED' || err.code === 'LLM_NOT_VALIDATED' || err.code === 'LLM_KEY_ERROR';
-}
+// BYOK resolution (resolveUserLlm + isByokError) lives in ../services/llmSettings
+// so every AI feature enforces a validated provider identically.
 
 // ── JD analysis in-memory cache ─────────────────────────────────────────────
 // Keyed by userId:profileVersion:sha256(jd)[:16] — avoids re-running the LLM
@@ -282,11 +241,11 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     resumeDoc.sectionedResumeSource = extractResult.sectioned_resume_source || null;
     console.log(`[resumelab] [latency] upload.extract=${Date.now() - _t0}ms userId:${userId} confidence:${extractResult.metadata?.confidence} cache_hit:${extractResult.metadata?.cache_hit || false}`);
   } catch (extractErr) {
-    const detail = cortexDetail(extractErr);
+    const detail = brainDetail(extractErr);
     console.error(`[resumelab] Extraction failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
     resumeDoc.status = 'failed';
     await resumeDoc.save();
-    if (extractErr instanceof CortexError && [400, 413, 415, 422, 429].includes(extractErr.status)) {
+    if (extractErr instanceof BrainError && [400, 413, 415, 422, 429].includes(extractErr.status)) {
       return res.status(extractErr.status).json({ error: detail });
     }
     return res.status(502).json({
@@ -308,12 +267,12 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     });
     console.log(`[resumelab] [latency] upload.merge=${Date.now() - _t1}ms userId:${userId}`);
   } catch (mergeErr) {
-    const detail = cortexDetail(mergeErr);
+    const detail = brainDetail(mergeErr);
     console.error(`[resumelab] Merge failed — userId: ${userId}, resumeId: ${resumeDoc._id}: ${detail}`);
     // Extraction succeeded — mark parsed so the user can trigger /profile/rebuild later.
     resumeDoc.status = 'parsed';
     await resumeDoc.save();
-    if (mergeErr instanceof CortexError && [400, 413, 415, 422, 429].includes(mergeErr.status)) {
+    if (mergeErr instanceof BrainError && [400, 413, 415, 422, 429].includes(mergeErr.status)) {
       return res.status(mergeErr.status).json({ error: detail });
     }
     return res.status(502).json({
@@ -443,7 +402,17 @@ router.delete('/resumes/:id', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Resume not found' });
 
     const { storagePath } = doc;
+    const vectorDocId = doc.parsedDocId || doc._id.toString();
     await Resume.deleteOne({ _id: id, userId });
+
+    // Best-effort: drop this resume's deduped vectors from Qdrant, scoped to
+    // (namespace=userId, doc_id) so it never touches another user/resume. A
+    // Brain outage must not fail the user's delete — the Mongo record is gone.
+    try {
+      await deleteResumeVectors({ userId: userId.toString(), docId: vectorDocId });
+    } catch (vecErr) {
+      console.warn(`[resumelab] DELETE /resumes/${id} — vector cleanup failed (orphaned in Qdrant): ${brainDetail(vecErr)}`);
+    }
 
     // Remove from canonical profile source list
     await CanonicalProfile.updateOne(
@@ -500,6 +469,49 @@ router.get('/profile', async (req, res) => {
   } catch (err) {
     console.error('[resumelab] GET /profile failed:', err.message);
     res.status(500).json({ error: err.message || 'Failed to load canonical profile' });
+  }
+});
+
+// ── DELETE /api/resumelab/profile ────────────────────────────────────────────
+// Nuclear option: wipes the user's entire Career Profile — every uploaded resume
+// (records + files on disk), the merged canonical profile, and all of the user's
+// vectors in Qdrant. History (analyses + generated) is intentionally left alone;
+// it is cleared separately via DELETE /history.
+
+router.delete('/profile', async (req, res) => {
+  const userId = req.user._id;
+  console.log(`[resumelab] DELETE /profile — userId: ${userId}`);
+
+  try {
+    const resumes = await Resume.find({ userId });
+
+    // Remove the canonical profile and all resume records first — the user's
+    // data is gone from Mongo even if file/vector cleanup below partially fails.
+    await Promise.all([
+      CanonicalProfile.deleteOne({ userId }),
+      Resume.deleteMany({ userId }),
+    ]);
+
+    // Best-effort file cleanup on disk.
+    await Promise.all(
+      resumes
+        .filter(r => r.storagePath)
+        .map(r => safeDeleteFile(r.storagePath))
+    );
+
+    // Best-effort: wipe every vector for this user (namespace-level). A Brain
+    // outage must not fail the delete — the Mongo records are already gone.
+    try {
+      await deleteAllUserVectors({ userId: userId.toString() });
+    } catch (vecErr) {
+      console.warn(`[resumelab] DELETE /profile — vector cleanup failed (orphaned in Qdrant): ${brainDetail(vecErr)}`);
+    }
+
+    console.log(`[resumelab] DELETE /profile — wiped ${resumes.length} resume(s) + profile, userId: ${userId}`);
+    res.json({ ok: true, deletedResumes: resumes.length });
+  } catch (err) {
+    console.error('[resumelab] DELETE /profile failed:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to delete profile' });
   }
 });
 
@@ -721,7 +733,7 @@ function toGeneratedFull(doc) {
 
 // Resolve the best base resume's extractedContent for a user.
 // Returns null if nothing usable is found.
-async function resolveBaseResume(userId, baseResumeId) {
+async function resolveBaseResume(userId, baseResumeId, llm) {
   let resume = null;
 
   if (baseResumeId && Types.ObjectId.isValid(baseResumeId)) {
@@ -745,6 +757,7 @@ async function resolveBaseResume(userId, baseResumeId) {
       filePath: resume.storagePath,
       userId: userId.toString(),
       docId: resume._id.toString(),
+      llm,
     });
     // Persist for future calls.
     await Resume.updateOne({ _id: resume._id }, { $set: { extractedContent } });
@@ -780,7 +793,7 @@ router.post('/analyze', async (req, res) => {
   const _ta0 = Date.now();
   const [profileDoc, baseResumeResult] = await Promise.all([
     CanonicalProfile.findOne({ userId }),
-    resolveBaseResume(userId, baseResumeId),
+    resolveBaseResume(userId, baseResumeId, llm),
   ]);
   console.log(`[resumelab] [latency] analyze.fetch=${Date.now() - _ta0}ms userId:${userId}`);
 
@@ -796,22 +809,18 @@ router.post('/analyze', async (req, res) => {
   } else {
     const _ta1 = Date.now();
     try {
-      const analyseLlm = { ...llm };
-      const analyseUserSystemPrompt = analyseLlm._userSystemPrompt || undefined;
-      delete analyseLlm._personalizationPrefs;
-      delete analyseLlm._userSystemPrompt;
-
+      // brainClient sanitizes the llm for the provider and applies the user's
+      // personalization/system-prompt internally — pass it through as-is.
       matchAnalysis = await analyzeResumeMatch({
         userId: userId.toString(),
         jobDescription: jd,
         canonicalProfile: profileDoc.canonicalProfile,
         baseResume: baseResumeResult?.extractedContent || undefined,
-        llm: analyseLlm,
-        userSystemPrompt: analyseUserSystemPrompt,
+        llm,
       });
       console.log(`[resumelab] [latency] analyze.llm=${Date.now() - _ta1}ms userId:${userId}`);
     } catch (err) {
-      const detail = cortexDetail(err);
+      const detail = brainDetail(err);
       console.error(`[resumelab] Analyze failed — userId: ${userId}: ${detail}`);
       return res.status(502).json({ error: 'Resume analysis failed. Please try again.', detail });
     }
@@ -890,6 +899,15 @@ const VALID_GENERATION_MODES = new Set(['canonical_only', 'modify_existing']);
 const VALID_AGGRESSIVENESS = new Set(['conservative', 'balanced', 'aggressive']);
 
 router.post('/generate', async (req, res) => {
+  // Tailored resume generation (LaTeX → PDF) is intentionally locked for now.
+  // The orchestration below is retained but dormant; analysis, cover letters,
+  // and HR emails remain fully available.
+  return res.status(423).json({
+    error: 'Tailored resume generation is temporarily disabled. Use JD analysis, cover letters, and HR emails for now.',
+    code: 'FEATURE_LOCKED',
+  });
+
+  /* eslint-disable no-unreachable */
   const userId = req.user._id;
   const {
     analysisId,
@@ -981,7 +999,7 @@ router.post('/generate', async (req, res) => {
     generatedContent = await generateOptimizedResume(_cortexArgs());
     console.log(`[resumelab] [latency] generate.llm=${Date.now() - _tg1}ms userId:${userId} scoreAfter:${generatedContent.match_score_improved}`);
   } catch (err) {
-    const detail = cortexDetail(err);
+    const detail = brainDetail(err);
     console.error(`[resumelab] Generation failed — userId: ${userId}, analysisId: ${analysisId}: ${detail}`);
     await GeneratedResume.create({
       userId,
@@ -1205,6 +1223,43 @@ router.get('/history', async (req, res) => {
   }
 });
 
+// ── DELETE /api/resumelab/history ────────────────────────────────────────────
+// Clears all of the user's history — every JD analysis and generated output
+// (resumes, cover letters, HR emails), plus any compiled PDFs on disk. Uploaded
+// resumes and the canonical profile are untouched (those live under /profile).
+
+router.delete('/history', async (req, res) => {
+  const userId = req.user._id;
+  console.log(`[resumelab] DELETE /history — userId: ${userId}`);
+
+  try {
+    const generated = await GeneratedResume.find({ userId }, { pdfPath: 1 });
+
+    const [genResult, analysisResult] = await Promise.all([
+      GeneratedResume.deleteMany({ userId }),
+      ResumeAnalysis.deleteMany({ userId }),
+    ]);
+
+    // Best-effort cleanup of any compiled PDFs on disk.
+    await Promise.all(
+      generated
+        .filter(g => g.pdfPath)
+        .map(g => safeDeleteFile(g.pdfPath))
+    );
+
+    const deleted = (genResult.deletedCount || 0) + (analysisResult.deletedCount || 0);
+    console.log(`[resumelab] DELETE /history — cleared ${deleted} record(s), userId: ${userId}`);
+    res.json({
+      ok: true,
+      deletedAnalyses: analysisResult.deletedCount || 0,
+      deletedGenerated: genResult.deletedCount || 0,
+    });
+  } catch (err) {
+    console.error('[resumelab] DELETE /history failed:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to clear history' });
+  }
+});
+
 // ── GET /api/resumelab/flow/:flowId ─────────────────────────────────────────
 // Returns the full analysis + latest generation for a given flowId.
 
@@ -1372,19 +1427,13 @@ router.post('/generate-cover-letter', async (req, res) => {
     const profile = await CanonicalProfile.findOne({ userId });
     const canonicalProfile = profile?.canonicalProfile || {};
 
-    const cleanLlm = { ...llm };
-    const userSystemPrompt = cleanLlm._userSystemPrompt || undefined;
-    delete cleanLlm._personalizationPrefs;
-    delete cleanLlm._userSystemPrompt;
-
     const result = await generateCoverLetter({
       userId: userId.toString(),
       jobDescription: analysis.jobDescriptionRaw || '',
       canonicalProfile,
-      llm: cleanLlm,
+      llm,
       analysisSummary: analysis.matchAnalysis || undefined,
       userPrompt: userPrompt || undefined,
-      userSystemPrompt,
     });
 
     const coverLetterText = result.cover_letter_text || result.text || '';
@@ -1402,7 +1451,7 @@ router.post('/generate-cover-letter', async (req, res) => {
 
     return res.json({ coverLetterText, wordCount: result.word_count || null });
   } catch (err) {
-    const detail = cortexDetail(err);
+    const detail = brainDetail(err);
     console.error(`[resumelab] generate-cover-letter failed — userId: ${userId}: ${detail}`);
     return res.status(502).json({ error: 'Cover letter generation failed.', detail });
   }
@@ -1433,19 +1482,13 @@ router.post('/generate-hr-email', async (req, res) => {
     const profile = await CanonicalProfile.findOne({ userId });
     const canonicalProfile = profile?.canonicalProfile || {};
 
-    const cleanLlm = { ...llm };
-    const userSystemPrompt = cleanLlm._userSystemPrompt || undefined;
-    delete cleanLlm._personalizationPrefs;
-    delete cleanLlm._userSystemPrompt;
-
     const result = await generateHrEmail({
       userId: userId.toString(),
       jobDescription: analysis.jobDescriptionRaw || '',
       canonicalProfile,
       recipientName: recipientName || null,
-      llm: cleanLlm,
+      llm,
       analysisSummary: analysis.matchAnalysis || undefined,
-      userSystemPrompt,
     });
 
     const subject = result.subject || '';
@@ -1464,7 +1507,7 @@ router.post('/generate-hr-email', async (req, res) => {
 
     return res.json({ subject, body, wordCount: result.word_count || null });
   } catch (err) {
-    const detail = cortexDetail(err);
+    const detail = brainDetail(err);
     console.error(`[resumelab] generate-hr-email failed — userId: ${userId}: ${detail}`);
     return res.status(502).json({ error: 'HR email generation failed.', detail });
   }

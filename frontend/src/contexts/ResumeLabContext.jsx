@@ -105,6 +105,7 @@ export function ResumeLabProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [rebuildLoading, setRebuildLoading] = useState(false);
+  const [deleteProfileLoading, setDeleteProfileLoading] = useState(false);
 
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -132,6 +133,32 @@ export function ResumeLabProvider({ children }) {
       setRebuildLoading(false);
     }
   }, [api, loadProfile, setNotice]);
+
+  // Wipes the entire Career Profile — all resumes, the canonical profile, and
+  // the user's Qdrant vectors. Resets local vault + profile state on success.
+  const deleteProfile = useCallback(async () => {
+    setDeleteProfileLoading(true);
+    try {
+      const data = await api.deleteProfile();
+      setProfile({
+        exists: false,
+        profileVersion: 0,
+        canonicalProfile: null,
+        sourceResumeIds: [],
+        lastMergedResumeId: null,
+        stats: { skills: 0, projects: 0, experience: 0, education: 0, certifications: 0 },
+        updatedAt: null,
+      });
+      setResumes([]);
+      setNotice({ type: 'success', message: `Career Profile deleted — ${data.deletedResumes} resume${data.deletedResumes !== 1 ? 's' : ''} removed.` });
+      return data;
+    } catch (err) {
+      setNotice({ type: 'error', message: err.message });
+      throw err;
+    } finally {
+      setDeleteProfileLoading(false);
+    }
+  }, [api, setNotice]);
 
   // ── JD Analysis ──────────────────────────────────────────────────────────
   const [analyses, setAnalyses] = useState([]);
@@ -282,6 +309,7 @@ export function ResumeLabProvider({ children }) {
   // ── History ──────────────────────────────────────────────────────────────
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [clearHistoryLoading, setClearHistoryLoading] = useState(false);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -295,6 +323,23 @@ export function ResumeLabProvider({ children }) {
     }
   }, [api, setNotice]);
 
+  // Clears all JD analyses + generated outputs. Leaves resumes/profile intact.
+  const clearHistory = useCallback(async () => {
+    setClearHistoryLoading(true);
+    try {
+      await api.clearHistory();
+      setHistory([]);
+      setAnalyses([]);
+      setGeneratedResumes([]);
+      setNotice({ type: 'success', message: 'History cleared.' });
+    } catch (err) {
+      setNotice({ type: 'error', message: err.message });
+      throw err;
+    } finally {
+      setClearHistoryLoading(false);
+    }
+  }, [api, setNotice]);
+
   const value = useMemo(() => ({
     // Raw API (for ad-hoc calls like getFlow)
     api,
@@ -304,8 +349,8 @@ export function ResumeLabProvider({ children }) {
     resumes, resumesLoading, uploadState,
     loadResumes, uploadResume, resetUploadState, updateResume, deleteResume,
     // Profile
-    profile, profileLoading, rebuildLoading,
-    loadProfile, rebuildProfile,
+    profile, profileLoading, rebuildLoading, deleteProfileLoading,
+    loadProfile, rebuildProfile, deleteProfile,
     // Analysis
     analyses, analysesLoading, activeAnalysis, analyzeLoading,
     loadAnalyses, analyzeJD, loadAnalysis, setActiveAnalysis,
@@ -318,14 +363,14 @@ export function ResumeLabProvider({ children }) {
     // Workspace
     jdText, setJdText, activeGenerated, setActiveGenerated,
     // History
-    history, historyLoading, loadHistory,
+    history, historyLoading, clearHistoryLoading, loadHistory, clearHistory,
   }), [
     api,
     aiSettings, aiSettingsLoading, loadAiSettings,
     resumes, resumesLoading, uploadState,
     loadResumes, uploadResume, resetUploadState, updateResume, deleteResume,
-    profile, profileLoading, rebuildLoading,
-    loadProfile, rebuildProfile,
+    profile, profileLoading, rebuildLoading, deleteProfileLoading,
+    loadProfile, rebuildProfile, deleteProfile,
     analyses, analysesLoading, activeAnalysis, analyzeLoading,
     loadAnalyses, analyzeJD, loadAnalysis,
     generatedResumes, generatedLoading, generateLoading,
@@ -333,7 +378,7 @@ export function ResumeLabProvider({ children }) {
     loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
     fetchPdfBlob, compileLatex,
     jdText, setJdText, activeGenerated,
-    history, historyLoading, loadHistory,
+    history, historyLoading, clearHistoryLoading, loadHistory, clearHistory,
   ]);
 
   return (

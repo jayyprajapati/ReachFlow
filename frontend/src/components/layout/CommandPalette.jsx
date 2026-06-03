@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Search, LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Settings, ArrowRight, CornerDownLeft, Lock,
+  Search, LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Binary, Settings, ArrowRight, CornerDownLeft, Lock,
 } from 'lucide-react';
 
 const NAV_COMMANDS = [
@@ -11,6 +11,7 @@ const NAV_COMMANDS = [
   { id: 'nav-pipeline',  label: 'Applications',  hint: 'Pipeline',     path: '/pipeline',   icon: Briefcase,   section: 'Workspace' },
   { id: 'nav-contacts',  label: 'Contacts',      hint: 'Companies',    path: '/contacts',   icon: Users,       section: 'Workspace' },
   { id: 'nav-resume',    label: 'Resume Lab',    hint: 'Coming soon', path: '/resume-lab', icon: FileText, section: 'Workspace', disabled: true },
+  { id: 'nav-dsa',       label: 'DSA Analysis',  hint: 'Algorithm analysis', path: '/dsa-lab', icon: Binary,  section: 'Workspace' },
   { id: 'nav-roadmap',   label: 'Roadmaps',      hint: 'Skill tracks', path: '/roadmaps',   icon: Compass,     section: 'Workspace' },
   { id: 'nav-settings',  label: 'Settings',      hint: '',             path: '/settings',   icon: Settings,    section: 'Workspace' },
 ];

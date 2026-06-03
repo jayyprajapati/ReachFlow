@@ -16,6 +16,8 @@ const variableRoutes = require('./routes/variables');
 const resumelabRoutes = require('./routes/resumelab');
 const settingsRoutes = require('./routes/settings');
 const roadmapRoutes = require('./routes/roadmaps');
+const dsaRoutes = require('./routes/dsa');
+const todayRoutes = require('./routes/today');
 const {
   connectMongo,
   User,
@@ -30,6 +32,7 @@ const {
   ResumeAnalysis,
   GeneratedResume,
   AISettings,
+  DsaAnalysis,
 } = require('./db');
 const { assertDataSecurityConfig, encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail } = require('./utils/dataSecurity');
 
@@ -106,7 +109,7 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes, aiSettings] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes, aiSettings, dsaAnalyses] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
@@ -118,6 +121,7 @@ async function deleteCurrentUserAppData(user) {
       ResumeAnalysis.deleteMany({ userId }, opts),
       GeneratedResume.deleteMany({ userId }, opts),
       AISettings.deleteMany({ userId }, opts),
+      DsaAnalysis.deleteMany({ userId }, opts),
     ]);
 
     const userDeletion = await User.deleteOne({ _id: userId }, opts);
@@ -135,6 +139,7 @@ async function deleteCurrentUserAppData(user) {
       resumeAnalyses: resumeAnalyses.deletedCount || 0,
       generatedResumes: generatedResumes.deletedCount || 0,
       aiSettings: aiSettings.deletedCount || 0,
+      dsaAnalyses: dsaAnalyses.deletedCount || 0,
     };
     console.log('[data] Deletion summary:', JSON.stringify(summary));
     return summary;
@@ -424,6 +429,8 @@ app.use('/api/variables', requireAuth, variableRoutes);
 app.use('/api/resumelab', requireAuth, resumelabRoutes);
 app.use('/api/settings', requireAuth, settingsRoutes);
 app.use('/api/roadmaps', requireAuth, roadmapRoutes);
+app.use('/api/dsa', requireAuth, dsaRoutes);
+app.use('/api/today', requireAuth, todayRoutes);
 
 connectMongo()
   .then(() => {

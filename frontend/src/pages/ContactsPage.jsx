@@ -646,6 +646,12 @@ export default function ContactsPage() {
     [detail?.contacts]
   );
 
+  // Contacts in the open company whose email is marked Invalid (legacy "flagged" counts too).
+  const detailInvalidCount = useMemo(
+    () => (detail?.contacts || []).filter(c => c.email_status === 'not_valid' || c.email_status === 'flagged').length,
+    [detail?.contacts]
+  );
+
   const visibleContacts = useMemo(() => {
     const terms = contactSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
     let list = detail?.contacts || [];
@@ -995,7 +1001,12 @@ export default function ContactsPage() {
 
   /* ── Render ────────────────────────────────────────────── */
 
-  const totalContacts = useMemo(() => groups.reduce((sum, g) => sum + (g.contactCount || 0), 0), [groups]);
+  // Top headline counts valid contacts only — invalid (email marked Invalid) are excluded.
+  const totalContacts = useMemo(
+    () => groups.reduce((sum, g) => sum + Math.max(0, (g.contactCount || 0) - (g.invalidCount || 0)), 0),
+    [groups]
+  );
+  const totalInvalid = useMemo(() => groups.reduce((sum, g) => sum + (g.invalidCount || 0), 0), [groups]);
 
   return (
     <div className="rf-page rf-page--wide rf-contacts-page" ref={pageRef}>
@@ -1103,10 +1114,16 @@ export default function ContactsPage() {
 
           {/* Bottom row — stats + action buttons */}
           <div className="rf-ct__header-meta">
-            <span className="rf-ct__header-stats">
+            <span
+              className="rf-ct__header-stats"
+              title={totalInvalid > 0 ? `${totalInvalid} invalid contact${totalInvalid === 1 ? '' : 's'} excluded from this total` : undefined}
+            >
               <span className="rf-num rf-ct__header-stat-num">{groups.length}</span> companies
               <span className="rf-ct__meta-dot">·</span>
               <span className="rf-num rf-ct__header-stat-num">{totalContacts}</span> contacts
+              {totalInvalid > 0 && (
+                <span className="rf-ct__header-invalid">· {totalInvalid} invalid</span>
+              )}
             </span>
             <button
               className="rf-btn rf-btn--ghost rf-btn--sm"
@@ -1264,19 +1281,33 @@ export default function ContactsPage() {
                   {search.trim() ? `No companies match "${search}"` : 'No companies yet. Click New company to get started.'}
                 </div>
               ) : filtered.map(g => (
-                <button
-                  key={g.id}
-                  className={`rf-ct__company${selectedId === g.id ? ' rf-ct__company--active' : ''}`}
-                  onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); }}
-                >
-                  <span className="rf-ct__company-logo">
-                    {g.logoUrl ? <img src={g.logoUrl} alt="" /> : <Building2 size={14} />}
-                  </span>
-                  <span className="rf-ct__company-body">
-                    <span className="rf-ct__company-name">{g.companyName}</span>
-                    <span className="rf-ct__company-meta">{g.contactCount || 0} contact{(g.contactCount || 0) === 1 ? '' : 's'}</span>
-                  </span>
-                </button>
+                <div key={g.id} className="rf-ct__company-wrap">
+                  <button
+                    className={`rf-ct__company${selectedId === g.id ? ' rf-ct__company--active' : ''}${g.careersPageUrl ? ' rf-ct__company--has-careers' : ''}`}
+                    onClick={() => { openGroup(g.id); navigateTo(`/contacts/${g.id}`); }}
+                  >
+                    <span className="rf-ct__company-logo">
+                      {g.logoUrl ? <img src={g.logoUrl} alt="" /> : <Building2 size={14} />}
+                    </span>
+                    <span className="rf-ct__company-body">
+                      <span className="rf-ct__company-name">{g.companyName}</span>
+                      <span className="rf-ct__company-meta">{g.contactCount || 0} contact{(g.contactCount || 0) === 1 ? '' : 's'}</span>
+                    </span>
+                  </button>
+                  {g.careersPageUrl && (
+                    <a
+                      className="rf-ct__company-careers"
+                      href={g.careersPageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Open ${g.companyName} careers page`}
+                      aria-label={`Open ${g.companyName} careers page`}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
+                </div>
               ))}
             </div>
           </aside>
@@ -1356,46 +1387,58 @@ export default function ContactsPage() {
                       <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingName(false)} title="Cancel"><X size={13} /></button>
                     </div>
                   ) : (
-                    <div className="rf-ct__title-meta-row">
-                      <h2 className="rf-ct__title">{detail.companyName}</h2>
-                      <span className="rf-ct__meta-dot">·</span>
-                      <span className="rf-ct__title-people">
-                        <span className="rf-num">{(detail.contacts || []).length}</span> people
-                      </span>
-                      <span className="rf-ct__meta-dot">·</span>
-                      {editingCareers ? (
-                        <span className="rf-ct__careers-edit">
-                          <input
-                            className="rf-input rf-input--sm"
-                            style={{ width: 200 }}
-                            value={careersInput}
-                            onChange={e => setCareersInput(e.target.value)}
-                            placeholder="https://company.com/careers"
-                            autoFocus
-                            onKeyDown={e => { if (e.key === 'Enter') saveGroupField('careersPageUrl', careersInput); if (e.key === 'Escape') setEditingCareers(false); }}
-                          />
-                          <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('careersPageUrl', careersInput)} disabled={savingGroupField}><Check size={12} /></button>
-                          <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingCareers(false)}><X size={12} /></button>
+                    <div className="rf-ct__detail-titlewrap">
+                      <div className="rf-ct__title-line">
+                        <h2 className="rf-ct__title">{detail.companyName}</h2>
+                        {/* Single combined edit pencil — edits name (and careers URL when present) */}
+                        <button
+                          className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__title-edit"
+                          onClick={() => {
+                            setNameInput(detail.companyName || '');
+                            setCareersInput(detail.careersPageUrl || '');
+                            setEditingName(true);
+                          }}
+                          title={detail.careersPageUrl ? 'Edit company name & careers URL' : 'Edit company name'}
+                        ><Pencil size={12} /></button>
+                      </div>
+                      <div className="rf-ct__detail-sub">
+                        <span className="rf-ct__title-people">
+                          <span className="rf-num">{(detail.contacts || []).length}</span> people
                         </span>
-                      ) : detail.careersPageUrl ? (
-                        <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
-                          <ExternalLink size={11} /> Careers page
-                        </a>
-                      ) : (
-                        <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }}>
-                          <Plus size={11} /> Careers page
-                        </button>
-                      )}
-                      {/* Single combined edit pencil — edits name (and careers URL when present) */}
-                      <button
-                        className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__title-edit"
-                        onClick={() => {
-                          setNameInput(detail.companyName || '');
-                          setCareersInput(detail.careersPageUrl || '');
-                          setEditingName(true);
-                        }}
-                        title={detail.careersPageUrl ? 'Edit company name & careers URL' : 'Edit company name'}
-                      ><Pencil size={12} /></button>
+                        {detailInvalidCount > 0 && (
+                          <>
+                            <span className="rf-ct__meta-dot">·</span>
+                            <span className="rf-ct__invalid-count" title="Contacts whose email is marked Invalid — excluded from the contacts total">
+                              <X size={11} strokeWidth={2.6} />
+                              <span className="rf-num">{detailInvalidCount}</span> invalid
+                            </span>
+                          </>
+                        )}
+                        <span className="rf-ct__meta-dot">·</span>
+                        {editingCareers ? (
+                          <span className="rf-ct__careers-edit">
+                            <input
+                              className="rf-input rf-input--sm"
+                              style={{ width: 200 }}
+                              value={careersInput}
+                              onChange={e => setCareersInput(e.target.value)}
+                              placeholder="https://company.com/careers"
+                              autoFocus
+                              onKeyDown={e => { if (e.key === 'Enter') saveGroupField('careersPageUrl', careersInput); if (e.key === 'Escape') setEditingCareers(false); }}
+                            />
+                            <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('careersPageUrl', careersInput)} disabled={savingGroupField}><Check size={12} /></button>
+                            <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingCareers(false)}><X size={12} /></button>
+                          </span>
+                        ) : detail.careersPageUrl ? (
+                          <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
+                            <ExternalLink size={11} /> Careers page
+                          </a>
+                        ) : (
+                          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }}>
+                            <Plus size={11} /> Careers page
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

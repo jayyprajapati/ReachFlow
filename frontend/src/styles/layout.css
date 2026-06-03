@@ -52,7 +52,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: var(--rf-sp-5) var(--rf-sp-3) var(--rf-sp-3);
+  padding: var(--rf-sp-6) var(--rf-sp-4) var(--rf-sp-3);
   gap: var(--rf-sp-1);
 }
 
@@ -61,17 +61,18 @@
   display: flex;
   align-items: center;
   gap: var(--rf-sp-3);
-  padding: 0 var(--rf-sp-2);
-  margin-bottom: var(--rf-sp-5);
+  padding: 10px 8px;
+  margin-bottom: var(--rf-sp-4);
   background: none;
   cursor: pointer;
   width: 100%;
   text-align: left;
+  border-radius: var(--rf-radius-lg);
 }
 
 .rf-sidebar__logo {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--rf-radius-md);
   background: var(--rf-text);
   color: var(--rf-bg-canvas);
@@ -90,14 +91,15 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  line-height: 1.1;
+  gap: 1px;
+  line-height: 1.05;
 }
 
 .rf-sidebar__brand-name {
   font-family: var(--rf-font-display);
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: -0.012em;
+  letter-spacing: 0;
   color: var(--rf-text);
 }
 
@@ -425,21 +427,22 @@
   .rf-sidebar {
     min-height: 100%;
     height: auto;
-    padding: var(--rf-sp-4) var(--rf-sp-3) var(--rf-sp-3);
+    padding: var(--rf-sp-5) var(--rf-sp-3) var(--rf-sp-3);
     gap: 0;
   }
 
   .rf-sidebar__brand {
+    padding: 9px 8px;
     margin-bottom: var(--rf-sp-4);
   }
 
   .rf-sidebar__logo {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
   }
 
   .rf-sidebar__brand-name {
-    font-size: 1rem;
+    font-size: 0.98rem;
   }
 
   .rf-sidebar__cmd {
@@ -499,7 +502,7 @@
 .rf-shell__sidebar--collapsed .rf-sidebar__user,
 .rf-shell__sidebar--collapsed .rf-sidebar__brand {
   justify-content: center;
-  padding: 8px;
+  padding: 8px 4px;
 }
 
 /* When sidebar is collapsed, the user-menu popover must escape the narrow

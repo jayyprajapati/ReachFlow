@@ -269,61 +269,62 @@
 .rl-upload-banner__title { font-weight: 600; font-size: var(--rf-text-sm); color: var(--rf-text); margin: 0; }
 .rl-upload-banner__body  { font-size: var(--rf-text-xs); color: var(--rf-text-secondary); margin: 4px 0 0; }
 
-/* ── Resume cards ────────────────────────────────────────────────────────── */
+/* ── Resume rows ─────────────────────────────────────────────────────────── */
 
-.rl-resumes-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+.rl-resumes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.rl-resume-card {
+.rl-resume-row {
+  display: flex;
+  align-items: center;
+  gap: var(--rf-sp-3);
   background: var(--rf-bg-canvas);
   border: 1px solid var(--rf-border-subtle);
   border-radius: var(--rf-radius-lg);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--rf-sp-2);
+  padding: 12px 16px;
   transition: border-color 0.15s, box-shadow 0.15s;
-  position: relative;
 }
 
-.rl-resume-card:hover {
+.rl-resume-row:hover {
   border-color: var(--rf-border);
   box-shadow: var(--rf-shadow-sm);
 }
 
-.rl-resume-card--base {
-  border-color: var(--rf-accent);
-  box-shadow: 0 0 0 1px var(--rf-accent);
-}
-
-.rl-resume-card__header {
+.rl-resume-row__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--rf-radius-md);
+  background: var(--rf-accent-muted);
+  color: var(--rf-accent);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--rf-sp-2);
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.rl-resume-card__title {
-  font-size: var(--rf-text-base);
+.rl-resume-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rl-resume-row__title {
+  font-size: var(--rf-text-sm);
   font-weight: 600;
   color: var(--rf-text);
   line-height: 1.3;
-  flex: 1;
-  word-break: break-word;
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.rl-resume-card__badges {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-
-.rl-resume-card__meta {
+.rl-resume-row__meta {
   font-size: var(--rf-text-xs);
   color: var(--rf-text-muted);
   display: flex;
@@ -331,20 +332,18 @@
   gap: 6px;
 }
 
-.rl-resume-card__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-height: 18px;
-}
-
-.rl-resume-card__actions {
+.rl-resume-row__actions {
   display: flex;
   align-items: center;
   gap: var(--rf-sp-1);
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+
+.rl-resume-row__actions .rl-card-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
 }
 
 .rl-card-btn {
@@ -986,7 +985,6 @@
 }
 
 @media (max-width: 600px) {
-  .rl-resumes-grid { grid-template-columns: 1fr; }
   .rl-stat-row { display: grid; grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -1071,8 +1069,7 @@
   }
 
   .rl-upload-banner,
-  .rl-profile-item__row,
-  .rl-resume-card__actions {
+  .rl-profile-item__row {
     flex-wrap: wrap;
   }
 

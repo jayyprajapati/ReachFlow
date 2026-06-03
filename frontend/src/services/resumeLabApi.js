@@ -48,6 +48,8 @@ export function makeResumeLabApi(authedFetch) {
       call('/api/resumelab/profile'),
     rebuildProfile: () =>
       call('/api/resumelab/profile/rebuild', { method: 'POST' }),
+    deleteProfile: () =>
+      call('/api/resumelab/profile', { method: 'DELETE' }),
 
     // ── JD Analysis ───────────────────────────────────────────────────────
     analyzeJD: (body) =>
@@ -88,6 +90,8 @@ export function makeResumeLabApi(authedFetch) {
     // ── History + Flow ────────────────────────────────────────────────────
     getHistory: () =>
       call('/api/resumelab/history'),
+    clearHistory: () =>
+      call('/api/resumelab/history', { method: 'DELETE' }),
     getFlow: (flowId) =>
       call(`/api/resumelab/flow/${encodeURIComponent(flowId)}`),
     setItemNote: (section, canonicalKey, showcasePrompt) =>

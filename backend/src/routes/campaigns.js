@@ -5,7 +5,7 @@ const { renderTemplate, validateVariables } = require('../services/templateServi
 const { sendMimeEmail, validateAttachments } = require('../gmail');
 const { encryptJson, decryptJson, isEncryptedEnvelope, normalizeEmail, computeEmailHash } = require('../utils/dataSecurity');
 const { sanitizeEmailHtml } = require('../utils/sanitizeEmailHtml');
-const { composeRewrite, CortexError } = require('../services/cortexClient');
+const { composeRewrite, BrainError } = require('../services/brainClient');
 
 const router = express.Router();
 
@@ -953,7 +953,7 @@ router.post('/rewrite-body', async (req, res) => {
         userSystemPrompt,
       });
     } catch (err) {
-      if (err instanceof CortexError) {
+      if (err instanceof BrainError) {
         return res.status(502).json({ error: `Rewrite failed: ${err.message}` });
       }
       if (err.name === 'AbortError') {
