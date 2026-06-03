@@ -6,7 +6,7 @@ import {
   Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
   Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste,
   Info, ChevronRight, AtSign, Variable, Wand2, MailCheck, AlertTriangle, ArrowUpRight,
-  ChevronDown, Lock,
+  ChevronDown,
 } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -136,6 +136,9 @@ export default function ComposePage() {
   const [attachments, setAttachments] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
+  const [rewriteOpen, setRewriteOpen] = useState(false);
+  const [rewriteInstruction, setRewriteInstruction] = useState('');
+  const [originalBody, setOriginalBody] = useState(null); // pre-rewrite snapshot for revert
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
@@ -390,6 +393,39 @@ export default function ComposePage() {
     finally { setIsPreviewing(false); }
   }
 
+  async function doRewrite() {
+    if (!strip(body)) { setNotice({ type: 'error', message: 'Write some body text before rewriting.' }); return; }
+    const instruction = rewriteInstruction.trim();
+    if (!instruction) { setNotice({ type: 'error', message: 'Describe how the AI should rewrite it.' }); return; }
+    setIsRewriting(true);
+    try {
+      const res = await authedFetch(`${API_BASE}/api/campaigns/rewrite-body`, {
+        method: 'POST', headers: hdrs,
+        body: JSON.stringify({ subject, body_html: body, context: instruction }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        if (res.status === 402) { setNotice({ type: 'error', message: 'Add and test an AI provider in Settings first.' }); }
+        else { setNotice({ type: 'error', message: d.error || 'Rewrite failed' }); }
+        return;
+      }
+      setOriginalBody(body); // snapshot so the user can revert
+      setBody(d.body_html);
+      setRewriteOpen(false);
+      setRewriteInstruction('');
+      setNotice({ type: 'success', message: 'Rewritten with AI — revert if you prefer the original.' });
+    } catch (e) {
+      setNotice({ type: 'error', message: e.message || 'Rewrite failed' });
+    } finally { setIsRewriting(false); }
+  }
+
+  function revertRewrite() {
+    if (originalBody == null) return;
+    setBody(originalBody);
+    setOriginalBody(null);
+    setNotice({ type: 'info', message: 'Reverted to your original text.' });
+  }
+
   async function doShuffle() {
     if (!recipients.length || isPreviewing) return;
     let tgt;
@@ -591,21 +627,6 @@ export default function ComposePage() {
     setErrors({ recipients: {} }); setGroupImports([]);
     setNameFormat('first'); setBulkMode(false); setBulkInput(''); setAttachments([]);
     setRecipientsCollapsed(false); setLastImportSource(null); setRoleImportPrompt(null);
-  }
-
-  async function doRewrite() {
-    if (!strip(body)) { setNotice({ type: 'error', message: 'Write a body first before rewriting' }); return; }
-    setIsRewriting(true);
-    try {
-      const res = await authedFetch(`${API_BASE}/api/campaigns/rewrite-body`, { method: 'POST', headers: hdrs, body: JSON.stringify({ subject, body_html: body }) });
-      const d = await res.json();
-      if (!res.ok) {
-        if (res.status === 402) { setNotice({ type: 'error', message: 'Configure AI in Settings first' }); return; }
-        throw new Error(d.error || 'Rewrite failed');
-      }
-      if (d.body_html) { setBody(d.body_html); setNotice({ type: 'success', message: 'Body rewritten' }); }
-    } catch (e) { setNotice({ type: 'error', message: e.message }); }
-    finally { setIsRewriting(false); }
   }
 
   const minDateTime = useMemo(() => {
@@ -835,19 +856,52 @@ export default function ComposePage() {
                 Type <kbd>/</kbd> to insert a variable
               </span>
             </div>
-            <div className="rf-cp-card__toolbar">
-              <span title="Feature coming soon" style={{ display: 'inline-flex' }}>
+            <div className="rf-cp-card__toolbar" style={{ display: 'flex', gap: 6 }}>
+              {originalBody != null && (
                 <button
-                  className="rf-btn rf-btn--ghost rf-btn--sm rf-btn--locked"
-                  aria-disabled="true"
+                  className="rf-btn rf-btn--ghost rf-btn--sm"
                   type="button"
-                  onClick={(e) => e.preventDefault()}
+                  onClick={revertRewrite}
+                  title="Restore the text from before the AI rewrite"
                 >
-                  <Lock size={12} /> Rewrite with AI
+                  <RotateCcw size={12} /> Revert
                 </button>
-              </span>
+              )}
+              <button
+                className={`rf-btn rf-btn--ghost rf-btn--sm${rewriteOpen ? ' rf-btn--active' : ''}`}
+                type="button"
+                onClick={() => setRewriteOpen(o => !o)}
+                disabled={isRewriting}
+                title="Refine the message body with AI"
+              >
+                {isRewriting ? <Loader size={12} className="rf-spin" /> : <Sparkles size={12} />} Rewrite with AI
+              </button>
             </div>
           </header>
+
+          {rewriteOpen && (
+            <div className="rf-cp-rewrite" style={{ display: 'flex', gap: 6, marginBottom: 'var(--rf-sp-3)' }}>
+              <input
+                className="rf-input rf-input--sm"
+                style={{ flex: 1 }}
+                placeholder="How should the AI rewrite it? e.g. “make it more concise and confident”"
+                value={rewriteInstruction}
+                onChange={e => setRewriteInstruction(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); doRewrite(); }
+                  if (e.key === 'Escape') setRewriteOpen(false);
+                }}
+                autoFocus
+                disabled={isRewriting}
+              />
+              <button className="rf-btn rf-btn--primary rf-btn--sm" type="button" onClick={doRewrite} disabled={isRewriting}>
+                {isRewriting ? <><Loader size={12} className="rf-spin" /> Rewriting…</> : <><Wand2 size={12} /> Apply</>}
+              </button>
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" type="button" onClick={() => setRewriteOpen(false)} disabled={isRewriting}>
+                Cancel
+              </button>
+            </div>
+          )}
 
           <div className="rf-cp-vars">
             <span

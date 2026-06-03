@@ -366,7 +366,7 @@ const aiSettingsSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     provider: {
       type: String,
-      enum: ['openai', 'ollama_cloud', 'ollama_local'],
+      enum: ['openai', 'anthropic', 'ollama_cloud', 'ollama_local'],
       default: 'ollama_cloud',
     },
     apiKeyEncrypted: { type: mongoose.Schema.Types.Mixed, default: '' },

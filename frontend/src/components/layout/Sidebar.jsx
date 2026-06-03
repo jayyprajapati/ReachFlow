@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { path: '/compose',    label: 'Compose',       icon: PenLine },
   { path: '/pipeline',   label: 'Applications',  icon: Briefcase },
   { path: '/contacts',   label: 'Contacts',      icon: Users },
-  { path: '/resume-lab', label: 'Resume Lab',    icon: FileText, disabled: true, disabledReason: 'Feature coming soon' },
+  { path: '/resume-lab', label: 'Resume Lab',    icon: FileText },
   { path: '/roadmaps',   label: 'Roadmaps',      icon: Compass },
 ];
 

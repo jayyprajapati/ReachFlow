@@ -9,6 +9,7 @@ import {
 
 const PROVIDER_LABELS = {
   openai:       'OpenAI',
+  anthropic:    'Anthropic',
   ollama_cloud: 'Ollama Cloud',
   ollama_local: 'Ollama Local',
 };
@@ -113,7 +114,7 @@ function AISettingsSection({ authedFetch, cachedSettings, cachedLoading }) {
   }
 
   const models = supportedModels[provider] || [];
-  const needsApiKey = provider === 'openai' || provider === 'ollama_cloud';
+  const needsApiKey = provider === 'openai' || provider === 'anthropic' || provider === 'ollama_cloud';
   const needsEndpoint = provider === 'ollama_local';
   const isValid = settings?.isValid;
 

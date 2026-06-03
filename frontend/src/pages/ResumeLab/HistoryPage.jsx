@@ -3,6 +3,7 @@ import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
   Clock, Microscope, Sparkles, Loader, TrendingUp, Link2, BarChart2,
+  Trash2, AlertTriangle,
 } from 'lucide-react';
 
 function fmt(iso) {
@@ -105,12 +106,25 @@ function FlowRow({ row, onRestore, restoring }) {
 }
 
 export default function HistoryPage() {
-  const { history, historyLoading, loadHistory, loadAnalysis, loadGeneratedById, setActiveGenerated, api } = useResumeLab();
+  const {
+    history, historyLoading, clearHistoryLoading,
+    loadHistory, clearHistory, loadAnalysis, loadGeneratedById, setActiveGenerated, api,
+  } = useResumeLab();
   const { navigateTo } = useRouter();
   const [filter, setFilter] = useState('all');
   const [restoring, setRestoring] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  async function handleClearHistory() {
+    try {
+      await clearHistory();
+      setConfirmClear(false);
+    } catch {
+      // notice already surfaced by context; keep dialog open so the user can retry
+    }
+  }
 
   const filtered = history.filter(row => {
     if (filter === 'all') return true;
@@ -151,6 +165,18 @@ export default function HistoryPage() {
           <h1 className="rl-page__title">History</h1>
           <p className="rl-page__subtitle">Past JD analyses and generated resumes — linked by flow.</p>
         </div>
+        {history.length > 0 && (
+          <div className="rl-page__actions">
+            <button
+              className="rf-btn rf-btn--danger rf-btn--sm"
+              onClick={() => setConfirmClear(true)}
+              disabled={clearHistoryLoading || historyLoading}
+              title="Permanently remove all history"
+            >
+              <Trash2 size={13} /> Clear History
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
@@ -192,6 +218,42 @@ export default function HistoryPage() {
               restoring={restoring}
             />
           ))}
+        </div>
+      )}
+
+      {/* Clear-history confirmation */}
+      {confirmClear && (
+        <div className="rf-dialog-overlay" onClick={() => !clearHistoryLoading && setConfirmClear(false)}>
+          <div className="rf-dialog" onClick={e => e.stopPropagation()}>
+            <div className="rf-dialog__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <AlertTriangle size={16} style={{ color: 'var(--rf-error-text)' }} />
+              Clear all history?
+            </div>
+            <div className="rf-dialog__body">
+              This permanently removes <strong>every JD analysis and generated output</strong> (resumes,
+              cover letters, and HR emails). This cannot be undone. Your uploaded resumes and Career
+              Profile are not affected.
+            </div>
+            <div className="rf-dialog__actions">
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                onClick={() => setConfirmClear(false)}
+                disabled={clearHistoryLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className="rf-btn rf-btn--danger rf-btn--sm"
+                onClick={handleClearHistory}
+                disabled={clearHistoryLoading}
+              >
+                {clearHistoryLoading
+                  ? <><Loader size={13} className="rf-spin" /> Clearing…</>
+                  : <><Trash2 size={13} /> Clear everything</>
+                }
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

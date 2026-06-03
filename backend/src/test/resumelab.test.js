@@ -6,7 +6,7 @@
  * Runs with: node --test src/test/resumelab.test.js
  *
  * These tests verify business logic, helper functions, and route handler
- * behaviour using lightweight stubs — no running MongoDB or Cortex required.
+ * behaviour using lightweight stubs — no running MongoDB or Brain required.
  */
 
 const { test, describe, beforeEach } = require('node:test');
@@ -204,7 +204,7 @@ describe('Upload flow logic', () => {
       save: async function () { savedStatus = this.status; },
     });
 
-    const failingExtract = async () => { throw new Error('Cortex unavailable'); };
+    const failingExtract = async () => { throw new Error('Brain unavailable'); };
 
     // Simulate the route's extraction block
     try {
@@ -288,7 +288,7 @@ describe('Upload flow logic', () => {
     // Both calls return results (no error); merge handles dedup
     assert.ok(extract.skills.length > 0);
     assert.ok(secondExtract.skills.length > 0);
-    // Cortex merge normalises duplicates — no error expected
+    // Brain merge normalises duplicates — no error expected
   });
 });
 
@@ -433,14 +433,14 @@ describe('File type validation', () => {
   });
 });
 
-// ── Cortex client error handling ─────────────────────────────────────────────
+// ── Brain client error handling ─────────────────────────────────────────────
 
-describe('CortexError', () => {
+describe('BrainError', () => {
   // Inline the class for isolated testing without requiring the live service
-  class CortexError extends Error {
+  class BrainError extends Error {
     constructor(message, { status, body } = {}) {
       super(message);
-      this.name = 'CortexError';
+      this.name = "BrainError";
       this.status = status;
       this.body = body;
     }
@@ -448,22 +448,22 @@ describe('CortexError', () => {
 
   function isRetryable(err) {
     if (err.name === 'AbortError') return true;
-    if (err instanceof CortexError) return !err.status || err.status >= 500;
+    if (err instanceof BrainError) return !err.status || err.status >= 500;
     return true;
   }
 
   test('5xx errors are retryable', () => {
-    const err = new CortexError('service unavailable', { status: 503 });
+    const err = new BrainError('service unavailable', { status: 503 });
     assert.ok(isRetryable(err));
   });
 
   test('4xx errors are not retried', () => {
-    const err = new CortexError('bad request', { status: 400 });
+    const err = new BrainError('bad request', { status: 400 });
     assert.equal(isRetryable(err), false);
   });
 
   test('network errors (no status) are retryable', () => {
-    const err = new CortexError('ECONNREFUSED');
+    const err = new BrainError('ECONNREFUSED');
     assert.ok(isRetryable(err));
   });
 
@@ -474,7 +474,7 @@ describe('CortexError', () => {
   });
 
   test('carries status and body', () => {
-    const err = new CortexError('oops', { status: 422, body: { detail: 'schema error' } });
+    const err = new BrainError('oops', { status: 422, body: { detail: 'schema error' } });
     assert.equal(err.status, 422);
     assert.deepEqual(err.body, { detail: 'schema error' });
   });

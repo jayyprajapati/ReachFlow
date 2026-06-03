@@ -1,25 +1,21 @@
 'use strict';
 
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const { AISettings } = require('../db');
 const { encryptJson, decryptJson } = require('../utils/dataSecurity');
+const { llmPing, brainDetail, BrainError } = require('../services/brainClient');
 
 const router = express.Router();
 
 // Supported models per provider (used for UI dropdowns and validation)
 const PROVIDER_MODELS = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+  anthropic: ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5'],
   ollama_cloud: ['gpt-oss:120b', 'llama3.3:70b', 'llama3.1:70b', 'mistral:7b'],
   ollama_local: [],  // dynamic — discovered from the local endpoint
 };
 
 const VALID_PROVIDERS = new Set(Object.keys(PROVIDER_MODELS));
-
-function makeCortexJwt(userId) {
-  const secret = process.env.CORTEX_JWT_SECRET || 'dev-secret';
-  return jwt.sign({ sub: String(userId) }, secret, { expiresIn: '1h' });
-}
 
 function maskKey(key) {
   if (!key || key.length < 8) return '••••••••';
@@ -117,9 +113,8 @@ router.put('/ai', async (req, res) => {
 });
 
 // ── POST /api/settings/ai/test ──────────────────────────────────────────────
-// Tests the stored AI provider by calling Cortex /llm/ping — a lightweight
-// single-token LLM call, much faster than the old /analyze/match approach.
-// Returns step-by-step diagnostics so the UI can show a timeline.
+// Tests the stored AI provider by calling Brain /v1/llm/ping — a lightweight
+// single-token LLM call. Returns step-by-step diagnostics for the UI timeline.
 router.post('/ai/test', async (req, res) => {
   const steps = [];
 
@@ -157,52 +152,29 @@ router.post('/ai/test', async (req, res) => {
     }
     s2.ok = true;
 
-    // ── Step 3: Call Cortex /llm/ping ──────────────────────────────────────
+    // ── Step 3: Call Brain /v1/llm/ping ────────────────────────────────────
     const model = doc.selectedModel || '';
-    const s3 = step(`Testing ${provider}${model ? ` (${model})` : ''} via Cortex`);
-
-    const CORTEX_BASE_URL = (process.env.CORTEX_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+    const s3 = step(`Testing ${provider}${model ? ` (${model})` : ''} via Brain`);
 
     const llmOverride = { provider };
     if (apiKey) llmOverride.api_key = apiKey;
     if (model) llmOverride.model = model;
     if (provider === 'ollama_local' && doc.localEndpoint) llmOverride.base_url = doc.localEndpoint;
 
-    const controller = new AbortController();
-    // 30 s — enough for a single-token generation even on slow hardware
-    const timer = setTimeout(() => controller.abort(), 30_000);
     let testOk = false;
     let testError = '';
 
     try {
-      const cortexToken = makeCortexJwt(userId);
-      const pingRes = await fetch(`${CORTEX_BASE_URL}/llm/ping`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cortexToken}`,
-        },
-        body: JSON.stringify({ llm: llmOverride }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-
-      if (pingRes.ok) {
-        testOk = true;
+      await llmPing({ llm: llmOverride });
+      testOk = true;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        testError = `Connection timed out. Check that ${provider === 'ollama_local' ? `Ollama is running at ${doc.localEndpoint || 'http://localhost:11434'}` : `the ${provider} API is reachable`}.`;
+      } else if (err instanceof BrainError && !err.status) {
+        const base = (process.env.BRAIN_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+        testError = `Cannot reach the Brain service at ${base}. Is it running?`;
       } else {
-        const body = await pingRes.text().catch(() => '');
-        let parsed;
-        try { parsed = JSON.parse(body); } catch { parsed = { detail: body }; }
-        testError = parsed?.detail || `HTTP ${pingRes.status}`;
-      }
-    } catch (fetchErr) {
-      clearTimeout(timer);
-      if (fetchErr.name === 'AbortError') {
-        testError = `Connection timed out after 30s. Check that ${provider === 'ollama_local' ? `Ollama is running at ${doc.localEndpoint || 'http://localhost:11434'}` : `the ${provider} API is reachable`}.`;
-      } else if (fetchErr.code === 'ECONNREFUSED') {
-        testError = `Cannot reach Cortex backend at ${CORTEX_BASE_URL}. Is the Cortex server running?`;
-      } else {
-        testError = fetchErr.message;
+        testError = brainDetail(err);
       }
     }
 

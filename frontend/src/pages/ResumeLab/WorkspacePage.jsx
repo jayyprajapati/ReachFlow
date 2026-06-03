@@ -8,6 +8,12 @@ import {
   CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink,
 } from 'lucide-react';
 
+// Tailored resume generation (LaTeX → PDF) is locked for now. The backend
+// returns FEATURE_LOCKED; the UI entrypoints are hidden behind this flag so the
+// implementation can be re-enabled later without rework. Analyze, cover letters,
+// and HR emails remain fully available.
+const RESUME_GENERATION_ENABLED = false;
+
 const OUTPUT_FORMAT_OPTIONS = [
   { value: 'fullstack', label: 'Fullstack' },
   { value: 'frontend',  label: 'Frontend' },
@@ -646,7 +652,7 @@ export default function WorkspacePage() {
               <div className="rl-score-label">ATS Match Score</div>
             </div>
 
-            {!activeGenerated && (
+            {RESUME_GENERATION_ENABLED && !activeGenerated && (
               <button
                 className="rf-btn rf-btn--primary"
                 style={{ width: '100%' }}
@@ -660,7 +666,7 @@ export default function WorkspacePage() {
               </button>
             )}
 
-            {activeGenerated && (
+            {RESUME_GENERATION_ENABLED && activeGenerated && (
               <div className="rl-panel" style={{ gap: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <CheckCircle2 size={14} style={{ color: 'var(--rf-success)', flexShrink: 0 }} />
@@ -679,7 +685,7 @@ export default function WorkspacePage() {
               </div>
             )}
 
-            {activeGenerated && (
+            {RESUME_GENERATION_ENABLED && activeGenerated && (
               <button
                 className="rf-btn rf-btn--secondary"
                 style={{ width: '100%' }}
@@ -742,15 +748,17 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {/* ── Full-width LaTeX editor + PDF preview — always visible ── */}
-      <LatexPreviewSection
-        result={activeGenerated}
-        compileLatex={compileLatex}
-        fetchPdfBlob={fetchPdfBlob}
-      />
+      {/* ── Full-width LaTeX editor + PDF preview (part of locked generation) ── */}
+      {RESUME_GENERATION_ENABLED && (
+        <LatexPreviewSection
+          result={activeGenerated}
+          compileLatex={compileLatex}
+          fetchPdfBlob={fetchPdfBlob}
+        />
+      )}
 
       {/* ── Strategy Modal ── */}
-      {showStrategyModal && (
+      {RESUME_GENERATION_ENABLED && showStrategyModal && (
         <StrategyModal
           resumes={resumes}
           analysisId={activeAnalysis?.analysisId}

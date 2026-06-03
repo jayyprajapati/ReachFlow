@@ -4,6 +4,7 @@ import { useApp } from '../../contexts/AppContext.jsx';
 import {
   RefreshCw, Loader, ChevronDown, Search, X,
   Cpu, Briefcase, FolderKanban, GraduationCap, Award, StickyNote, Check,
+  Trash2, AlertTriangle,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -23,25 +24,37 @@ function fmt(iso) {
 
 // ── Skill chips ───────────────────────────────────────────────────────────────
 
+// Canonical skills are plain strings (see brainPrompts merge schema), but tolerate
+// the object shape too in case the backend ever enriches them.
+function skillLabel(skill) {
+  if (typeof skill === 'string') return skill;
+  return skill?.normalized_name || skill?.name || '';
+}
+
 function SkillsSection({ skills, query }) {
+  const q = query.toLowerCase();
   const filtered = (skills || []).filter(s =>
-    !query || (s.normalized_name || s.name || '').toLowerCase().includes(query.toLowerCase())
+    !q || skillLabel(s).toLowerCase().includes(q)
   );
 
   if (!filtered.length) return <p style={{ color: 'var(--rf-text-muted)', fontSize: 'var(--rf-text-sm)' }}>No skills found.</p>;
 
   return (
     <div className="rl-skills-grid">
-      {filtered.map((skill, i) => (
-        <div key={skill.canonical_key || i} className="rl-skill-chip">
-          <span>{skill.normalized_name || skill.name}</span>
-          {skill.proficiency && (
-            <span className={`rl-skill-chip__proficiency rl-skill-chip__proficiency--${skill.proficiency.toLowerCase()}`}>
-              {skill.proficiency}
-            </span>
-          )}
-        </div>
-      ))}
+      {filtered.map((skill, i) => {
+        const label = skillLabel(skill);
+        const proficiency = typeof skill === 'object' ? skill?.proficiency : null;
+        return (
+          <div key={skill?.canonical_key || label || i} className="rl-skill-chip">
+            <span>{label}</span>
+            {proficiency && (
+              <span className={`rl-skill-chip__proficiency rl-skill-chip__proficiency--${proficiency.toLowerCase()}`}>
+                {proficiency}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -227,11 +240,24 @@ function ProfileSkeleton() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
-  const { profile, profileLoading, rebuildLoading, loadProfile, rebuildProfile } = useResumeLab();
+  const {
+    profile, profileLoading, rebuildLoading, deleteProfileLoading,
+    loadProfile, rebuildProfile, deleteProfile,
+  } = useResumeLab();
   const [activeSection, setActiveSection] = useState('skills');
   const [search, setSearch] = useState('');
+  const [confirmWipe, setConfirmWipe] = useState(false);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  async function handleDeleteProfile() {
+    try {
+      await deleteProfile();
+      setConfirmWipe(false);
+    } catch {
+      // notice already surfaced by context; keep dialog open so the user can retry
+    }
+  }
 
   const canonical = profile?.canonicalProfile;
   const stats = profile?.stats || {};
@@ -302,13 +328,23 @@ export default function ProfilePage() {
           <button
             className="rf-btn rf-btn--secondary rf-btn--sm"
             onClick={rebuildProfile}
-            disabled={rebuildLoading || profileLoading}
+            disabled={rebuildLoading || profileLoading || deleteProfileLoading}
           >
             {rebuildLoading
               ? <><Loader size={13} className="rf-spin" /> Rebuilding…</>
               : <><RefreshCw size={13} /> Rebuild Profile</>
             }
           </button>
+          {profile?.exists && (
+            <button
+              className="rf-btn rf-btn--danger rf-btn--sm"
+              onClick={() => setConfirmWipe(true)}
+              disabled={rebuildLoading || deleteProfileLoading}
+              title="Delete your entire Career Profile and all uploaded resumes"
+            >
+              <Trash2 size={13} /> Delete Profile
+            </button>
+          )}
         </div>
       </div>
 
@@ -384,6 +420,42 @@ export default function ProfilePage() {
           {/* Section content */}
           {renderSection()}
         </>
+      )}
+
+      {/* Delete-profile confirmation */}
+      {confirmWipe && (
+        <div className="rf-dialog-overlay" onClick={() => !deleteProfileLoading && setConfirmWipe(false)}>
+          <div className="rf-dialog" onClick={e => e.stopPropagation()}>
+            <div className="rf-dialog__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <AlertTriangle size={16} style={{ color: 'var(--rf-error-text)' }} />
+              Delete Career Profile?
+            </div>
+            <div className="rf-dialog__body">
+              This permanently deletes <strong>all {profile?.sourceResumeIds?.length || 0} uploaded resume{profile?.sourceResumeIds?.length !== 1 ? 's' : ''}</strong> and the
+              entire merged Career Profile built from them. Your stored resume files and the
+              extracted data are wiped and cannot be recovered. You'll need to re-upload to start over.
+            </div>
+            <div className="rf-dialog__actions">
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                onClick={() => setConfirmWipe(false)}
+                disabled={deleteProfileLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className="rf-btn rf-btn--danger rf-btn--sm"
+                onClick={handleDeleteProfile}
+                disabled={deleteProfileLoading}
+              >
+                {deleteProfileLoading
+                  ? <><Loader size={13} className="rf-spin" /> Deleting…</>
+                  : <><Trash2 size={13} /> Delete everything</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
