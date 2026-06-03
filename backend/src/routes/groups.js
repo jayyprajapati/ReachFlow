@@ -251,15 +251,21 @@ function applyConversationUpdate(contact, mutator) {
 router.get('/', async (req, res) => {
   try {
     const groups = await Group.find({ userId: req.user._id }).sort({ updatedAt: -1 });
-    const payload = groups.map(g => ({
-      id: g._id.toString(),
-      companyName: g.companyName,
-      logoUrl: g.logoUrl || '',
-      careersPageUrl: g.careersPageUrl || '',
-      contactCount: Number.isFinite(Number(g.contactCount)) ? Number(g.contactCount) : (g.contacts || []).length,
-      createdAt: g.createdAt,
-      updatedAt: g.updatedAt,
-    }));
+    const payload = groups.map(g => {
+      const contactCount = Number.isFinite(Number(g.contactCount)) ? Number(g.contactCount) : (g.contacts || []).length;
+      // email_status is a plaintext top-level field on each contact subdoc; legacy "flagged" maps to invalid.
+      const invalidCount = (g.contacts || []).filter(c => c.email_status === 'not_valid' || c.email_status === 'flagged').length;
+      return {
+        id: g._id.toString(),
+        companyName: g.companyName,
+        logoUrl: g.logoUrl || '',
+        careersPageUrl: g.careersPageUrl || '',
+        contactCount,
+        invalidCount,
+        createdAt: g.createdAt,
+        updatedAt: g.updatedAt,
+      };
+    });
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load groups' });

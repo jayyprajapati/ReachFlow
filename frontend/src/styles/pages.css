@@ -1648,6 +1648,41 @@
   color: var(--rf-text-muted);
 }
 
+/* Company row + careers-page link (sibling of the row button) */
+.rf-ct__company-wrap {
+  position: relative;
+}
+.rf-ct__company--has-careers {
+  padding-right: 36px;
+}
+.rf-ct__company-careers {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--rf-radius-sm);
+  color: var(--rf-text-faint);
+  opacity: 0;
+  transition: opacity var(--rf-duration-fast), color var(--rf-duration-fast), background var(--rf-duration-fast);
+}
+.rf-ct__company-wrap:hover .rf-ct__company-careers,
+.rf-ct__company-careers:focus-visible {
+  opacity: 1;
+}
+.rf-ct__company-careers:hover {
+  color: var(--rf-accent);
+  background: var(--rf-accent-muted);
+}
+/* On touch devices there's no hover — keep the link visible */
+@media (hover: none) {
+  .rf-ct__company-careers { opacity: 1; }
+}
+
 /* Detail */
 .rf-ct__detail {
   background: var(--rf-bg-canvas);
@@ -2141,6 +2176,51 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* Detail head: company name on top, summary (people · invalid · careers) below */
+.rf-ct__detail-titlewrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.rf-ct__title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.rf-ct__title-line .rf-ct__title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.rf-ct__detail-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.rf-ct__invalid-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--rf-text-sm);
+  font-weight: 600;
+  color: var(--rf-error-text);
+  white-space: nowrap;
+}
+.rf-ct__invalid-count svg { color: var(--rf-error); }
+
+/* "· N invalid" addendum in the page-header contacts stat */
+.rf-ct__header-invalid {
+  color: var(--rf-error-text);
+  font-weight: 600;
+  margin-left: 4px;
+}
 .rf-ct__careers-edit {
   display: inline-flex;
   align-items: center;
@@ -2283,11 +2363,43 @@
 }
 .rf-ct__global-result-meta .rf-truncate { display: inline-block; max-width: 100%; }
 
-/* Responsive */
+/* Responsive — drop the fixed-height two-pane app shell and let the whole
+   page scroll naturally: company list on top (capped, internal scroll),
+   company detail flows below. */
 @media (max-width: 980px) {
-  .rf-ct { grid-template-columns: 1fr !important; }
+  .rf-contacts-page {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  .rf-ct {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-height: 0;
+  }
   .rf-ct__resize-handle { display: none !important; }
-  .rf-ct__sidebar { max-height: 320px; }
+  .rf-ct__edge-collapse { display: none !important; }
+  .rf-ct__sidebar,
+  .rf-ct__sidebar--collapsed {
+    width: 100% !important;
+    max-height: 50vh;
+  }
+  .rf-ct__detail,
+  .rf-ct__detail-body {
+    overflow: visible;
+  }
+  /* Page-header search + actions go full width */
+  .rf-ct__header-side {
+    width: 100%;
+    align-items: stretch;
+  }
+  .rf-ct__global-search-wrap {
+    width: 100%;
+  }
+  .rf-ct__header-meta {
+    justify-content: space-between;
+  }
 }
 
 /* ── Templates (interim) ─────────────────────────────────── */
@@ -2438,9 +2550,156 @@
   gap: 8px;
 }
 
+.rf-set-inline-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 @media (max-width: 900px) {
   .rf-set-health, .rf-set-grid { grid-template-columns: 1fr; }
   .rf-set-card--inline { flex-direction: column; align-items: flex-start; }
+}
+
+/* ── Settings v2: grouped scroll + sticky jump index ─────── */
+
+/* Calmer, centered column rather than the full 1320px page width. */
+.rf-page.rf-set-page {
+  max-width: 1120px;
+}
+
+.rf-set-layout {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: var(--rf-sp-8);
+  align-items: start;
+}
+
+.rf-set-index {
+  position: sticky;
+  top: var(--rf-sp-4);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rf-set-index__label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--rf-tracking-wider);
+  color: var(--rf-text-faint);
+  padding: var(--rf-sp-2) var(--rf-sp-3) var(--rf-sp-1);
+}
+.rf-set-index__link {
+  position: relative;
+  text-align: left;
+  padding: 7px var(--rf-sp-3);
+  border-radius: var(--rf-radius-md);
+  font-size: var(--rf-text-sm);
+  font-weight: 500;
+  color: var(--rf-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--rf-duration-fast), color var(--rf-duration-fast);
+}
+.rf-set-index__link:hover { background: var(--rf-bg-hover); color: var(--rf-text); }
+.rf-set-index__link--active {
+  color: var(--rf-text);
+  font-weight: 600;
+  background: var(--rf-bg-active);
+}
+.rf-set-index__link--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--rf-accent);
+}
+
+.rf-set-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rf-sp-10);
+  min-width: 0;
+}
+
+.rf-set-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rf-sp-4);
+  scroll-margin-top: var(--rf-sp-4);
+}
+.rf-set-group__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: var(--rf-sp-1);
+  border-bottom: 1px solid var(--rf-border-subtle);
+}
+.rf-set-group__title {
+  font-family: var(--rf-font-display);
+  font-size: var(--rf-text-xl);
+  font-weight: 700;
+  color: var(--rf-text);
+  letter-spacing: var(--rf-tracking-tight);
+}
+.rf-set-group__desc {
+  font-size: var(--rf-text-sm);
+  color: var(--rf-text-muted);
+  line-height: var(--rf-leading-snug);
+  margin: 0;
+}
+.rf-set-group__cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--rf-sp-4);
+}
+
+/* Tablet & down — index becomes a sticky horizontal strip, content stacks */
+@media (max-width: 1024px) {
+  .rf-set-layout {
+    grid-template-columns: 1fr;
+    gap: var(--rf-sp-5);
+  }
+  .rf-set-index {
+    top: 0;
+    z-index: var(--rf-z-sticky);
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 calc(var(--rf-sp-4) * -1);
+    padding: var(--rf-sp-2) var(--rf-sp-4);
+    background: color-mix(in srgb, var(--rf-bg-canvas) 92%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--rf-border-subtle);
+  }
+  .rf-set-index::-webkit-scrollbar { display: none; }
+  .rf-set-index__label { display: none; }
+  .rf-set-index__link { flex-shrink: 0; }
+  .rf-set-index__link--active { background: var(--rf-accent-muted); color: var(--rf-accent-text); }
+  .rf-set-index__link--active::before { display: none; }
+  .rf-set-content { gap: var(--rf-sp-8); }
+  .rf-set-group { scroll-margin-top: 60px; }
+  .rf-set-group__cols { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .rf-set-index {
+    margin: 0 calc(var(--rf-sp-3) * -1);
+    padding-left: var(--rf-sp-3);
+    padding-right: var(--rf-sp-3);
+  }
+  .rf-set-inline-field { flex-wrap: wrap; }
+  .rf-set-inline-field .rf-input { flex: 1 1 100%; }
+  .rf-set-inline-field .rf-btn { flex: 1; }
 }
 
 /* legacy interim styles kept below */
