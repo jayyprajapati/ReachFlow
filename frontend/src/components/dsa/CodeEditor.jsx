@@ -1,65 +1,59 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useState } from 'react';
+import Editor from '@monaco-editor/react';
+import { Loader } from 'lucide-react';
 
 /**
- * CodeEditor — a lightweight, dependency-free code input.
+ * CodeEditor — the official VS Code Monaco editor for entering a solution.
  *
- * A monospace <textarea> paired with a synced line-number gutter and Tab-key
- * handling (inserts spaces instead of moving focus). No syntax highlighting —
- * intentionally minimal to keep the bundle lean.
+ * Theme follows the app's `data-theme` attribute (light ↔ vs-dark) so the editor
+ * blends into ReachFlow's surface instead of being a hard-bordered box. Chrome is
+ * stripped back (no minimap, no line glyphs) to keep it calm and uncluttered.
  */
+function resolveTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'vs-dark' : 'light';
+}
+
 export default function CodeEditor({
   value,
   onChange,
-  placeholder = '',
-  minRows = 12,
-  ariaLabel = 'Code editor',
+  language = 'java',
+  height = 320,
 }) {
-  const taRef = useRef(null);
-  const gutterRef = useRef(null);
+  const [theme, setTheme] = useState(resolveTheme);
 
-  const lineCount = Math.max(value.split('\n').length, minRows);
-
-  function syncScroll() {
-    if (gutterRef.current && taRef.current) {
-      gutterRef.current.scrollTop = taRef.current.scrollTop;
-    }
-  }
-
-  function handleKeyDown(e) {
-    if (e.key !== 'Tab') return;
-    e.preventDefault();
-    const ta = e.target;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const indent = '    '; // 4 spaces
-    const next = value.slice(0, start) + indent + value.slice(end);
-    onChange(next);
-    // Restore caret just after the inserted indent.
-    requestAnimationFrame(() => {
-      ta.selectionStart = ta.selectionEnd = start + indent.length;
-    });
-  }
+  // Track app theme changes so the editor recolors with the rest of the UI.
+  useEffect(() => {
+    const obs = new MutationObserver(() => setTheme(resolveTheme()));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  }, []);
 
   return (
     <div className="dsa-editor">
-      <div className="dsa-editor__gutter" ref={gutterRef} aria-hidden="true">
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div key={i} className="dsa-editor__lineno">{i + 1}</div>
-        ))}
-      </div>
-      <textarea
-        ref={taRef}
-        className="dsa-editor__textarea"
+      <Editor
+        height={height}
+        language={language === 'python' ? 'python' : 'java'}
+        theme={theme}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onScroll={syncScroll}
-        placeholder={placeholder}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        aria-label={ariaLabel}
-        rows={minRows}
+        onChange={(v) => onChange(v ?? '')}
+        loading={<div className="dsa-editor__loading"><Loader size={16} className="rf-spin" /> Loading editor…</div>}
+        options={{
+          minimap: { enabled: false },
+          fontSize: 13,
+          lineNumbersMinChars: 3,
+          folding: false,
+          glyphMargin: false,
+          scrollBeyondLastLine: false,
+          renderLineHighlight: 'none',
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+          padding: { top: 12, bottom: 12 },
+          tabSize: 4,
+          automaticLayout: true,
+          fontFamily: 'var(--rf-font-mono), ui-monospace, monospace',
+          smoothScrolling: true,
+        }}
       />
     </div>
   );

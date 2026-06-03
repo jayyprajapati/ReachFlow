@@ -24,6 +24,15 @@ const router = express.Router();
 const PROBLEM_MAX_LENGTH = 20_000;
 const CODE_MAX_LENGTH = 30_000;
 const VALID_LANGUAGES = new Set(['java', 'python']);
+const VALID_OUTPUT_PREFS = new Set(['java', 'python', 'both']);
+
+// Map the user's output-language preference to the concrete list of languages
+// the solutions should be generated in.
+function outputLanguagesFor(pref) {
+  if (pref === 'java') return ['java'];
+  if (pref === 'python') return ['python'];
+  return ['java', 'python']; // 'both' (default)
+}
 
 function toSummary(doc) {
   return {
@@ -31,6 +40,7 @@ function toSummary(doc) {
     problemTitle: doc.problemTitle || '',
     hasUserCode: !!doc.hasUserCode,
     language: doc.language || 'java',
+    outputLanguage: doc.outputLanguage || 'both',
     isOptimal: doc.isOptimal,
     status: doc.status,
     createdAt: doc.createdAt,
@@ -51,7 +61,7 @@ function toFull(doc) {
 
 router.post('/analyze', async (req, res) => {
   const userId = req.user._id;
-  const { problemStatement, code, language: rawLanguage } = req.body || {};
+  const { problemStatement, code, language: rawLanguage, outputLanguage: rawOutputLanguage } = req.body || {};
 
   if (!problemStatement || !String(problemStatement).trim()) {
     return res.status(400).json({ error: 'problemStatement is required' });
@@ -60,9 +70,15 @@ router.post('/analyze', async (req, res) => {
   const problem = String(problemStatement).trim().slice(0, PROBLEM_MAX_LENGTH);
   const userCode = code ? String(code).slice(0, CODE_MAX_LENGTH) : '';
   const hasUserCode = !!userCode.trim();
-  const language = VALID_LANGUAGES.has(rawLanguage) ? rawLanguage : 'java';
+  const outputLanguage = VALID_OUTPUT_PREFS.has(rawOutputLanguage) ? rawOutputLanguage : 'both';
+  const outputLanguages = outputLanguagesFor(outputLanguage);
+  // The user's submitted-code language: respect an explicit pick, otherwise infer
+  // from the output preference (a single-language pref implies that language).
+  const language = VALID_LANGUAGES.has(rawLanguage)
+    ? rawLanguage
+    : (outputLanguage === 'python' ? 'python' : 'java');
 
-  console.log(`[dsa] POST /analyze — userId: ${userId}, problemLen: ${problem.length}, hasCode: ${hasUserCode}, lang: ${language}`);
+  console.log(`[dsa] POST /analyze — userId: ${userId}, problemLen: ${problem.length}, hasCode: ${hasUserCode}, lang: ${language}, out: ${outputLanguage}`);
 
   // Enforce BYOK — must have a validated AI provider before any LLM call.
   let llm;
@@ -81,6 +97,7 @@ router.post('/analyze', async (req, res) => {
       problemStatement: problem,
       userCode: hasUserCode ? userCode : '',
       language,
+      outputLanguages,
       llm,
     });
     console.log(`[dsa] [latency] analyze.llm=${Date.now() - _t0}ms userId:${userId}`);
@@ -114,6 +131,7 @@ router.post('/analyze', async (req, res) => {
     problemStatement: problem,
     userCode: hasUserCode ? userCode : '',
     language,
+    outputLanguage,
     hasUserCode,
     problemTitle: String(result?.problem_title || '').trim().slice(0, 200),
     result,

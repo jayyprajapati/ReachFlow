@@ -1,20 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   CheckCircle2, XCircle, AlertTriangle, Bug, Lightbulb,
-  Clock, Database, Trophy, Sparkles, Layers,
+  Clock, Database, Trophy, Sparkles, ChevronDown, FileText,
 } from 'lucide-react';
 import CodeBlock from './CodeBlock.jsx';
 
-const VERDICT_META = {
-  correct:           { label: 'Correct',           badge: 'rf-badge--success', Icon: CheckCircle2 },
-  incorrect:         { label: 'Incorrect',         badge: 'rf-badge--error',   Icon: XCircle },
-  partially_correct: { label: 'Partially correct', badge: 'rf-badge--warning', Icon: AlertTriangle },
+// Verdict → visual tone. The three states the user cares about:
+//   error (red)    → won't work as written (incorrect / only partially correct)
+//   warn  (yellow) → works, but can be optimized
+//   success(green) → already optimal, no logic change needed
+function verdictTone(review) {
+  if (!review) return null;
+  if (review.verdict !== 'correct') return 'error';
+  return review.is_optimal ? 'success' : 'warn';
+}
+
+const TONE_META = {
+  error:   { Icon: XCircle,      title: "This solution won't work as written", cls: 'dsa-verdict--error' },
+  warn:    { Icon: AlertTriangle, title: 'Works — but it can be optimized',      cls: 'dsa-verdict--warn' },
+  success: { Icon: CheckCircle2,  title: 'Optimal — no logic change needed. Nice work!', cls: 'dsa-verdict--success' },
 };
+
+const LANG_LABEL = { java: 'Java', python: 'Python' };
 
 // ── Small building blocks ─────────────────────────────────────────────────────
 
 function ComplexityBlock({ complexity, label }) {
-  if (!complexity) return null;
+  if (!complexity || (!complexity.time && !complexity.space)) return null;
   return (
     <div className="dsa-complexity">
       {label && <div className="dsa-complexity__label">{label}</div>}
@@ -28,44 +40,71 @@ function ComplexityBlock({ complexity, label }) {
           <span className="dsa-complexity__v">{complexity.space || '—'}</span>
         </div>
       </div>
-      {complexity.explanation && (
-        <p className="dsa-complexity__explain">{complexity.explanation}</p>
+      {complexity.explanation && <p className="dsa-complexity__explain">{complexity.explanation}</p>}
+    </div>
+  );
+}
+
+// ── Collapsible problem statement (+ submitted code when present) ─────────────
+
+function ProblemPanel({ title, summary, problemStatement, userCode, language }) {
+  const [open, setOpen] = useState(false);
+  const heading = title || 'Problem statement';
+  return (
+    <div className={`dsa-problempanel${open ? ' is-open' : ''}`}>
+      <button className="dsa-problempanel__head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="dsa-problempanel__lead">
+          <FileText size={14} />
+          <span className="dsa-problempanel__title">{heading}</span>
+        </span>
+        <ChevronDown size={16} className="dsa-problempanel__chev" />
+      </button>
+
+      {!open && summary && <p className="dsa-problempanel__preview">{summary}</p>}
+
+      {open && (
+        <div className="dsa-problempanel__body">
+          {problemStatement
+            ? <p className="dsa-prose dsa-prose--pre">{problemStatement}</p>
+            : summary && <p className="dsa-prose">{summary}</p>}
+          {userCode && (
+            <div className="dsa-submitted">
+              <div className="dsa-submitted__label">Your submitted solution{language ? ` · ${LANG_LABEL[language] || ''}` : ''}</div>
+              <pre className="dsa-codeblock__pre"><code>{userCode}</code></pre>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function Section({ icon: Icon, title, children }) {
-  return (
-    <section className="dsa-section">
-      <h3 className="dsa-section__title">{Icon && <Icon size={15} />} {title}</h3>
-      {children}
-    </section>
-  );
-}
+// ── Code review verdict (only when the user submitted a solution) ─────────────
 
-// ── Code review (only when the user submitted a solution) ─────────────────────
-
-function ReviewSection({ review }) {
-  if (!review) return null;
-  const meta = VERDICT_META[review.verdict] || VERDICT_META.partially_correct;
+function VerdictPanel({ review }) {
+  const tone = verdictTone(review);
+  if (!tone) return null;
+  const meta = TONE_META[tone];
   const { Icon } = meta;
   const bugs = Array.isArray(review.bugs) ? review.bugs.filter(b => b && (b.issue || b.fix)) : [];
   const improvements = Array.isArray(review.improvements) ? review.improvements.filter(Boolean) : [];
 
   return (
-    <Section icon={Icon} title="Your code review">
-      <div className="dsa-verdict">
-        <span className={`rf-badge ${meta.badge}`}><Icon size={12} /> {meta.label}</span>
-        {review.language && <span className="rf-badge rf-badge--neutral">{review.language === 'python' ? 'Python' : 'Java'}</span>}
+    <section className={`dsa-verdict ${meta.cls}`}>
+      <div className="dsa-verdict__head">
+        <Icon size={20} className="dsa-verdict__icon" />
+        <h3 className="dsa-verdict__title">{meta.title}</h3>
+        {review.language && <span className="dsa-verdict__lang">{LANG_LABEL[review.language] || review.language}</span>}
       </div>
-      {review.verdict_explanation && <p className="dsa-prose">{review.verdict_explanation}</p>}
+
+      {review.verdict_explanation && <p className="dsa-verdict__text">{review.verdict_explanation}</p>}
+      {tone === 'success' && review.optimality_note && <p className="dsa-verdict__text">{review.optimality_note}</p>}
 
       <ComplexityBlock complexity={review.complexity} label="Your solution's complexity" />
 
-      {bugs.length > 0 && (
+      {tone === 'error' && bugs.length > 0 && (
         <div className="dsa-list-block">
-          <div className="dsa-list-block__title"><Bug size={13} /> Bugs & edge cases</div>
+          <div className="dsa-list-block__title"><Bug size={13} /> Why it fails</div>
           <ul className="dsa-list">
             {bugs.map((b, i) => (
               <li key={i}>
@@ -77,38 +116,27 @@ function ReviewSection({ review }) {
         </div>
       )}
 
-      {improvements.length > 0 && (
+      {tone === 'warn' && improvements.length > 0 && (
         <div className="dsa-list-block">
-          <div className="dsa-list-block__title"><Lightbulb size={13} /> Improvements</div>
+          <div className="dsa-list-block__title"><Lightbulb size={13} /> How to optimize</div>
           <ul className="dsa-list">
             {improvements.map((imp, i) => <li key={i}><span className="dsa-list__lead">{imp}</span></li>)}
           </ul>
         </div>
       )}
-
-      {review.is_optimal && (
-        <div className="dsa-optimal-banner">
-          <Trophy size={18} />
-          <div>
-            <strong>Already optimal — no changes needed.</strong>
-            {review.optimality_note && <p>{review.optimality_note}</p>}
-          </div>
-        </div>
-      )}
-    </Section>
+    </section>
   );
 }
 
-// ── Approaches (brute force → optimal) ────────────────────────────────────────
+// ── Approaches (brute force → optimal, side by side) ──────────────────────────
 
 function ApproachCard({ approach, index }) {
   if (!approach) return null;
   return (
     <article className={`dsa-approach${approach.is_optimal ? ' dsa-approach--optimal' : ''}`}>
       <div className="dsa-approach__head">
-        <span className="dsa-approach__num">{index + 1}</span>
         <h4 className="dsa-approach__name">{approach.name || `Approach ${index + 1}`}</h4>
-        {approach.is_optimal && <span className="rf-badge rf-badge--success"><Trophy size={11} /> Optimal</span>}
+        {approach.is_optimal && <span className="dsa-approach__tag"><Trophy size={11} /> Optimal</span>}
       </div>
 
       {approach.how_to_think && (
@@ -132,32 +160,36 @@ function ApproachCard({ approach, index }) {
 
 // ── Top-level result renderer ─────────────────────────────────────────────────
 
-export default function DsaResult({ result }) {
+export default function DsaResult({ result, problemStatement, userCode }) {
   if (!result) return null;
   const approaches = Array.isArray(result.approaches) ? result.approaches : [];
   const optimal = result.optimal_complexity;
+  const reviewLang = result.review?.language;
 
   return (
     <div className="dsa-result">
-      <header className="dsa-result__header">
-        {result.problem_title && <h2 className="dsa-result__title">{result.problem_title}</h2>}
-        {result.problem_summary && <p className="dsa-result__summary">{result.problem_summary}</p>}
-        {optimal && (optimal.time || optimal.space) && (
-          <div className="dsa-result__optimal-chip">
-            <Sparkles size={13} />
-            Optimal: <strong>{optimal.time || '—'}</strong> time · <strong>{optimal.space || '—'}</strong> space
-          </div>
-        )}
-      </header>
+      {/* Collapsed problem statement at the very top */}
+      <ProblemPanel
+        title={result.problem_title}
+        summary={result.problem_summary}
+        problemStatement={problemStatement}
+        userCode={userCode}
+        language={reviewLang}
+      />
 
-      {result.review && <ReviewSection review={result.review} />}
+      {optimal && (optimal.time || optimal.space) && (
+        <div className="dsa-optimal-chip">
+          <Sparkles size={13} />
+          Optimal target: <strong>{optimal.time || '—'}</strong> time · <strong>{optimal.space || '—'}</strong> space
+        </div>
+      )}
+
+      {result.review && <VerdictPanel review={result.review} />}
 
       {approaches.length > 0 && (
-        <Section icon={Layers} title={result.review ? 'Approaches & optimal solution' : 'Approaches'}>
-          <div className="dsa-approaches">
-            {approaches.map((a, i) => <ApproachCard key={i} approach={a} index={i} />)}
-          </div>
-        </Section>
+        <div className="dsa-approaches">
+          {approaches.map((a, i) => <ApproachCard key={i} approach={a} index={i} />)}
+        </div>
       )}
     </div>
   );

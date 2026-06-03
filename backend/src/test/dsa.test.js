@@ -84,6 +84,20 @@ describe('dsaAnalysisPrompt', () => {
   test('exports the supported languages', () => {
     assert.deepEqual([...DSA_LANGUAGES].sort(), ['java', 'python']);
   });
+
+  test('outputLanguages restricts generated code to the requested language only', () => {
+    const { system, prompt } = dsaAnalysisPrompt({ problemStatement: 'Two Sum', outputLanguages: ['python'] });
+    assert.match(system, /in Python only/i);
+    assert.doesNotMatch(system, /Java and Python/i);
+    // The approach "code" object should carry only the python key.
+    assert.match(prompt, /"code": \{ "python": "" \}/);
+    assert.doesNotMatch(prompt, /"java":/);
+  });
+
+  test('outputLanguages defaults to both when unset', () => {
+    const { system } = dsaAnalysisPrompt({ problemStatement: 'Two Sum' });
+    assert.match(system, /Java and Python only/i);
+  });
 });
 
 // ── Language + length handling ───────────────────────────────────────────────

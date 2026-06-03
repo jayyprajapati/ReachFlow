@@ -389,6 +389,7 @@ const dsaAnalysisSchema = new mongoose.Schema(
     problemStatement: { type: String, default: '' },
     userCode: { type: String, default: '' },
     language: { type: String, enum: ['java', 'python'], default: 'java' },
+    outputLanguage: { type: String, enum: ['java', 'python', 'both'], default: 'both' },
     hasUserCode: { type: Boolean, default: false },
     problemTitle: { type: String, trim: true, default: '' },
     result: { type: mongoose.Schema.Types.Mixed, default: null },

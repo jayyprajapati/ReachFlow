@@ -34,7 +34,7 @@ function routeTitle(path, appUser, authLoading) {
     case cleanPath === '/history':             return `History - ${TITLE_SUFFIX}`;
     case cleanPath === '/settings':            return `Settings - ${TITLE_SUFFIX}`;
     case cleanPath.startsWith('/resume-lab'):  return `Resume Lab - ${TITLE_SUFFIX}`;
-    case cleanPath.startsWith('/dsa-lab'):     return `DSA Lab - ${TITLE_SUFFIX}`;
+    case cleanPath.startsWith('/dsa-lab'):     return `DSA Analysis - ${TITLE_SUFFIX}`;
     case cleanPath.startsWith('/roadmaps'):    return `Roadmaps - ${TITLE_SUFFIX}`;
     case cleanPath === '/about':               return `About - ${TITLE_SUFFIX}`;
     case cleanPath === '/privacy-policy':      return `Privacy Policy - ${TITLE_SUFFIX}`;

@@ -48,8 +48,8 @@ function ByokGate({ navigateTo }) {
       </div>
       <p className="rf-empty__desc">
         {isConfigured
-          ? 'Your API key is saved but not tested. Go to Settings and run "Test connection" to verify it works before using DSA Lab.'
-          : 'DSA Lab needs your own AI key (OpenAI, Anthropic, or Ollama) to analyze problems and review your code. Add it in Settings to get started.'}
+          ? 'Your API key is saved but not tested. Go to Settings and run "Test connection" to verify it works before using DSA Analysis.'
+          : 'DSA Analysis needs your own AI key (OpenAI, Anthropic, or Ollama) to analyze problems and review your code. Add it in Settings to get started.'}
       </p>
       <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => navigateTo('/settings')}>
         <Brain size={13} /> Open Settings <ArrowUpRight size={13} />
@@ -73,17 +73,17 @@ export default function DsaLabPage() {
       <header className="rf-page-header">
         <div className="rf-page-header__lead">
           <div className="rf-page-header__eyebrow">
-            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} /> DSA Lab
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--rf-accent)', display: 'inline-block' }} /> DSA Analysis
           </div>
           <h1 className="rf-page-header__title">Algorithm analysis</h1>
           <p className="rf-page-header__subtitle">
             Paste a Data Structures &amp; Algorithms problem — get clear approaches from brute force to optimal,
-            in Java and Python. Add your own solution to have it reviewed for correctness, complexity, and optimality.
+            in Java, Python, or both. Add your own solution to have it reviewed for correctness, complexity, and optimality.
           </p>
         </div>
       </header>
 
-      <nav className="rf-subnav" aria-label="DSA Lab sections">
+      <nav className="rf-subnav" aria-label="DSA Analysis sections">
         {SUB_ROUTES.map((item) => {
           const Icon = item.icon;
           return (

@@ -81,7 +81,7 @@ export default function HistoryPage() {
         </div>
         {activeLoading
           ? <div className="dsa-loading"><Loader size={24} className="rf-spin" /></div>
-          : <DsaResult result={active.result} />}
+          : <DsaResult result={active.result} problemStatement={active.problemStatement} userCode={active.userCode} />}
       </div>
     );
   }

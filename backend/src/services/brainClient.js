@@ -272,9 +272,9 @@ async function deleteAllUserVectors({ userId }) {
 // the parsed JSON described by prompts.dsaAnalysisPrompt — including the
 // is_dsa_problem gate the caller uses to refuse non-DSA input. maxTokens is
 // generous because 2–3 approaches × two languages of real code is large.
-async function analyzeDsa({ userId, problemStatement, userCode, language, llm }) {
+async function analyzeDsa({ userId, problemStatement, userCode, language, outputLanguages, llm }) {
   const label = `analyzeDsa (user: ${userId})`;
-  const { system, prompt } = prompts.dsaAnalysisPrompt({ problemStatement, userCode, language });
+  const { system, prompt } = prompts.dsaAnalysisPrompt({ problemStatement, userCode, language, outputLanguages });
   return withRetry(() => generate({ system, prompt, llm, json: true, maxTokens: 8000 }), label);
 }
 

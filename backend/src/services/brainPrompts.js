@@ -265,10 +265,20 @@ ${bodyHtml}
 // data-structures problem it must refuse with is_dsa_problem=false + a reason.
 
 const DSA_LANGUAGES = ['java', 'python'];
+const DSA_LANG_LABEL = { java: 'Java', python: 'Python' };
 
-function dsaAnalysisPrompt({ problemStatement, userCode, language }) {
+function dsaAnalysisPrompt({ problemStatement, userCode, language, outputLanguages }) {
   const hasCode = !!(userCode && String(userCode).trim());
   const lang = DSA_LANGUAGES.includes(language) ? language : 'java';
+
+  // Which language(s) the generated solutions should be written in (user prefs).
+  const outLangs = Array.isArray(outputLanguages)
+    ? outputLanguages.filter((l) => DSA_LANGUAGES.includes(l))
+    : [];
+  const langs = outLangs.length ? outLangs : DSA_LANGUAGES;
+  const langLabels = langs.map((l) => DSA_LANG_LABEL[l]).join(' and ');
+  // The "code" object only carries the requested languages, e.g. { "java": "" }.
+  const codeShape = '{ ' + langs.map((l) => `"${l}": ""`).join(', ') + ' }';
 
   const system =
     'You are an expert competitive-programming and Data Structures & Algorithms ' +
@@ -283,7 +293,8 @@ function dsaAnalysisPrompt({ problemStatement, userCode, language }) {
     '{ "is_dsa_problem": false, "rejection_reason": "<one short sentence on why>" }.\n\n' +
     'STEP 2 — If it IS a DSA problem, analyze it. Always provide 2–3 distinct ' +
     'approaches ordered from brute force to most optimal, each with working, ' +
-    'compilable code in BOTH Java and Python, and its time & space complexity. ' +
+    'compilable code in ' + langLabels + ' only (do not include any other ' +
+    'language), and its time & space complexity. ' +
     (hasCode
       ? 'The user ALSO submitted their own solution (in ' + lang + '): review it — ' +
         'state whether it is correct, list concrete bugs/edge-cases it misses, ' +
@@ -320,14 +331,14 @@ function dsaAnalysisPrompt({ problemStatement, userCode, language }) {
       "how_to_think": "",
       "explanation": "",
       "complexity": { "time": "O(...)", "space": "O(...)", "explanation": "" },
-      "code": { "java": "", "python": "" }
+      "code": ${codeShape}
     }
   ],
   "optimal_complexity": { "time": "O(...)", "space": "O(...)" }
 }
 Rules:
 - "approaches" MUST be ordered brute force → optimal and contain 2 or 3 items; mark the best one with "is_optimal": true.
-- Every approach's "code" MUST include BOTH a "java" and a "python" implementation that actually solves the problem (not pseudocode).
+- Every approach's "code" MUST include a working ${langLabels} implementation that actually solves the problem (not pseudocode). Include ONLY these language key(s): ${langs.map((l) => `"${l}"`).join(', ')} — no others.
 - "how_to_think" is the intuition/derivation for reaching that approach, in simple words.
 - "complexity.explanation" briefly says WHY the time/space bounds hold, without heavy jargon.
 - "optimal_complexity" mirrors the complexity of the approach marked is_optimal.

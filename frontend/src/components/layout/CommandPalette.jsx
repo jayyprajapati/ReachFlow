@@ -11,7 +11,7 @@ const NAV_COMMANDS = [
   { id: 'nav-pipeline',  label: 'Applications',  hint: 'Pipeline',     path: '/pipeline',   icon: Briefcase,   section: 'Workspace' },
   { id: 'nav-contacts',  label: 'Contacts',      hint: 'Companies',    path: '/contacts',   icon: Users,       section: 'Workspace' },
   { id: 'nav-resume',    label: 'Resume Lab',    hint: 'Coming soon', path: '/resume-lab', icon: FileText, section: 'Workspace', disabled: true },
-  { id: 'nav-dsa',       label: 'DSA Lab',       hint: 'Algorithm analysis', path: '/dsa-lab', icon: Binary,  section: 'Workspace' },
+  { id: 'nav-dsa',       label: 'DSA Analysis',  hint: 'Algorithm analysis', path: '/dsa-lab', icon: Binary,  section: 'Workspace' },
   { id: 'nav-roadmap',   label: 'Roadmaps',      hint: 'Skill tracks', path: '/roadmaps',   icon: Compass,     section: 'Workspace' },
   { id: 'nav-settings',  label: 'Settings',      hint: '',             path: '/settings',   icon: Settings,    section: 'Workspace' },
 ];

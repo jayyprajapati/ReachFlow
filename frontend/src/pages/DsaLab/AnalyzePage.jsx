@@ -2,21 +2,21 @@ import React, { useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Binary, Loader, X, Code2, ChevronDown, ChevronUp,
-  Ban, ArrowUpRight, Sparkles,
+  Binary, Loader, RotateCcw, Ban, ArrowUpRight, Sparkles, X,
 } from 'lucide-react';
 import { makeDsaApi } from '../../services/dsaApi.js';
 import CodeEditor from '../../components/dsa/CodeEditor.jsx';
 import DsaResult from '../../components/dsa/DsaResult.jsx';
 
-const LANGUAGES = [
-  { value: 'java', label: 'Java' },
-  { value: 'python', label: 'Python' },
+const OUTPUT_LANGUAGES = [
+  { value: 'both',   label: 'Java & Python' },
+  { value: 'java',   label: 'Java only' },
+  { value: 'python', label: 'Python only' },
 ];
 
 const CODE_PLACEHOLDER = {
-  java: 'class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        // your solution\n    }\n}',
-  python: 'class Solution:\n    def twoSum(self, nums, target):\n        # your solution\n        pass',
+  java: '// Optional — paste your solution to have it reviewed\nclass Solution {\n    public int[] twoSum(int[] nums, int target) {\n\n    }\n}',
+  python: '# Optional — paste your solution to have it reviewed\nclass Solution:\n    def twoSum(self, nums, target):\n        pass',
 };
 
 export default function AnalyzePage() {
@@ -25,16 +25,18 @@ export default function AnalyzePage() {
   const api = useMemo(() => makeDsaApi(authedFetch), [authedFetch]);
 
   const [problem, setProblem] = useState('');
-  const [showCode, setShowCode] = useState(false);
   const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('java');
+  const [outputPref, setOutputPref] = useState('both'); // java | python | both
+  const [codeLang, setCodeLang] = useState('java');      // language of the user's own code
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null); // { kind: 'notDsa' | 'byok' | 'generic', message }
 
+  // When a single output language is chosen, the user's code is in that language too.
+  const editorLang = outputPref === 'both' ? codeLang : outputPref;
   const canAnalyze = problem.trim().length > 15 && !loading;
-  const hasCode = showCode && code.trim().length > 0;
+  const hasCode = code.trim().length > 0;
 
   async function handleAnalyze() {
     if (!canAnalyze) return;
@@ -42,10 +44,10 @@ export default function AnalyzePage() {
     setError(null);
     setResult(null);
     try {
-      const body = { problemStatement: problem.trim() };
+      const body = { problemStatement: problem.trim(), outputLanguage: outputPref };
       if (hasCode) {
         body.code = code;
-        body.language = language;
+        body.language = editorLang;
       }
       const data = await api.analyze(body);
       setResult(data);
@@ -64,128 +66,138 @@ export default function AnalyzePage() {
   }
 
   function reset() {
-    setProblem('');
-    setCode('');
-    setShowCode(false);
     setResult(null);
     setError(null);
   }
 
-  return (
-    <div className="dsa-analyze">
-      {/* ── Input ── */}
-      <div className="dsa-panel">
-        <div className="dsa-panel__head">
-          <p className="dsa-panel__title">Problem statement</p>
-          {(problem || result) && (
-            <button className="dsa-linkbtn" onClick={reset}><X size={12} /> Clear</button>
-          )}
+  // ── Result view ──────────────────────────────────────────────────────────
+  if (result) {
+    return (
+      <div className="dsa-resultview">
+        <div className="dsa-resultview__bar">
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={reset}>
+            <RotateCcw size={13} /> New analysis
+          </button>
         </div>
+        <DsaResult result={result} problemStatement={problem} userCode={hasCode ? code : ''} />
+      </div>
+    );
+  }
 
-        <textarea
-          className="rf-textarea dsa-problem-input"
-          placeholder="Paste the full DSA problem here — including constraints and examples for the best analysis…"
-          value={problem}
-          onChange={(e) => setProblem(e.target.value)}
-        />
+  // ── Loading view ─────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="dsa-loading">
+        <Loader size={26} className="rf-spin" style={{ color: 'var(--rf-accent)' }} />
+        <p>Working through approaches{hasCode ? ' and reviewing your code' : ''}…</p>
+        <span className="dsa-loading__hint">Writing real, compilable solutions — this can take 30–60s.</span>
+      </div>
+    );
+  }
 
-        {/* Optional code review */}
-        <button
-          type="button"
-          className="dsa-disclosure"
-          onClick={() => setShowCode((v) => !v)}
-          aria-expanded={showCode}
-        >
-          <span><Code2 size={14} /> I have a solution to review <span className="dsa-disclosure__opt">(optional)</span></span>
-          {showCode ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-        </button>
+  // ── Compose view (problem + code side by side) ─────────────────────────────
+  return (
+    <div className="dsa-compose">
+      {error && <ErrorBanner error={error} onClose={() => setError(null)} navigateTo={navigateTo} />}
 
-        {showCode && (
-          <div className="dsa-code-input">
-            <div className="dsa-lang-toggle" role="tablist" aria-label="Solution language">
-              {LANGUAGES.map((l) => (
-                <button
-                  key={l.value}
-                  role="tab"
-                  aria-selected={language === l.value}
-                  className={`dsa-lang-toggle__btn${language === l.value ? ' dsa-lang-toggle__btn--active' : ''}`}
-                  onClick={() => setLanguage(l.value)}
-                >
-                  {l.label}
-                </button>
-              ))}
-            </div>
-            <CodeEditor
-              value={code}
-              onChange={setCode}
-              placeholder={CODE_PLACEHOLDER[language]}
-              ariaLabel={`${language} solution`}
-            />
+      <div className="dsa-compose__toolbar">
+        <label className="dsa-prefs">
+          <span className="dsa-prefs__label">Solution language</span>
+          <div className="dsa-select">
+            <select value={outputPref} onChange={(e) => setOutputPref(e.target.value)}>
+              {OUTPUT_LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+            </select>
           </div>
-        )}
+        </label>
 
         <button
           className="rf-btn rf-btn--primary"
-          style={{ width: '100%' }}
           onClick={handleAnalyze}
           disabled={!canAnalyze}
         >
-          {loading
-            ? <><Loader size={14} className="rf-spin" /> Analyzing…</>
-            : <><Binary size={14} /> {hasCode ? 'Review & analyze' : 'Analyze problem'}</>}
+          <Binary size={14} /> {hasCode ? 'Review & analyze' : 'Analyze problem'}
         </button>
-        {loading && (
-          <p className="dsa-hint">Working through approaches and writing solutions in both languages — this can take 30–60s.</p>
-        )}
       </div>
 
-      {/* ── Output ── */}
-      <div className="dsa-output">
-        {loading && (
-          <div className="dsa-loading">
-            <Loader size={26} className="rf-spin" style={{ color: 'var(--rf-accent)' }} />
-            <p>Analyzing the problem{hasCode ? ' and reviewing your code' : ''}…</p>
+      <div className="dsa-compose__grid">
+        {/* Problem statement */}
+        <section className="dsa-pane">
+          <div className="dsa-pane__head">
+            <span className="dsa-pane__title">Problem statement</span>
           </div>
-        )}
+          <textarea
+            className="dsa-pane__textarea"
+            placeholder="Paste the full DSA problem — include constraints and examples for the sharpest analysis…"
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+          />
+        </section>
 
-        {!loading && error && error.kind === 'notDsa' && (
-          <div className="dsa-error-card dsa-error-card--reject">
-            <div className="dsa-error-card__icon"><Ban size={22} /></div>
-            <h3>Not a DSA problem</h3>
-            <p>{error.message}</p>
-            <p className="dsa-error-card__hint">Paste an algorithmic or data-structures problem (arrays, strings, trees, graphs, dynamic programming, etc.) to get an analysis.</p>
+        {/* Optional solution */}
+        <section className="dsa-pane">
+          <div className="dsa-pane__head">
+            <span className="dsa-pane__title">Your solution <span className="dsa-pane__opt">optional</span></span>
+            {outputPref === 'both' && (
+              <div className="dsa-seg" role="tablist" aria-label="Your code language">
+                {['java', 'python'].map((l) => (
+                  <button
+                    key={l}
+                    role="tab"
+                    aria-selected={codeLang === l}
+                    className={`dsa-seg__btn${codeLang === l ? ' dsa-seg__btn--active' : ''}`}
+                    onClick={() => setCodeLang(l)}
+                  >
+                    {l === 'python' ? 'Python' : 'Java'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-
-        {!loading && error && error.kind === 'byok' && (
-          <div className="dsa-error-card">
-            <div className="dsa-error-card__icon"><Sparkles size={22} /></div>
-            <h3>AI provider not ready</h3>
-            <p>{error.message}</p>
-            <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => navigateTo('/settings')}>
-              Open Settings <ArrowUpRight size={13} />
-            </button>
-          </div>
-        )}
-
-        {!loading && error && error.kind === 'generic' && (
-          <div className="dsa-error-card">
-            <div className="dsa-error-card__icon"><X size={22} /></div>
-            <h3>Something went wrong</h3>
-            <p>{error.message}</p>
-          </div>
-        )}
-
-        {!loading && !error && !result && (
-          <div className="rf-empty dsa-output__empty">
-            <div className="dsa-output__empty-icon"><Binary size={22} /></div>
-            <p className="rf-empty__title">No analysis yet</p>
-            <p className="rf-empty__desc">Paste a problem (and optionally your solution) and run the analysis to see approaches, complexity, and code here.</p>
-          </div>
-        )}
-
-        {!loading && !error && result && <DsaResult result={result} />}
+          <CodeEditor
+            value={code}
+            onChange={setCode}
+            language={editorLang}
+          />
+          {!code && (
+            <p className="dsa-pane__hint">
+              Paste your code to get it reviewed for correctness, bugs, and whether it's already optimal. Leave it empty for a fresh walkthrough.
+            </p>
+          )}
+        </section>
       </div>
+    </div>
+  );
+}
+
+// Inline error banner (replaces the old full-card error states for a calmer layout).
+function ErrorBanner({ error, onClose, navigateTo }) {
+  if (error.kind === 'notDsa') {
+    return (
+      <div className="dsa-banner dsa-banner--warn">
+        <Ban size={16} />
+        <div>
+          <strong>Not a DSA problem.</strong> {error.message}
+        </div>
+        <button className="dsa-banner__x" onClick={onClose} aria-label="Dismiss"><X size={14} /></button>
+      </div>
+    );
+  }
+  if (error.kind === 'byok') {
+    return (
+      <div className="dsa-banner dsa-banner--info">
+        <Sparkles size={16} />
+        <div><strong>AI provider not ready.</strong> {error.message}</div>
+        <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => navigateTo('/settings')}>
+          Settings <ArrowUpRight size={12} />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="dsa-banner dsa-banner--error">
+      <X size={16} />
+      <div><strong>Something went wrong.</strong> {error.message}</div>
+      <button className="dsa-banner__x" onClick={onClose} aria-label="Dismiss"><X size={14} /></button>
     </div>
   );
 }

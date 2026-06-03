@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { path: '/pipeline',   label: 'Applications',  icon: Briefcase },
   { path: '/contacts',   label: 'Contacts',      icon: Users },
   { path: '/resume-lab', label: 'Resume Lab',    icon: FileText },
-  { path: '/dsa-lab',    label: 'DSA Lab',       icon: Binary },
+  { path: '/dsa-lab',    label: 'DSA Analysis',  icon: Binary },
   { path: '/roadmaps',   label: 'Roadmaps',      icon: Compass },
 ];
 
