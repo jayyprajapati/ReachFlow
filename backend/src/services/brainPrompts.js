@@ -370,7 +370,8 @@ Rules:
 - "explanation" MUST be 4-7 short bullets explaining how the approach works. Do not write one long paragraph.
 - "complexity.explanation" briefly says WHY the time/space bounds hold, without heavy jargon.
 - "optimal_complexity" mirrors the complexity of the approach marked is_optimal.
-- Keep all code as valid JSON string values: escape newlines and quotes properly.${hasCode ? '\n- "review" reflects ONLY the user\'s submitted code, not the approaches.' : '\n- "review" MUST be null when no user code is provided.'}`;
+- Keep all code as valid JSON string values: escape newlines and quotes properly.
+- Do not double-escape code newlines. After JSON parsing, code should contain real line breaks, not visible "\\n" text.${hasCode ? '\n- "review" reflects ONLY the user\'s submitted code, not the approaches.' : '\n- "review" MUST be null when no user code is provided.'}`;
 
   const codeBlock = hasCode
     ? `\n\nUSER'S SUBMITTED SOLUTION (${lang}):\n"""\n${userCode}\n"""`

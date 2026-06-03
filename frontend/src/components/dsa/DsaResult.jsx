@@ -69,6 +69,24 @@ function normalizeSteps(steps) {
   }).filter((step) => step && (step.step || step.state || step.why));
 }
 
+function isBruteForceApproach(approach) {
+  return /brute\s*force|naive|exhaustive/i.test(String(approach?.name || ''));
+}
+
+function orderedApproaches(approaches) {
+  return approaches
+    .map((approach, index) => ({ approach, index }))
+    .sort((a, b) => {
+      const rank = ({ approach }) => {
+        if (approach?.is_optimal) return 0;
+        if (isBruteForceApproach(approach)) return 2;
+        return 1;
+      };
+      return rank(a) - rank(b) || a.index - b.index;
+    })
+    .map(({ approach }) => approach);
+}
+
 // ── Small building blocks ─────────────────────────────────────────────────────
 
 function ComplexityBlock({ complexity, label }) {
@@ -274,6 +292,53 @@ function ApproachCard({ approach, index }) {
   );
 }
 
+function ApproachTabs({ approaches }) {
+  const ordered = orderedApproaches(approaches);
+  const [active, setActive] = useState(0);
+  const activeIndex = Math.min(active, ordered.length - 1);
+  const activeApproach = ordered[activeIndex];
+
+  if (!ordered.length) return null;
+
+  return (
+    <section className="dsa-approaches">
+      <div className="dsa-approaches__tabs" role="tablist" aria-label="Solution approaches">
+        {ordered.map((approach, index) => {
+          const selected = index === activeIndex;
+          const brute = isBruteForceApproach(approach);
+          const label = approach.name || `Approach ${index + 1}`;
+
+          return (
+            <button
+              key={`${label}-${index}`}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`dsa-approach-panel-${index}`}
+              id={`dsa-approach-tab-${index}`}
+              className={`dsa-approaches__tab${selected ? ' dsa-approaches__tab--active' : ''}`}
+              onClick={() => setActive(index)}
+            >
+              <span className="dsa-approaches__tab-title">{label}</span>
+              <span className="dsa-approaches__tab-meta">
+                {approach.is_optimal ? 'Optimal' : brute ? 'Brute force' : 'Alternative'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        role="tabpanel"
+        id={`dsa-approach-panel-${activeIndex}`}
+        aria-labelledby={`dsa-approach-tab-${activeIndex}`}
+      >
+        <ApproachCard approach={activeApproach} index={activeIndex} />
+      </div>
+    </section>
+  );
+}
+
 // ── Top-level result renderer ─────────────────────────────────────────────────
 
 export default function DsaResult({ result, problemStatement, userCode }) {
@@ -304,11 +369,7 @@ export default function DsaResult({ result, problemStatement, userCode }) {
 
       {result.review && <VerdictPanel review={result.review} />}
 
-      {approaches.length > 0 && (
-        <div className="dsa-approaches">
-          {approaches.map((a, i) => <ApproachCard key={i} approach={a} index={i} />)}
-        </div>
-      )}
+      {approaches.length > 0 && <ApproachTabs approaches={approaches} />}
     </div>
   );
 }

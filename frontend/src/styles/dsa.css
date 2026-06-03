@@ -410,13 +410,63 @@
 .dsa-list__lead { font-size: var(--rf-text-sm); color: var(--rf-text); line-height: var(--rf-leading-normal); }
 .dsa-list__sub { font-size: var(--rf-text-xs); color: var(--rf-text-muted); }
 
-/* ───────────────────────── Approaches (side by side) ───────────────────────── */
+/* ───────────────────────── Approaches (tabbed) ───────────────────────── */
 
 .dsa-approaches {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: var(--rf-sp-4);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--rf-sp-3);
+  min-width: 0;
+}
+.dsa-approaches__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  overflow-x: auto;
+  background: var(--rf-bg-surface);
+  border-radius: var(--rf-radius-lg);
+  scrollbar-width: thin;
+}
+.dsa-approaches__tab {
+  flex: 1 1 180px;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: none;
+  border-radius: var(--rf-radius-md);
+  background: transparent;
+  color: var(--rf-text-muted);
+  cursor: pointer;
+  padding: 9px 11px;
+  font-family: var(--rf-font-body);
+  text-align: left;
+}
+.dsa-approaches__tab:hover {
+  background: var(--rf-bg-hover);
+  color: var(--rf-text-secondary);
+}
+.dsa-approaches__tab--active {
+  background: var(--rf-bg-canvas);
+  color: var(--rf-text);
+  box-shadow: var(--rf-shadow-xs);
+}
+.dsa-approaches__tab-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--rf-text-sm);
+  font-weight: 700;
+}
+.dsa-approaches__tab-meta {
+  font-size: var(--rf-text-xs);
+  font-weight: 600;
+  color: var(--rf-text-faint);
+}
+.dsa-approaches__tab--active .dsa-approaches__tab-meta {
+  color: var(--rf-accent-text);
 }
 .dsa-approach {
   background: var(--rf-bg-surface);

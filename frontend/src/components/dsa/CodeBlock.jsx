@@ -4,6 +4,22 @@ import CodeEditor from './CodeEditor.jsx';
 
 const LANG_LABELS = { java: 'Java', python: 'Python' };
 
+function normalizeCodeText(value) {
+  const raw = String(value || '');
+  const hasRealNewlines = /[\r\n]/.test(raw);
+  const escapedNewlineCount = (raw.match(/\\r\\n|\\n|\\r/g) || []).length;
+  const looksLikeEscapedCode = escapedNewlineCount > 1
+    || /(?:\\r\\n|\\n|\\r)\s*(?:import|public|class|private|protected|static|for|if|else|while|return|\/\/|[{}])/i.test(raw);
+
+  if (hasRealNewlines || escapedNewlineCount === 0 || !looksLikeEscapedCode) return raw;
+
+  return raw
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\n')
+    .replace(/\\t/g, '\t');
+}
+
 function editorHeightFor(source) {
   const lines = String(source || '').split('\n').length;
   return Math.min(460, Math.max(220, lines * 20 + 32));
@@ -20,7 +36,7 @@ export default function CodeBlock({ code }) {
 
   if (!langs.length) return null;
   const activeLang = langs.includes(active) ? active : langs[0];
-  const current = code[activeLang] || '';
+  const current = normalizeCodeText(code[activeLang]);
   const editorHeight = editorHeightFor(current);
 
   function copy() {
