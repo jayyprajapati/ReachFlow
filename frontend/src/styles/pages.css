@@ -2006,7 +2006,7 @@
 }
 /* Compact inline variant — lives inside the company-detail header row */
 .rf-ct__contact-search--inline {
-  width: clamp(160px, 18vw, 220px);
+  width: clamp(100px, 14vw, 170px);
   margin-left: 0;
 }
 .rf-ct__contact-search--inline .rf-search__input {
@@ -3826,12 +3826,19 @@
   }
 
   .rf-ct {
+    display: flex;
+    flex-direction: column;
     gap: var(--rf-sp-3);
   }
 
-  .rf-ct__sidebar {
-    max-height: 280px;
-    border-radius: var(--rf-radius-md);
+  .rf-ct__sidebar,
+  .rf-ct__resize-handle,
+  .rf-ct__edge-collapse {
+    display: none !important;
+  }
+
+  .rf-ct__mobile-company-bar {
+    display: flex !important;
   }
 
   .rf-ct__detail {
@@ -3839,22 +3846,28 @@
   }
 
   .rf-ct__detail-head {
-    padding: var(--rf-sp-4);
-    gap: var(--rf-sp-3);
+    padding: var(--rf-sp-3) var(--rf-sp-4);
+    gap: var(--rf-sp-2);
+    flex-wrap: wrap;
   }
 
   .rf-ct__logo {
-    width: 40px;
-    height: 40px;
-    flex-basis: 40px;
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
   }
 
   .rf-ct__title {
-    font-size: var(--rf-text-lg);
+    font-size: var(--rf-text-base);
   }
 
-  .rf-ct__detail-actions .rf-btn:not(.rf-btn--icon) {
-    flex: 1 1 150px;
+  .rf-ct__detail-actions {
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .rf-ct__btn-label {
+    display: none;
   }
 
   .rf-ct__people-head {
@@ -3878,65 +3891,33 @@
   }
 
   .rf-ct__table-wrap {
-    padding: var(--rf-sp-3) var(--rf-sp-4) var(--rf-sp-4);
-    overflow: visible;
+    padding: var(--rf-sp-2) var(--rf-sp-3) var(--rf-sp-4);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .rf-ct__table,
-  .rf-ct__table thead,
-  .rf-ct__table tbody,
-  .rf-ct__table tr,
-  .rf-ct__table th,
-  .rf-ct__table td {
-    display: block;
-    width: 100%;
+  .rf-ct__table {
+    min-width: 560px;
   }
 
-  .rf-ct__table thead {
-    display: none;
-  }
+  .rf-ct__table thead { display: table-header-group; }
+  .rf-ct__table tbody { display: table-row-group; }
+  .rf-ct__table tr { display: table-row; background: transparent; border: none; border-radius: 0; padding: 0; }
+  .rf-ct__table th { display: table-cell; }
+  .rf-ct__table td { display: table-cell; border: none; padding: 8px 10px; width: auto; }
+  .rf-ct__table td::before { display: none; }
+  .rf-ct__table td:last-child { text-align: right !important; }
 
-  .rf-ct__table tbody {
-    display: flex;
-    flex-direction: column;
-    gap: var(--rf-sp-3);
-  }
-
-  .rf-ct__table tr {
-    background: var(--rf-bg-surface);
-    border: 1px solid var(--rf-border-subtle);
-    border-radius: var(--rf-radius-md);
-    padding: var(--rf-sp-3);
-  }
-
-  .rf-ct__table td {
-    border: 0;
-    padding: 7px 0;
-  }
-
-  .rf-ct__table td::before {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: var(--rf-tracking-wider);
-    color: var(--rf-text-faint);
-  }
-  .rf-ct__table td:nth-child(1)::before { content: 'Name'; }
-  .rf-ct__table td:nth-child(2)::before { content: 'Email'; }
-  .rf-ct__table td:nth-child(3)::before { content: 'Role'; }
-  .rf-ct__table td:nth-child(4)::before { content: ''; display: none; }
-  .rf-ct__table td[colspan]::before { content: ''; display: none; }
-
-  .rf-ct__table td:last-child {
-    text-align: left !important;
-    padding-top: var(--rf-sp-2);
-  }
+  /* Contact row: show 3-dot menu, hide desktop actions */
+  .rf-ct__row-actions--desktop { display: none !important; }
+  .rf-ct__row-menu { display: block !important; }
 
   .rf-copy-btn {
     opacity: 1;
   }
+
+  /* Prevent iOS zoom on input focus */
+  input, textarea, select { font-size: 16px !important; }
 
   .rf-templates__grid { grid-template-columns: 1fr; }
   .rf-template-card { padding: var(--rf-sp-4); }
@@ -3957,6 +3938,212 @@
 
   .rf-scope-banner { padding: var(--rf-sp-2) var(--rf-sp-4); }
 }
+
+/* ── Contacts: mobile company selector bar ─────────────── */
+.rf-ct__mobile-company-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--rf-bg-canvas);
+  border: 1px solid var(--rf-border-subtle);
+  border-radius: var(--rf-radius-md);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color var(--rf-duration-fast), background var(--rf-duration-fast);
+  font-size: var(--rf-text-sm);
+  color: var(--rf-text);
+  font-weight: 500;
+}
+.rf-ct__mobile-company-bar:hover { border-color: var(--rf-border); background: var(--rf-bg-surface); }
+.rf-ct__mobile-company-logo {
+  width: 20px; height: 20px; object-fit: contain; border-radius: 3px;
+}
+.rf-ct__mobile-company-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Contacts: mobile bottom sheet ────────────────────── */
+.rf-ct__mobile-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 600;
+  display: flex;
+  align-items: flex-end;
+}
+.rf-ct__mobile-sheet {
+  width: 100%;
+  background: var(--rf-bg-canvas);
+  border-radius: var(--rf-radius-xl) var(--rf-radius-xl) 0 0;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--rf-shadow-xl);
+  animation: rf-slideUp var(--rf-duration-slow) var(--rf-ease-out);
+}
+.rf-ct__mobile-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+.rf-ct__mobile-sheet-title {
+  font-weight: 600;
+  font-size: var(--rf-text-base);
+  color: var(--rf-text);
+}
+.rf-ct__mobile-sheet-search {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+.rf-ct__mobile-sheet-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 0;
+}
+.rf-ct__mobile-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--rf-text-sm);
+  color: var(--rf-text);
+  transition: background var(--rf-duration-fast);
+}
+.rf-ct__mobile-sheet-item:hover { background: var(--rf-bg-hover); }
+.rf-ct__mobile-sheet-item--active { background: var(--rf-accent-muted); }
+.rf-ct__mobile-sheet-logo {
+  width: 28px; height: 28px;
+  border-radius: var(--rf-radius-sm);
+  background: var(--rf-bg-overlay);
+  color: var(--rf-text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; overflow: hidden;
+}
+.rf-ct__mobile-sheet-logo img { width: 100%; height: 100%; object-fit: contain; }
+.rf-ct__mobile-sheet-company-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.rf-ct__mobile-sheet-company-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-ct__mobile-sheet-company-meta { font-size: 11px; color: var(--rf-text-muted); }
+.rf-ct__mobile-sheet-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--rf-text-muted);
+  font-size: var(--rf-text-sm);
+}
+.rf-ct__mobile-sheet-footer {
+  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  border-top: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+
+/* ── Contacts: row 3-dot kebab menu ────────────────────── */
+.rf-ct__row-actions--desktop { display: inline-flex; gap: 2px; }
+.rf-ct__row-menu { display: none; position: relative; }
+.rf-ct__row-menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 170px;
+  background: var(--rf-bg-canvas);
+  border: 1px solid var(--rf-border);
+  border-radius: var(--rf-radius-md);
+  box-shadow: var(--rf-shadow-lg);
+  z-index: 200;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rf-ct__row-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--rf-radius-sm);
+  background: transparent;
+  color: var(--rf-text-secondary);
+  font-size: var(--rf-text-sm);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: background var(--rf-duration-fast), color var(--rf-duration-fast);
+}
+.rf-ct__row-menu-item:hover { background: var(--rf-bg-hover); color: var(--rf-text); }
+.rf-ct__row-menu-item--danger { color: var(--rf-error-text); }
+.rf-ct__row-menu-item--danger:hover { background: var(--rf-error-muted); color: var(--rf-error-text); }
+.rf-ct__row-menu-sep { height: 1px; background: var(--rf-border-subtle); margin: 3px 2px; }
+
+/* ── Contacts: count info tooltip ──────────────────────── */
+.rf-ct__count-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.rf-ct__count-info-icon {
+  color: var(--rf-text-faint);
+  transition: color var(--rf-duration-fast);
+}
+.rf-ct__count-info:hover .rf-ct__count-info-icon,
+.rf-ct__count-info:focus .rf-ct__count-info-icon { color: var(--rf-text-muted); }
+.rf-ct__count-tip {
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 160px;
+  background: var(--rf-bg-inverse, #1a1a2e);
+  color: var(--rf-text-inverse, #f0f0f5);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 8px 12px;
+  border-radius: 8px;
+  z-index: 300;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.rf-ct__count-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--rf-bg-inverse, #1a1a2e);
+}
+.rf-ct__count-info:hover .rf-ct__count-tip,
+.rf-ct__count-info:focus .rf-ct__count-tip {
+  display: flex;
+}
+.rf-ct__count-tip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.rf-ct__count-tip-row--ok { color: #6ee7b7; }
+.rf-ct__count-tip-row--mid { color: #fde68a; }
+.rf-ct__count-tip-row--bad { color: #fca5a5; }
+
+/* Careers link icon-only variant */
+.rf-ct__link--icon { padding: 2px 4px; }
+.rf-ct__link--icon:hover { text-decoration: none; opacity: 0.8; }
 
 /* ── Coming-soon page ────────────────────────────────────── */
 

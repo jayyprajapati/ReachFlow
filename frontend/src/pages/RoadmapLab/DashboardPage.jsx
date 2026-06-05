@@ -655,6 +655,7 @@ export default function DashboardPage() {
   const [selectedId, setSelectedId]     = useState(null);
   const [search, setSearch]             = useState('');
   const [showCreate, setShowCreate]     = useState(false);
+  const [mobileRoadmapSheetOpen, setMobileRoadmapSheetOpen] = useState(false);
   const [editItem, setEditItem]         = useState(null);
   const [mode, setMode]                 = useState('bookmarks');
   const [addingFolder, setAddingFolder] = useState(false);
@@ -794,8 +795,71 @@ export default function DashboardPage() {
 
   const isRoadmapMode = mode === 'roadmap';
 
+  const selectedRoadmap = roadmaps.find(r => r._id === selectedId);
+
   return (
     <div className="rml-workspace">
+
+      {/* ── Mobile roadmap selector bar ── */}
+      <button
+        className="rml-mobile-roadmap-bar"
+        onClick={() => setMobileRoadmapSheetOpen(true)}
+        type="button"
+      >
+        <BookMarked size={15} />
+        <span className="rml-mobile-roadmap-name">
+          {selectedRoadmap ? selectedRoadmap.title : (roadmaps.length === 0 ? 'No roadmaps yet' : 'Select a roadmap')}
+        </span>
+        <ChevronDown size={14} style={{ marginLeft: 'auto', color: 'var(--rf-text-faint)' }} />
+      </button>
+
+      {/* ── Mobile roadmap bottom sheet ── */}
+      {mobileRoadmapSheetOpen && (
+        <div className="rml-mobile-sheet-overlay" onClick={() => setMobileRoadmapSheetOpen(false)}>
+          <div className="rml-mobile-sheet" onClick={e => e.stopPropagation()}>
+            <div className="rml-mobile-sheet__head">
+              <span className="rml-mobile-sheet__title">Select Roadmap</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setMobileRoadmapSheetOpen(false)} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="rml-mobile-sheet__search">
+              <div className="rml-sidebar__search-wrap" style={{ margin: 0 }}>
+                <Search size={12} className="rml-sidebar__search-ico" />
+                <input
+                  className="rml-sidebar__search"
+                  placeholder="Search roadmaps…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="rml-mobile-sheet__list">
+              {filtered.length === 0 ? (
+                <div className="rml-mobile-sheet__empty">{search ? 'No matches' : 'No roadmaps yet'}</div>
+              ) : filtered.map(r => (
+                <SidebarRow
+                  key={r._id}
+                  roadmap={r}
+                  isSelected={r._id === selectedId}
+                  onSelect={(id) => { selectRoadmap(id); setMobileRoadmapSheetOpen(false); }}
+                />
+              ))}
+            </div>
+            <div className="rml-mobile-sheet__footer">
+              <button
+                className="rf-btn rf-btn--primary rf-btn--sm"
+                style={{ width: '100%' }}
+                onClick={() => { setMobileRoadmapSheetOpen(false); setShowCreate(true); }}
+                type="button"
+              >
+                <Plus size={13} /> New Roadmap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Sidebar ── */}
       <aside className="rml-sidebar">
@@ -874,7 +938,7 @@ export default function DashboardPage() {
                     title="Bookmarks — independent folders for saving links"
                   >
                     <Bookmark size={13} />
-                    <span>Bookmarks</span>
+                    <span className="rml-mode-seg__label">Bookmarks</span>
                   </button>
                   <button
                     className={`rml-mode-seg${isRoadmapMode ? ' rml-mode-seg--active' : ''}`}
@@ -883,7 +947,7 @@ export default function DashboardPage() {
                     title="Roadmap — folders connected in sequence with progress tracking"
                   >
                     <Map size={13} />
-                    <span>Roadmap</span>
+                    <span className="rml-mode-seg__label">Roadmap</span>
                   </button>
                 </div>
                 {rm && (
