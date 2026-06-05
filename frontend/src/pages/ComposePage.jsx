@@ -687,20 +687,43 @@ export default function ComposePage() {
 
       {!gmailConnected && (
         <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 12,
+          display: 'flex', flexDirection: 'column', gap: 10,
           padding: '12px 16px', marginBottom: 'var(--rf-sp-5)',
           background: 'var(--rf-warning-muted)',
           border: '1px solid rgba(232, 146, 68, 0.32)',
           borderRadius: 'var(--rf-radius-md)',
           color: 'var(--rf-warning-text)',
         }}>
-          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1, fontSize: 'var(--rf-text-base)' }}>
-            <strong>Gmail is not connected.</strong> Connect your Google account in Settings before you can preview or send.
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1, fontSize: 'var(--rf-text-base)' }}>
+              <strong>Gmail is not connected.</strong> Connect your Google account in Settings before you can preview or send.
+            </div>
+            <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => navigateTo('/settings')}>
+              Open Settings <ChevronRight size={13} />
+            </button>
           </div>
-          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => navigateTo('/settings')}>
-            Open Settings <ChevronRight size={13} />
-          </button>
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            paddingTop: 8,
+            borderTop: '1px solid rgba(232, 146, 68, 0.2)',
+            fontSize: 'var(--rf-text-sm)',
+            opacity: 0.9,
+          }}>
+            <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+            <p style={{ margin: 0, lineHeight: 1.5 }}>
+              <strong>Gmail send is under Google OAuth review</strong> for public access.
+              The <code style={{ fontSize: '0.85em', background: 'rgba(232,146,68,0.15)', padding: '1px 5px', borderRadius: 3 }}>gmail.send</code> scope
+              is pending approval to be available for all users. Meanwhile, if you&apos;d like early access,{' '}
+              <a
+                href="mailto:jay.prajapati5717@gmail.com?subject=ReachFlow%20test%20user%20access%20request"
+                style={{ color: 'inherit', fontWeight: 600, textDecoration: 'underline' }}
+              >
+                raise a request to be added as a test user
+              </a>{' '}
+              — it&apos;s completely secure and your emails always send from your own Gmail account.
+            </p>
+          </div>
         </div>
       )}
 

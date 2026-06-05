@@ -41,7 +41,7 @@ function getInitialTheme() {
   if (typeof window === 'undefined') return 'dark';
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
   if (stored === 'dark' || stored === 'light') return stored;
-  return 'dark';
+  return 'light';
 }
 
 export function useApp() {
