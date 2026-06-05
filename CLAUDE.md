@@ -1,10 +1,19 @@
 # CLAUDE.md
 
 ## Repository Layout
-- `backend/` — Node.js + Express API (CommonJS, `src/app.js` entry).
-- `frontend/` — React + Vite SPA. Custom `pushState` router in `src/router.jsx` — no React Router.
+- `backend/` — Node.js + Express API (CommonJS, `src/app.js` entry). See `backend/src/CLAUDE.md`.
+- `frontend/` — React + Vite SPA. Custom `pushState` router in `src/router.jsx` — no React Router. See `frontend/src/CLAUDE.md`.
 - `backend/docker/latex/` — Dockerfile for `reachflow-latex` image (PDF generation).
 - `.claude/specs/` — feature specs (product truth). `.claude/tasks/` — engineering tasks (implementation truth).
+
+## Core Documentation
+| Document | Purpose |
+|---|---|
+| `CLAUDE.md` | Navigation, commands, encryption model, model table, conventions |
+| `ARCHITECTURE.md` | System design, feature flows, data model, known gotchas |
+| `CODEBASE_MAP.json` | Machine-readable area/feature/entity/flow map |
+| `backend/src/CLAUDE.md` | Backend route map, critical files, service reference |
+| `frontend/src/CLAUDE.md` | Frontend route map, context guide, component reference |
 
 ## Commands
 
@@ -29,16 +38,19 @@ Server won't start without these (asserted on boot):
 - `MONGO_URI`, `FRONTEND_ORIGIN`, `PORT`
 
 Optional:
-- `CORTEX_BASE_URL` (default `http://localhost:8000`) — external Python LLM service
+- `BRAIN_BASE_URL` (default `http://localhost:8000`) — Brain LLM+RAG service URL
+- `BRAIN_API_KEY` (default `change-me`) — Bearer key for Brain service
+- `BRAIN_APP_NAME` (default `reachflow_resumes`) — Qdrant collection name
 - `RESUME_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/`
 - `RATE_LIMIT_BYPASS_EMAILS` — comma-separated emails exempt from send rate limits
+- `VITE_LINKEDIN_EXTENSION_ID` (frontend) — Chrome extension ID for LinkedIn integration
 
 ## Architecture
 
 ### Backend request flow
 1. `src/app.js`: Firebase Admin init → crypto config assert → Helmet/CORS/rate limiters → routes.
 2. All `/api/*` routes: `requireAuth` verifies Firebase ID token and **upserts a User doc** (`firebaseUid` key).
-3. Routes in `src/routes/`: campaigns, groups, recipients, templates, variables, applications, resumelab, roadmaps, settings.
+3. Routes in `src/routes/`: campaigns, groups, recipients, templates, variables, applications, resumelab, roadmaps, settings, dsa, today.
 4. `/auth/google/callback` is **public** — correlates OAuth state via `gmailState` on user doc.
 5. Scheduled campaign worker: `setInterval(processScheduledCampaigns, 60s)` starts after Mongo connects.
 
@@ -66,15 +78,17 @@ All collections prefixed `reachflow_*`. All defined in `src/db.js`.
 | ResumeAnalysis | `reachflow_resume_analyses` |
 | GeneratedResume | `reachflow_generated_resumes` |
 | AISettings | `reachflow_ai_settings` |
+| DsaAnalysis | `reachflow_dsa_analyses` |
 | Roadmap | `reachflow_roadmaps` |
 | RoadmapStage | `reachflow_roadmap_stages` |
 | RoadmapItem | `reachflow_roadmap_items` |
 
-### Resume Lab subsystem
-- **Cortex** (`src/services/cortexClient.js`): external Python LLM service. `/extract` timeout 5 min, `/generate/document` 3 min.
+### Resume Lab & AI subsystem
+- **Brain** (`src/services/brainClient.js`): external LLM+RAG service. `/v1/extract` timeout 5 min, `/v1/generate` 3 min. Prompts live in `src/services/brainPrompts.js`.
 - **LaTeX compiler** (`src/services/latexCompiler.js`): Docker container `reachflow-latex`.
-- **BYOK**: AI provider stored encrypted in `reachflow_ai_settings`. `resolveUserLlm()` enforces validation before any LLM call (HTTP 402 if not configured/validated).
+- **BYOK**: AI provider stored encrypted in `reachflow_ai_settings`. `resolveUserLlm()` in `src/services/llmSettings.js` enforces validation before any LLM call (HTTP 402 if not configured/validated).
 - **JD cache**: in-memory, keyed `userId:profileVersion:sha256(jd)[:16]`, TTL 30 min, max 200 entries.
+- **DSA Lab**: code/algorithm analysis feature powered by Brain. Route: `/api/dsa`. Frontend: `src/pages/DsaLab/`.
 
 ### Frontend
 - `App.jsx` → `AppProvider` → `RouterProvider` → `AuthGate` → `AppShell` + `PageRouter`.
