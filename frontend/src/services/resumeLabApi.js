@@ -62,6 +62,8 @@ export function makeResumeLabApi(authedFetch) {
     // ── Resume Generation ─────────────────────────────────────────────────
     generateResume: (body) =>
       call('/api/resumelab/generate', json(body)),
+    generateFromLatex: (body) =>
+      call('/api/resumelab/generate-from-latex', json(body)),
     getGenerated: () =>
       call('/api/resumelab/generated'),
     getGeneratedById: (id) =>

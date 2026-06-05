@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
+import { useResumeLab } from '../contexts/ResumeLabContext.jsx';
 import { useRouter } from '../router.jsx';
 import {
   Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
@@ -101,6 +102,8 @@ export default function ComposePage() {
     scheduled, scheduledLoading, loadScheduled,
     senderName, hydrateProfile,
   } = useApp();
+  const { aiSettings } = useResumeLab();
+  const savedRewritePref = (aiSettings?.systemPrompt || '').trim();
   const { navigateTo } = useRouter();
 
   /* State (unchanged from before — keep all behavior intact) */
@@ -393,15 +396,15 @@ export default function ComposePage() {
     finally { setIsPreviewing(false); }
   }
 
-  async function doRewrite() {
+  async function runRewrite(instruction) {
     if (!strip(body)) { setNotice({ type: 'error', message: 'Write some body text before rewriting.' }); return; }
-    const instruction = rewriteInstruction.trim();
-    if (!instruction) { setNotice({ type: 'error', message: 'Describe how the AI should rewrite it.' }); return; }
+    const cleaned = (instruction || '').trim();
+    if (!cleaned) { setNotice({ type: 'error', message: 'Describe how the AI should rewrite it.' }); return; }
     setIsRewriting(true);
     try {
       const res = await authedFetch(`${API_BASE}/api/campaigns/rewrite-body`, {
         method: 'POST', headers: hdrs,
-        body: JSON.stringify({ subject, body_html: body, context: instruction }),
+        body: JSON.stringify({ subject, body_html: body, context: cleaned }),
       });
       const d = await res.json();
       if (!res.ok) {
@@ -417,6 +420,21 @@ export default function ComposePage() {
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Rewrite failed' });
     } finally { setIsRewriting(false); }
+  }
+
+  function doRewrite() { return runRewrite(rewriteInstruction); }
+
+  // Header button: if the user has a saved rewrite preference, fire directly
+  // (no modal). Otherwise toggle the modal as before.
+  function handleRewriteClick() {
+    if (isRewriting) return;
+    if (rewriteOpen) { setRewriteOpen(false); return; }
+    if (savedRewritePref) {
+      if (!strip(body)) { setNotice({ type: 'error', message: 'Write some body text before rewriting.' }); return; }
+      runRewrite(savedRewritePref);
+      return;
+    }
+    setRewriteOpen(true);
   }
 
   function revertRewrite() {
@@ -870,9 +888,11 @@ export default function ComposePage() {
               <button
                 className={`rf-btn rf-btn--ghost rf-btn--sm${rewriteOpen ? ' rf-btn--active' : ''}`}
                 type="button"
-                onClick={() => setRewriteOpen(o => !o)}
+                onClick={handleRewriteClick}
                 disabled={isRewriting}
-                title="Refine the message body with AI"
+                title={savedRewritePref
+                  ? 'Refine using your saved AI preference from Settings'
+                  : 'Refine the message body with AI'}
               >
                 {isRewriting ? <Loader size={12} className="rf-spin" /> : <Sparkles size={12} />} Rewrite with AI
               </button>
@@ -880,26 +900,31 @@ export default function ComposePage() {
           </header>
 
           {rewriteOpen && (
-            <div className="rf-cp-rewrite" style={{ display: 'flex', gap: 6, marginBottom: 'var(--rf-sp-3)' }}>
-              <input
-                className="rf-input rf-input--sm"
-                style={{ flex: 1 }}
-                placeholder="How should the AI rewrite it? e.g. “make it more concise and confident”"
-                value={rewriteInstruction}
-                onChange={e => setRewriteInstruction(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); doRewrite(); }
-                  if (e.key === 'Escape') setRewriteOpen(false);
-                }}
-                autoFocus
-                disabled={isRewriting}
-              />
-              <button className="rf-btn rf-btn--primary rf-btn--sm" type="button" onClick={doRewrite} disabled={isRewriting}>
-                {isRewriting ? <><Loader size={12} className="rf-spin" /> Rewriting…</> : <><Wand2 size={12} /> Apply</>}
-              </button>
-              <button className="rf-btn rf-btn--ghost rf-btn--sm" type="button" onClick={() => setRewriteOpen(false)} disabled={isRewriting}>
-                Cancel
-              </button>
+            <div className="rf-cp-rewrite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 'var(--rf-sp-3)' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="rf-input rf-input--sm"
+                  style={{ flex: 1 }}
+                  placeholder="How should the AI rewrite it? e.g. “make it more concise and confident”"
+                  value={rewriteInstruction}
+                  onChange={e => setRewriteInstruction(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); doRewrite(); }
+                    if (e.key === 'Escape') setRewriteOpen(false);
+                  }}
+                  autoFocus
+                  disabled={isRewriting}
+                />
+                <button className="rf-btn rf-btn--primary rf-btn--sm" type="button" onClick={doRewrite} disabled={isRewriting}>
+                  {isRewriting ? <><Loader size={12} className="rf-spin" /> Rewriting…</> : <><Wand2 size={12} /> Apply</>}
+                </button>
+                <button className="rf-btn rf-btn--ghost rf-btn--sm" type="button" onClick={() => setRewriteOpen(false)} disabled={isRewriting}>
+                  Cancel
+                </button>
+              </div>
+              <small style={{ color: 'var(--rf-text-faint)', fontSize: 'var(--rf-text-xs)' }}>
+                Tip — set a default in <a href="#" onClick={(e) => { e.preventDefault(); navigateTo('/settings'); }} style={{ color: 'var(--rf-text-muted)', textDecoration: 'underline' }}>Settings → AI Personalization</a> to skip this step next time.
+              </small>
             </div>
           )}
 

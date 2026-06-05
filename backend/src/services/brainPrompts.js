@@ -143,15 +143,25 @@ function analyzePrompt({ jobDescription, baseResume, canonicalProfile, styleBloc
   "recommended_additions": ["string"],
   "recommended_removals": ["string"],
   "section_rewrites": { "summary": "", "experience": "" },
-  "ats_keyword_clusters": { "cluster_name": ["string"] }
+  "ats_keyword_clusters": { "cluster_name": ["string"] },
+  "mentions_years": false,
+  "required_years_min": 0,
+  "required_years_max": 0,
+  "candidate_years_estimate": 0
 }
 Definitions:
 - "match_score": integer 0–100, how well the SELECTED resume matches the JD (ATS-style).
-- "required_keywords": key skills/terms the JD demands.
-- "missing_keywords": JD-required terms absent from the selected resume.
-- "existing_but_missing_from_resume": terms the candidate HAS (per Career Profile) but the selected resume omits.
-- "irrelevant_content": resume content not relevant to this JD (candidates to trim).
-- "ats_keyword_clusters": JD keywords grouped by theme.`;
+- "required_keywords": key skills/terms the JD demands. EACH entry MUST be an exact ATS-style keyword or short phrase (1–3 words max). NEVER full sentences, suggestions, or explanations.
+- "missing_keywords": TRUE SKILL GAP — JD-required terms that are absent from BOTH the selected resume AND the broader Career Profile. The candidate genuinely lacks these. EACH entry MUST be 1–3 words, no sentences.
+- "existing_but_missing_from_resume": terms the candidate HAS in the Career Profile but the selected resume omits — these are safe to add since the candidate has real experience with them. EACH entry MUST be 1–3 words, no sentences.
+- "irrelevant_content": resume content not relevant to this JD (candidates to trim). Short phrases only.
+- "recommended_additions" / "recommended_removals": specific bullet-level guidance (these MAY be full sentences).
+- "ats_keyword_clusters": JD keywords grouped by theme. Each cluster's entries MUST be 1–3 words.
+- "mentions_years": true ONLY if the JD explicitly states a required years-of-experience range/threshold (e.g. "3+ years", "5–7 years"). False otherwise — do not infer from seniority words like "senior".
+- "required_years_min" / "required_years_max": integer years pulled from the JD. If the JD says "3+ years" → min=3, max=0. If "5–7 years" → min=5, max=7. Leave 0 when mentions_years is false.
+- "candidate_years_estimate": integer estimate of the candidate's total years of relevant professional experience, summed from the Career Profile experience entries (use today as the end date for ongoing roles). Round to the nearest whole year.
+
+Hard rules for keyword arrays (required_keywords, missing_keywords, existing_but_missing_from_resume, ats_keyword_clusters): each string must read like a single ATS token — e.g. "React", "Node.js", "AWS Lambda", "system design". Reject anything sentence-like, anything containing verbs like "use" / "add" / "include", anything with punctuation like "." or ":", anything longer than 3 words. If unsure, drop the entry rather than expand it.`;
 
   const selected = baseResume
     ? JSON.stringify(baseResume, null, 2)
@@ -228,6 +238,108 @@ ${jobDescription}
 CAREER PROFILE:
 ${JSON.stringify(canonicalProfile || {}, null, 2)}
 ${extras.length ? '\n' + extras.join('\n\n') : ''}`;
+  return { system, prompt };
+}
+
+// ── LaTeX resume: generate or modify ─────────────────────────────────────────
+//
+// Two modes share one prompt:
+//   • "modify"  → user pasted their current LaTeX; the model returns the EXACT
+//                 same document with targeted edits driven by the JD analysis,
+//                 the user's intensity choice, and an optional custom prompt.
+//   • "scratch" → no user LaTeX; the model produces a complete new LaTeX file
+//                 grounded in the Career Profile, using the supplied reference
+//                 template as the structural skeleton.
+//
+// Output is a single JSON object: { "latex_source": "string" }. We deliberately
+// avoid the placeholder/inject path here — the model returns final, compilable
+// LaTeX so the user gets a live preview without server-side templating.
+
+const INTENSITY_GUIDANCE = {
+  minor:    'Apply MINOR edits only — fix obvious gaps, tweak phrasing, add missing keywords where they fit naturally. Preserve the overall structure, length, and voice exactly. Do not rewrite paragraphs wholesale.',
+  balanced: 'Apply BALANCED edits — rewrite bullets and summary where it materially improves alignment with the JD. Keep the section order. Add or merge bullets sparingly when the gain is clear.',
+  major:    'Apply MAJOR edits — restructure sections, rewrite the summary, rebuild bullets around the JD\'s priority skills. Re-order or merge sections if that improves ATS score. Keep all facts truthful (no fabrication).',
+};
+
+function generateFromLatexPrompt({
+  mode,
+  latexSource,
+  templateLatex,
+  intensity,
+  userPrompt,
+  jobDescription,
+  matchAnalysis,
+  canonicalProfile,
+  candidateName,
+  candidateContact,
+  styleBlock,
+}) {
+  const isModify = mode === 'modify';
+  const intensityKey = INTENSITY_GUIDANCE[intensity] ? intensity : 'balanced';
+
+  const system =
+    'You are a senior resume engineer who outputs ATS-optimised LaTeX. You only ever ' +
+    'produce a complete, self-contained, compilable LaTeX document (preamble + ' +
+    '\\begin{document} … \\end{document}). NEVER fabricate experience, employers, dates, ' +
+    'degrees, or metrics — every fact must be derivable from the user\'s Career Profile or ' +
+    '(in modify mode) already present in the source LaTeX. Prefer concrete, quantified ' +
+    'bullets. Escape LaTeX special characters correctly (% & $ # _ { } ~ ^ \\). ' +
+    JSON_RULE + (styleBlock || '');
+
+  const shape =
+    'Return: { "latex_source": "string" }. "latex_source" is the FULL .tex file as a single ' +
+    'string. No code fences, no Markdown around it, no commentary fields. Must include ' +
+    '\\documentclass and end with \\end{document}.';
+
+  const sections = [];
+
+  sections.push(`Intensity for this run: ${intensityKey.toUpperCase()}. ${INTENSITY_GUIDANCE[intensityKey]}`);
+
+  if (userPrompt && userPrompt.trim()) {
+    sections.push(`Extra instructions from the user (highest priority unless they conflict with grounding):\n${userPrompt.trim()}`);
+  }
+
+  if (jobDescription && jobDescription.trim()) {
+    sections.push(`Target job description:\n"""\n${jobDescription.trim()}\n"""`);
+  }
+
+  if (matchAnalysis && Object.keys(matchAnalysis).length) {
+    const trimmed = {
+      missing_keywords:                  matchAnalysis.missing_keywords || [],
+      existing_but_missing_from_resume:  matchAnalysis.existing_but_missing_from_resume || [],
+      recommended_additions:             matchAnalysis.recommended_additions || [],
+      recommended_removals:              matchAnalysis.recommended_removals || [],
+      section_rewrites:                  matchAnalysis.section_rewrites || {},
+    };
+    sections.push(`JD-vs-resume analysis to act on:\n${JSON.stringify(trimmed, null, 2)}`);
+  }
+
+  if (canonicalProfile) {
+    sections.push(`Career Profile (ground truth for facts — never contradict):\n${JSON.stringify(canonicalProfile, null, 2)}`);
+  }
+
+  if (candidateName || candidateContact) {
+    sections.push(`Header info — use as-is in the document header.\nName: ${candidateName || ''}\nContact line: ${candidateContact || ''}`);
+  }
+
+  if (isModify) {
+    sections.push(
+      `MODE = MODIFY. The user supplied this LaTeX as the starting point. Keep its ` +
+      `class, packages, and overall layout. Apply the edits described above. Return the ` +
+      `COMPLETE modified document — every line must be present, including unchanged ones.\n\n` +
+      `Existing LaTeX source:\n"""\n${latexSource || ''}\n"""`
+    );
+  } else {
+    sections.push(
+      `MODE = FROM SCRATCH. Use the reference template below as the structural skeleton ` +
+      `(class, packages, section ordering, formatting conventions). Replace every ` +
+      `placeholder block with real content drawn from the Career Profile. Reorder or omit ` +
+      `sections only when the JD makes it clearly beneficial. Output must compile cleanly.\n\n` +
+      `Reference template:\n"""\n${templateLatex || ''}\n"""`
+    );
+  }
+
+  const prompt = `${shape}\n\n${sections.join('\n\n')}`;
   return { system, prompt };
 }
 
@@ -396,6 +508,7 @@ module.exports = {
   analyzePrompt,
   coverLetterPrompt,
   hrEmailPrompt,
+  generateFromLatexPrompt,
   rewritePrompt,
   dsaAnalysisPrompt,
   DSA_LANGUAGES,

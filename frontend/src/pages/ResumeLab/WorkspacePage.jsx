@@ -5,26 +5,15 @@ import { useRouter } from '../../router.jsx';
 import {
   Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle,
   Lightbulb, ChevronDown, ChevronUp, Sparkles, Download, CheckCheck,
-  CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink,
+  CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink, Briefcase,
 } from 'lucide-react';
 
-// Tailored resume generation (LaTeX → PDF) is locked for now. The backend
-// returns FEATURE_LOCKED; the UI entrypoints are hidden behind this flag so the
-// implementation can be re-enabled later without rework. Analyze, cover letters,
-// and HR emails remain fully available.
-const RESUME_GENERATION_ENABLED = false;
+const RESUME_GENERATION_ENABLED = true;
 
-const OUTPUT_FORMAT_OPTIONS = [
-  { value: 'fullstack', label: 'Fullstack' },
-  { value: 'frontend',  label: 'Frontend' },
-  { value: 'backend',   label: 'Backend' },
-  { value: 'custom',    label: 'Custom' },
-];
-
-const AGGRESSIVENESS_OPTIONS = [
-  { value: 'conservative', label: 'Conservative', desc: 'Minimal changes, preserves original voice' },
-  { value: 'balanced',     label: 'Balanced',     desc: 'Recommended — good keyword coverage without over-optimizing' },
-  { value: 'aggressive',   label: 'Aggressive',   desc: 'Maximum keyword insertion, stronger ATS optimization' },
+const INTENSITY_OPTIONS = [
+  { value: 'minor',    label: 'Minor',    desc: 'Tweak phrasing and slot in missing keywords. Preserve structure and voice.' },
+  { value: 'balanced', label: 'Balanced', desc: 'Rewrite bullets and summary where it materially improves alignment.' },
+  { value: 'major',    label: 'Major',    desc: 'Restructure sections and rebuild around the JD\'s priority skills.' },
 ];
 
 function fmt(iso) {
@@ -126,91 +115,129 @@ function ScoreDelta({ before, after }) {
   );
 }
 
-// ── Strategy Modal ────────────────────────────────────────────────────────────
+// ── Experience match chip ─────────────────────────────────────────────────────
 
-function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
-  const [mode, setMode] = useState('canonical_only');
-  const [startingResumeId, setStartingResumeId] = useState('');
-  const [outputFormat, setOutputFormat] = useState('fullstack');
-  const [aggressiveness, setAggressiveness] = useState('balanced');
+function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidate }) {
+  if (!mentionsYears || !requiredMin) return null;
+  const have = Number(candidate) || 0;
+  const min = Number(requiredMin) || 0;
+  const max = Number(requiredMax) || 0;
+  const required = max ? `${min}–${max}` : `${min}+`;
+
+  let tone, verdict;
+  if (have >= min && (!max || have <= max + 2)) { tone = 'ok'; verdict = 'Strong match'; }
+  else if (max && have > max + 2)               { tone = 'warn'; verdict = 'Likely overqualified'; }
+  else if (have >= min - 1)                     { tone = 'warn'; verdict = 'Borderline match'; }
+  else if (have < Math.max(1, Math.floor(min / 2))) { tone = 'err'; verdict = 'Significant gap'; }
+  else                                          { tone = 'warn'; verdict = 'Below required'; }
+
+  const bg = tone === 'ok' ? 'var(--rf-success-muted)'
+           : tone === 'warn' ? 'var(--rf-warning-muted)'
+           : 'var(--rf-error-muted)';
+  const color = tone === 'ok' ? 'var(--rf-success-text)'
+              : tone === 'warn' ? 'var(--rf-warning-text)'
+              : 'var(--rf-error-text)';
+  const border = tone === 'ok' ? 'rgba(64, 160, 96, 0.32)'
+               : tone === 'warn' ? 'rgba(232, 146, 68, 0.32)'
+               : 'rgba(207, 76, 76, 0.32)';
+
+  return (
+    <div className="rl-panel" style={{
+      background: bg, border: `1px solid ${border}`, color,
+      padding: '12px 14px', flexDirection: 'row', alignItems: 'center', gap: 10,
+    }}>
+      <Briefcase size={16} style={{ flexShrink: 0 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <strong style={{ fontSize: 'var(--rf-text-sm)', lineHeight: 1.2 }}>{verdict}</strong>
+        <span style={{ fontSize: 'var(--rf-text-xs)', opacity: 0.9 }}>
+          JD requires {required} yrs · You have ~{have} yr{have === 1 ? '' : 's'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Generate Resume Modal (Modify Existing | From Scratch) ───────────────────
+
+function GenerateModal({ analysisId, onGenerate, onClose, loading }) {
+  const [mode, setMode] = useState('scratch');          // 'modify' | 'scratch'
+  const [latexSource, setLatexSource] = useState('');
+  const [intensity, setIntensity] = useState('balanced');
   const [userPrompt, setUserPrompt] = useState('');
 
-  const parsedResumes = resumes.filter(r => r.status === 'parsed');
-  const canGenerate = !loading && (mode === 'canonical_only' || startingResumeId);
+  const canGenerate =
+    !loading &&
+    !!analysisId &&
+    (mode === 'scratch' || latexSource.trim().length > 0);
 
   function handleSubmit() {
     onGenerate({
       analysisId,
-      outputFormat,
-      generationMode: mode,
-      startingResumeId: startingResumeId || undefined,
-      aggressiveness,
+      mode,
+      latexSource: mode === 'modify' ? latexSource : undefined,
+      intensity,
       userPrompt: userPrompt.trim() || undefined,
     });
   }
 
   return (
-    // Outside click only closes when NOT loading
     <div className="rf-dialog-overlay" onClick={loading ? undefined : onClose}>
-      <div className="rf-dialog" style={{ maxWidth: 520, width: '90vw' }} onClick={e => e.stopPropagation()}>
+      <div className="rf-dialog" style={{ maxWidth: 620, width: '92vw' }} onClick={e => e.stopPropagation()}>
         <div className="rf-dialog__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Sparkles size={16} /> Generation Strategy
+          <Sparkles size={16} /> Generate Resume
           {loading && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>Generating — please wait…</span>}
         </div>
-        <div className="rf-dialog__body" style={{ display: 'flex', flexDirection: 'column', gap: 20, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : undefined }}>
+        <div className="rf-dialog__body" style={{ display: 'flex', flexDirection: 'column', gap: 18, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : undefined }}>
 
-          {/* Mode */}
-          <div>
-            <div className="rl-form-label" style={{ marginBottom: 8 }}>Generation Mode</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[
-                { value: 'canonical_only', label: 'From Profile', desc: 'Build from your full canonical profile — most comprehensive coverage' },
-                { value: 'modify_existing', label: 'Modify Existing', desc: 'Rewrite and optimize a specific resume you already have' },
-              ].map(opt => (
-                <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: loading ? 'default' : 'pointer', padding: '10px 12px', borderRadius: 'var(--rf-radius-md)', border: `1px solid ${mode === opt.value ? 'var(--rf-accent)' : 'var(--rf-border-subtle)'}`, background: mode === opt.value ? 'var(--rf-accent-faint)' : 'transparent' }}>
-                  <input type="radio" name="mode" value={opt.value} checked={mode === opt.value} onChange={() => setMode(opt.value)} style={{ marginTop: 2 }} disabled={loading} />
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)' }}>{opt.label}</div>
-                    <div style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginTop: 2 }}>{opt.desc}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
+          {/* Mode tab switch */}
+          <div style={{ display: 'flex', gap: 6, padding: 4, background: 'var(--rf-bg-overlay)', borderRadius: 'var(--rf-radius-md)' }}>
+            {[
+              { value: 'modify',  label: 'Modify Existing', desc: 'Edit your current LaTeX with JD-driven suggestions' },
+              { value: 'scratch', label: 'From Scratch',    desc: 'Build a new resume from your Career Profile' },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setMode(opt.value)}
+                disabled={loading}
+                className={`rf-btn ${mode === opt.value ? 'rf-btn--primary' : 'rf-btn--ghost'} rf-btn--sm`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                title={opt.desc}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
 
-          {/* Starting resume — only for modify_existing */}
-          {mode === 'modify_existing' && (
+          {/* LaTeX paste — only for modify */}
+          {mode === 'modify' && (
             <div className="rl-form-group">
-              <label className="rl-form-label">Starting Resume *</label>
-              <select className="rl-form-select" value={startingResumeId} onChange={e => setStartingResumeId(e.target.value)} disabled={loading}>
-                <option value="">Select a resume to rewrite…</option>
-                {parsedResumes.map(r => (
-                  <option key={r.id} value={r.id}>{r.title || r.fileName}</option>
-                ))}
-              </select>
-              {parsedResumes.length === 0 && (
-                <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', margin: '4px 0 0' }}>
-                  No parsed resumes available. Upload a resume first.
-                </p>
-              )}
+              <label className="rl-form-label">Paste your current LaTeX source</label>
+              <textarea
+                className="rl-form-input"
+                style={{
+                  minHeight: 160, resize: 'vertical',
+                  fontFamily: 'var(--rf-font-mono)', fontSize: 12, lineHeight: 1.5,
+                }}
+                placeholder={'\\documentclass{article}\n…'}
+                value={latexSource}
+                onChange={e => setLatexSource(e.target.value)}
+                disabled={loading}
+                spellCheck={false}
+              />
+              <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', margin: '4px 0 0' }}>
+                The full source is sent to the AI, edited per your intensity, and returned in the editor below.
+              </p>
             </div>
           )}
 
-          {/* Output format */}
-          <div className="rl-form-group">
-            <label className="rl-form-label">Output Format</label>
-            <select className="rl-form-select" value={outputFormat} onChange={e => setOutputFormat(e.target.value)} disabled={loading}>
-              {OUTPUT_FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-
-          {/* Aggressiveness */}
+          {/* Intensity */}
           <div>
-            <div className="rl-form-label" style={{ marginBottom: 8 }}>Optimization Level</div>
+            <div className="rl-form-label" style={{ marginBottom: 8 }}>How much should the AI change?</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {AGGRESSIVENESS_OPTIONS.map(opt => (
+              {INTENSITY_OPTIONS.map(opt => (
                 <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: loading ? 'default' : 'pointer' }}>
-                  <input type="radio" name="aggressiveness" value={opt.value} checked={aggressiveness === opt.value} onChange={() => setAggressiveness(opt.value)} style={{ marginTop: 2 }} disabled={loading} />
+                  <input type="radio" name="intensity" value={opt.value} checked={intensity === opt.value} onChange={() => setIntensity(opt.value)} style={{ marginTop: 2 }} disabled={loading} />
                   <div>
                     <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)' }}>{opt.label}</span>
                     <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginLeft: 8 }}>{opt.desc}</span>
@@ -220,13 +247,13 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
             </div>
           </div>
 
-          {/* User prompt */}
+          {/* Free-form prompt */}
           <div className="rl-form-group">
-            <label className="rl-form-label">Additional Instructions (optional)</label>
+            <label className="rl-form-label">Extra instructions for the AI (optional)</label>
             <textarea
               className="rl-form-input"
               style={{ minHeight: 72, resize: 'vertical' }}
-              placeholder="e.g. Emphasize leadership experience, include open-source work…"
+              placeholder="e.g. Emphasize backend infra work, drop the freelance section, keep it one page."
               value={userPrompt}
               onChange={e => setUserPrompt(e.target.value)}
               maxLength={1000}
@@ -236,10 +263,9 @@ function StrategyModal({ resumes, analysisId, onGenerate, onClose, loading }) {
         </div>
 
         <div className="rf-dialog__actions">
-          {/* Cancel always enabled — user can abort the generation */}
           <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={onClose}>Cancel</button>
           <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={handleSubmit} disabled={!canGenerate}>
-            {loading ? <><Loader size={13} className="rf-spin" /> Generating…</> : <><Sparkles size={13} /> Generate Resume</>}
+            {loading ? <><Loader size={13} className="rf-spin" /> Generating…</> : <><Sparkles size={13} /> Generate</>}
           </button>
         </div>
       </div>
@@ -408,7 +434,7 @@ export default function WorkspacePage() {
     resumes, loadResumes,
     activeAnalysis, analyzeLoading,
     analyzeJD, setActiveAnalysis,
-    generateLoading, generateResume, loadGeneratedById, downloadPdf,
+    generateLoading, generateFromLatex, downloadPdf,
     fetchPdfBlob, compileLatex,
     jdText, setJdText,
     activeGenerated, setActiveGenerated,
@@ -449,6 +475,10 @@ export default function WorkspacePage() {
             recommendedRemovals: data.analysis.recommendedRemovals || [],
             sectionRewrites: data.analysis.sectionRewrites || {},
             atsKeywordClusters: data.analysis.atsKeywordClusters || {},
+            mentionsYears: !!data.analysis.mentionsYears,
+            requiredYearsMin: data.analysis.requiredYearsMin || 0,
+            requiredYearsMax: data.analysis.requiredYearsMax || 0,
+            candidateYearsEstimate: data.analysis.candidateYearsEstimate || 0,
           });
         }
         if (data.generation?.generatedContent) {
@@ -481,11 +511,24 @@ export default function WorkspacePage() {
   }
 
   async function handleGenerate(payload) {
-    const result = await generateResume(payload);
-    if (result?.generatedResumeId) {
-      const full = await loadGeneratedById(result.generatedResumeId);
-      setActiveGenerated(full || result);
-      setShowStrategyModal(false);
+    try {
+      const result = await generateFromLatex(payload);
+      if (result?.latex) {
+        // Drop the produced LaTeX into the editor as an ad-hoc (no DB record)
+        // generation. LatexPreviewSection compiles via the stateless route
+        // because there's no `id`.
+        setActiveGenerated({
+          id: null,
+          latexSource: result.latex,
+          pdfUrl: null,
+          hasPdf: false,
+          matchScoreBefore: activeAnalysis?.matchScore || 0,
+          matchScoreAfter:  activeAnalysis?.matchScore || 0,
+        });
+        setShowStrategyModal(false);
+      }
+    } catch {
+      /* toast handled by context */
     }
   }
 
@@ -636,11 +679,17 @@ export default function WorkspacePage() {
                 {activeAnalysis.domain && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontStyle: 'italic' }}>{activeAnalysis.domain}</span>}
               </div>
             )}
+            <ExperienceMatchChip
+              mentionsYears={activeAnalysis.mentionsYears}
+              requiredMin={activeAnalysis.requiredYearsMin}
+              requiredMax={activeAnalysis.requiredYearsMax}
+              candidate={activeAnalysis.candidateYearsEstimate}
+            />
             <div className="rl-panel" style={{ gap: 18 }}>
-              <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Missing Keywords"         icon={AlertCircle} />
-              <KwChips items={activeAnalysis.existingButMissingFromResume}  variant="omitted"  label="In Profile, Not in Resume" icon={Info} />
-              <KwChips items={activeAnalysis.recommendedAdditions}          variant="add"      label="Recommended Additions"     icon={TrendingUp} />
-              <KwChips items={activeAnalysis.recommendedRemovals}           variant="remove"   label="Recommended Removals"      icon={MinusCircle} />
+              <KwChips items={activeAnalysis.existingButMissingFromResume}  variant="omitted"  label="Suggested Keywords"          icon={Info} />
+              <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Missing Keywords (Skill Gap)" icon={AlertCircle} />
+              <KwChips items={activeAnalysis.recommendedAdditions}          variant="add"      label="Recommended Additions"       icon={TrendingUp} />
+              <KwChips items={activeAnalysis.recommendedRemovals}           variant="remove"   label="Recommended Removals"        icon={MinusCircle} />
               <SectionRewrites rewrites={activeAnalysis.sectionRewrites} />
             </div>
           </div>
@@ -757,10 +806,9 @@ export default function WorkspacePage() {
         />
       )}
 
-      {/* ── Strategy Modal ── */}
+      {/* ── Generate Modal ── */}
       {RESUME_GENERATION_ENABLED && showStrategyModal && (
-        <StrategyModal
-          resumes={resumes}
+        <GenerateModal
           analysisId={activeAnalysis?.analysisId}
           onGenerate={handleGenerate}
           onClose={() => setShowStrategyModal(false)}

@@ -259,6 +259,24 @@ export function ResumeLabProvider({ children }) {
     }
   }, [api, loadGenerated, setNotice]);
 
+  const generateFromLatex = useCallback(async (payload) => {
+    setGenerateLoading(true);
+    try {
+      const result = await api.generateFromLatex(payload);
+      if (result?.validationWarnings?.length) {
+        setNotice({ type: 'warning', message: `Resume generated with warnings: ${result.validationWarnings.slice(0, 2).join('; ')}` });
+      } else {
+        setNotice({ type: 'success', message: 'Resume generated. Edit and recompile to preview.' });
+      }
+      return result;
+    } catch (err) {
+      setNotice({ type: 'error', message: err.message });
+      throw err;
+    } finally {
+      setGenerateLoading(false);
+    }
+  }, [api, setNotice]);
+
   const deleteGenerated = useCallback(async (id) => {
     try {
       await api.deleteGenerated(id);
@@ -357,7 +375,7 @@ export function ResumeLabProvider({ children }) {
     // Generated
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
-    loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
+    loadGenerated, loadGeneratedById, generateResume, generateFromLatex, deleteGenerated, downloadPdf,
     fetchPdfBlob, compileLatex,
     setSelectedGenerated,
     // Workspace
@@ -375,7 +393,7 @@ export function ResumeLabProvider({ children }) {
     loadAnalyses, analyzeJD, loadAnalysis,
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
-    loadGenerated, loadGeneratedById, generateResume, deleteGenerated, downloadPdf,
+    loadGenerated, loadGeneratedById, generateResume, generateFromLatex, deleteGenerated, downloadPdf,
     fetchPdfBlob, compileLatex,
     jdText, setJdText, activeGenerated,
     history, historyLoading, clearHistoryLoading, loadHistory, clearHistory,

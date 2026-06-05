@@ -1,0 +1,81 @@
+% ──────────────────────────────────────────────────────────────────────────────
+% ReachFlow · Resume Lab — From-scratch template
+%
+% This file is a reference layout shown to the LLM when the user asks to
+% generate a resume from scratch. The model should produce a COMPLETE,
+% self-contained LaTeX document that follows this structure and is filled in
+% from the user's Career Profile. Replace every placeholder; keep the section
+% order unless the JD strongly justifies reordering.
+% ──────────────────────────────────────────────────────────────────────────────
+
+\documentclass[10pt,letterpaper]{article}
+\usepackage[left=0.65in,right=0.65in,top=0.6in,bottom=0.6in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+
+\hypersetup{colorlinks=true, urlcolor=blue, linkcolor=black, pdfborder={0 0 0}}
+\titleformat{\section}{\bfseries\large\scshape}{}{0em}{}[\titlerule]
+\titlespacing{\section}{0pt}{8pt}{4pt}
+\setlist[itemize]{noitemsep, topsep=2pt, leftmargin=1.2em}
+\pagestyle{empty}
+
+\begin{document}
+
+% ── Header ──────────────────────────────────────────────────────────────────
+\begin{center}
+  {\LARGE \textbf{Full Name}}\\[3pt]
+  {\small Email \textbar\ Phone \textbar\ Location \textbar\ LinkedIn \textbar\ GitHub}
+\end{center}
+
+\vspace{2pt}
+
+% ── Professional Summary ────────────────────────────────────────────────────
+\section*{Summary}
+2--3 line positioning statement tailored to the target role. Lead with years
+of experience and primary stack, end with the value the candidate brings.
+
+% ── Technical Skills ────────────────────────────────────────────────────────
+\section*{Technical Skills}
+\textbf{Languages:} list \\
+\textbf{Frameworks:} list \\
+\textbf{Cloud / Infra:} list \\
+\textbf{Tools:} list
+
+% ── Experience ──────────────────────────────────────────────────────────────
+\section*{Experience}
+
+\textbf{Job Title} \hfill \textit{Start -- End} \\
+\textit{Company, Location}
+\begin{itemize}
+  \item Quantified bullet — what was built, scale, business impact.
+  \item Quantified bullet — technical leverage, stack used, outcome.
+  \item Quantified bullet — collaboration, ownership, results.
+\end{itemize}
+
+% Add additional experience blocks here following the same pattern.
+
+% ── Projects ────────────────────────────────────────────────────────────────
+\section*{Projects}
+
+\textbf{Project Name} \hfill \textit{Tech: list} \\
+\begin{itemize}
+  \item What problem it solves and how it works.
+  \item Measurable result (users, perf, accuracy, etc.).
+\end{itemize}
+
+% ── Education ───────────────────────────────────────────────────────────────
+\section*{Education}
+\textbf{Institution} \hfill \textit{Dates} \\
+\textit{Degree, Field of Study} \textbar\ GPA: x.x
+
+% ── Certifications (optional) ───────────────────────────────────────────────
+\section*{Certifications}
+\textbf{Certification Name} \textbar\ Issuer \textbar\ Date
+
+\end{document}
