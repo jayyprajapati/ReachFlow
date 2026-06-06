@@ -142,7 +142,6 @@ function analyzePrompt({ jobDescription, baseResume, canonicalProfile, styleBloc
   "irrelevant_content": ["string"],
   "recommended_additions": ["string"],
   "recommended_removals": ["string"],
-  "section_rewrites": { "summary": "", "experience": "" },
   "ats_keyword_clusters": { "cluster_name": ["string"] },
   "mentions_years": false,
   "required_years_min": 0,
@@ -150,9 +149,9 @@ function analyzePrompt({ jobDescription, baseResume, canonicalProfile, styleBloc
   "candidate_years_estimate": 0
 }
 Definitions:
-- "match_score": integer 0–100, how well the SELECTED resume matches the JD (ATS-style).
+- "match_score": integer 0–100. Use semantic/functional equivalence — if the JD says "Angular" or "React" and the candidate has "React", that is a strong match (not a gap). Credit related technologies, overlapping frameworks, and equivalent skills proportionally. Do NOT penalize for naming differences when the underlying competency is the same or closely related. Reserve low scores for genuine skill gaps, not synonym mismatches.
 - "required_keywords": key skills/terms the JD demands. EACH entry MUST be an exact ATS-style keyword or short phrase (1–3 words max). NEVER full sentences, suggestions, or explanations.
-- "missing_keywords": TRUE SKILL GAP — JD-required terms that are absent from BOTH the selected resume AND the broader Career Profile. The candidate genuinely lacks these. EACH entry MUST be 1–3 words, no sentences.
+- "missing_keywords": TRUE SKILL GAP — JD-required terms that are absent from BOTH the selected resume AND the broader Career Profile, AND for which the candidate has no semantically equivalent skill. If the candidate has React and the JD says Angular, do NOT list Angular as missing — credit the related skill. Only list genuinely absent competencies. EACH entry MUST be 1–3 words, no sentences.
 - "existing_but_missing_from_resume": terms the candidate HAS in the Career Profile but the selected resume omits — these are safe to add since the candidate has real experience with them. EACH entry MUST be 1–3 words, no sentences.
 - "irrelevant_content": resume content not relevant to this JD (candidates to trim). Short phrases only.
 - "recommended_additions" / "recommended_removals": specific bullet-level guidance (these MAY be full sentences).
@@ -309,7 +308,6 @@ function generateFromLatexPrompt({
       existing_but_missing_from_resume:  matchAnalysis.existing_but_missing_from_resume || [],
       recommended_additions:             matchAnalysis.recommended_additions || [],
       recommended_removals:              matchAnalysis.recommended_removals || [],
-      section_rewrites:                  matchAnalysis.section_rewrites || {},
     };
     sections.push(`JD-vs-resume analysis to act on:\n${JSON.stringify(trimmed, null, 2)}`);
   }

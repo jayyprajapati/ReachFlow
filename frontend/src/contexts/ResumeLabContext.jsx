@@ -165,6 +165,7 @@ export function ResumeLabProvider({ children }) {
   const [analysesLoading, setAnalysesLoading] = useState(false);
   const [activeAnalysis, setActiveAnalysis] = useState(null);
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
+  const analyzeAbortRef = useRef(null);
 
   const loadAnalyses = useCallback(async () => {
     setAnalysesLoading(true);
@@ -179,10 +180,11 @@ export function ResumeLabProvider({ children }) {
   }, [api, setNotice]);
 
   const analyzeJD = useCallback(async (payload) => {
+    analyzeAbortRef.current = new AbortController();
     setAnalyzeLoading(true);
     setActiveAnalysis(null);
     try {
-      const result = await api.analyzeJD(payload);
+      const result = await api.analyzeJD(payload, { signal: analyzeAbortRef.current.signal });
       setActiveAnalysis(result);
       setAnalyses(prev => [{
         id: result.analysisId,
@@ -195,12 +197,19 @@ export function ResumeLabProvider({ children }) {
       }, ...prev]);
       return result;
     } catch (err) {
+      if (err.name === 'AbortError') return null;
       setNotice({ type: 'error', message: err.message });
       throw err;
     } finally {
       setAnalyzeLoading(false);
+      analyzeAbortRef.current = null;
     }
   }, [api, setNotice]);
+
+  const cancelAnalyze = useCallback(() => {
+    analyzeAbortRef.current?.abort();
+    setAnalyzeLoading(false);
+  }, []);
 
   const loadAnalysis = useCallback(async (id) => {
     try {
@@ -263,10 +272,15 @@ export function ResumeLabProvider({ children }) {
     setGenerateLoading(true);
     try {
       const result = await api.generateFromLatex(payload);
+      const latex = String(result?.latex || '').trim();
+      if (!latex) {
+        setNotice({ type: 'error', message: 'Generation failed: AI returned no content. Please try again.' });
+        return null;
+      }
       if (result?.validationWarnings?.length) {
         setNotice({ type: 'warning', message: `Resume generated with warnings: ${result.validationWarnings.slice(0, 2).join('; ')}` });
       } else {
-        setNotice({ type: 'success', message: 'Resume generated. Edit and recompile to preview.' });
+        setNotice({ type: 'success', message: 'Resume generated. Edit the LaTeX and compile to preview PDF.' });
       }
       return result;
     } catch (err) {
@@ -371,7 +385,7 @@ export function ResumeLabProvider({ children }) {
     loadProfile, rebuildProfile, deleteProfile,
     // Analysis
     analyses, analysesLoading, activeAnalysis, analyzeLoading,
-    loadAnalyses, analyzeJD, loadAnalysis, setActiveAnalysis,
+    loadAnalyses, analyzeJD, cancelAnalyze, loadAnalysis, setActiveAnalysis,
     // Generated
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
@@ -390,7 +404,7 @@ export function ResumeLabProvider({ children }) {
     profile, profileLoading, rebuildLoading, deleteProfileLoading,
     loadProfile, rebuildProfile, deleteProfile,
     analyses, analysesLoading, activeAnalysis, analyzeLoading,
-    loadAnalyses, analyzeJD, loadAnalysis,
+    loadAnalyses, analyzeJD, cancelAnalyze, loadAnalysis,
     generatedResumes, generatedLoading, generateLoading,
     selectedGenerated, selectedGeneratedLoading,
     loadGenerated, loadGeneratedById, generateResume, generateFromLatex, deleteGenerated, downloadPdf,

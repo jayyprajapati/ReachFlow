@@ -52,8 +52,8 @@ export function makeResumeLabApi(authedFetch) {
       call('/api/resumelab/profile', { method: 'DELETE' }),
 
     // ── JD Analysis ───────────────────────────────────────────────────────
-    analyzeJD: (body) =>
-      call('/api/resumelab/analyze', json(body)),
+    analyzeJD: (body, { signal } = {}) =>
+      call('/api/resumelab/analyze', { ...json(body), signal }),
     getAnalyses: () =>
       call('/api/resumelab/analyses'),
     getAnalysis: (id) =>

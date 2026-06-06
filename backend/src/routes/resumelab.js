@@ -110,6 +110,8 @@ function toResumeResponse(doc) {
     uploadedAt: doc.uploadedAt,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+    latexSource: doc.latexSource || '',
+    hasLatex: !!(doc.latexSource || '').trim(),
   };
 }
 
@@ -377,6 +379,9 @@ router.patch('/resumes/:id', async (req, res) => {
     }
     if (Object.prototype.hasOwnProperty.call(incoming, 'isBaseResume')) {
       doc.isBaseResume = !!incoming.isBaseResume;
+    }
+    if (Object.prototype.hasOwnProperty.call(incoming, 'latexSource')) {
+      doc.latexSource = String(incoming.latexSource || '').slice(0, 500_000);
     }
 
     await doc.save();
@@ -694,7 +699,6 @@ function toAnalysisFull(doc) {
     irrelevantContent: analysis.irrelevant_content || [],
     recommendedAdditions: analysis.recommended_additions || [],
     recommendedRemovals: analysis.recommended_removals || [],
-    sectionRewrites: analysis.section_rewrites || {},
     atsKeywordClusters: analysis.ats_keyword_clusters || {},
     mentionsYears: !!analysis.mentions_years,
     requiredYearsMin: Number(analysis.required_years_min) || 0,
@@ -861,7 +865,6 @@ router.post('/analyze', async (req, res) => {
     irrelevantContent: matchAnalysis.irrelevant_content || [],
     recommendedAdditions: matchAnalysis.recommended_additions || [],
     recommendedRemovals: matchAnalysis.recommended_removals || [],
-    sectionRewrites: matchAnalysis.section_rewrites || {},
     mentionsYears: !!matchAnalysis.mentions_years,
     requiredYearsMin: Number(matchAnalysis.required_years_min) || 0,
     requiredYearsMax: Number(matchAnalysis.required_years_max) || 0,

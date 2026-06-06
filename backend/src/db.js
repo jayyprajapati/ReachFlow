@@ -217,6 +217,7 @@ const resumeSchema = new mongoose.Schema(
     status: { type: String, enum: ['uploaded', 'parsed', 'failed'], default: 'uploaded' },
     uploadedAt: { type: Date, default: Date.now },
     extractedContent: { type: mongoose.Schema.Types.Mixed, default: null },
+    latexSource: { type: String, default: '' },
     // B1: Source-preservation fields from Cortex /extract (A1)
     normalizedResumeText: { type: String, default: '' },
     sectionedResumeSource: { type: mongoose.Schema.Types.Mixed, default: null },

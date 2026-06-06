@@ -4,8 +4,9 @@ import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
   Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle,
-  Lightbulb, ChevronDown, ChevronUp, Sparkles, Download, CheckCheck,
+  Sparkles, Download, CheckCheck,
   CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink, Briefcase,
+  Vault, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 const RESUME_GENERATION_ENABLED = true;
@@ -73,27 +74,6 @@ function KwChips({ items, variant, label, icon: Icon }) {
   );
 }
 
-function SectionRewrites({ rewrites }) {
-  const [open, setOpen] = useState(false);
-  const keys = Object.keys(rewrites || {}).filter(k => rewrites[k]);
-  if (!keys.length) return null;
-  return (
-    <div className="rl-kw-section">
-      <div className="rl-kw-section__title" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={() => setOpen(v => !v)}>
-        <span><Lightbulb size={12} /> Section Rewrites ({keys.length})</span>
-        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-      </div>
-      {open && keys.map(k => (
-        <div key={k} style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 'var(--rf-text-xs)', fontWeight: 700, color: 'var(--rf-text-secondary)', textTransform: 'capitalize', marginBottom: 4 }}>{k}</div>
-          <div style={{ fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)', background: 'var(--rf-bg-root)', borderRadius: 'var(--rf-radius-md)', padding: '10px 12px', lineHeight: 1.6 }}>
-            {typeof rewrites[k] === 'string' ? rewrites[k] : JSON.stringify(rewrites[k])}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ── Score delta ───────────────────────────────────────────────────────────────
 
@@ -142,39 +122,49 @@ function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidat
                : 'rgba(207, 76, 76, 0.32)';
 
   return (
-    <div className="rl-panel" style={{
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '4px 10px 4px 8px', borderRadius: 20,
       background: bg, border: `1px solid ${border}`, color,
-      padding: '12px 14px', flexDirection: 'row', alignItems: 'center', gap: 10,
+      fontSize: 'var(--rf-text-xs)', fontWeight: 500, alignSelf: 'flex-start',
     }}>
-      <Briefcase size={16} style={{ flexShrink: 0 }} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <strong style={{ fontSize: 'var(--rf-text-sm)', lineHeight: 1.2 }}>{verdict}</strong>
-        <span style={{ fontSize: 'var(--rf-text-xs)', opacity: 0.9 }}>
-          JD requires {required} yrs · You have ~{have} yr{have === 1 ? '' : 's'}
-        </span>
-      </div>
+      <Briefcase size={12} style={{ flexShrink: 0 }} />
+      <strong style={{ fontWeight: 700 }}>{verdict}</strong>
+      <span style={{ opacity: 0.7 }}>·</span>
+      <span>JD {required} yrs · ~{have} yr{have === 1 ? '' : 's'}</span>
     </div>
   );
 }
 
 // ── Generate Resume Modal (Modify Existing | From Scratch) ───────────────────
 
-function GenerateModal({ analysisId, onGenerate, onClose, loading }) {
+function GenerateModal({ analysisId, onGenerate, onClose, loading, vaultResumes }) {
   const [mode, setMode] = useState('scratch');          // 'modify' | 'scratch'
+  const vaultWithLatexInit = (vaultResumes || []).filter(r => r.hasLatex);
+  const [modifySource, setModifySource] = useState(vaultWithLatexInit.length > 0 ? 'vault' : 'temp');
+  const [selectedResumeId, setSelectedResumeId] = useState(vaultWithLatexInit[0]?.id || '');
   const [latexSource, setLatexSource] = useState('');
   const [intensity, setIntensity] = useState('balanced');
   const [userPrompt, setUserPrompt] = useState('');
 
+  const vaultWithLatex = vaultWithLatexInit;
+
+  const resolvedLatex = mode === 'modify'
+    ? (modifySource === 'vault'
+        ? (vaultResumes || []).find(r => r.id === selectedResumeId)?.latexSource || ''
+        : latexSource)
+    : '';
+
   const canGenerate =
     !loading &&
     !!analysisId &&
-    (mode === 'scratch' || latexSource.trim().length > 0);
+    (mode === 'scratch' || resolvedLatex.trim().length > 0);
 
   function handleSubmit() {
     onGenerate({
       analysisId,
       mode,
-      latexSource: mode === 'modify' ? latexSource : undefined,
+      latexSource: mode === 'modify' ? resolvedLatex : undefined,
       intensity,
       userPrompt: userPrompt.trim() || undefined,
     });
@@ -209,25 +199,60 @@ function GenerateModal({ analysisId, onGenerate, onClose, loading }) {
             ))}
           </div>
 
-          {/* LaTeX paste — only for modify */}
+          {/* LaTeX source — only for modify */}
           {mode === 'modify' && (
-            <div className="rl-form-group">
-              <label className="rl-form-label">Paste your current LaTeX source</label>
-              <textarea
-                className="rl-form-input"
-                style={{
-                  minHeight: 160, resize: 'vertical',
-                  fontFamily: 'var(--rf-font-mono)', fontSize: 12, lineHeight: 1.5,
-                }}
-                placeholder={'\\documentclass{article}\n…'}
-                value={latexSource}
-                onChange={e => setLatexSource(e.target.value)}
-                disabled={loading}
-                spellCheck={false}
-              />
-              <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', margin: '4px 0 0' }}>
-                The full source is sent to the AI, edited per your intensity, and returned in the editor below.
-              </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Sub-mode: vault vs temp */}
+              <div style={{ display: 'flex', gap: 12 }}>
+                {vaultWithLatex.length > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: loading ? 'default' : 'pointer', fontSize: 'var(--rf-text-sm)', fontWeight: 500, color: 'var(--rf-text)' }}>
+                    <input type="radio" name="modifySource" value="vault" checked={modifySource === 'vault'} onChange={() => setModifySource('vault')} disabled={loading} />
+                    <Vault size={13} /> Pick from Vault
+                  </label>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: loading ? 'default' : 'pointer', fontSize: 'var(--rf-text-sm)', fontWeight: 500, color: 'var(--rf-text)' }}>
+                  <input type="radio" name="modifySource" value="temp" checked={modifySource === 'temp'} onChange={() => setModifySource('temp')} disabled={loading} />
+                  <Code2 size={13} /> Paste temporarily
+                </label>
+              </div>
+
+              {modifySource === 'vault' && vaultWithLatex.length > 0 && (
+                <div className="rl-form-group">
+                  <label className="rl-form-label">Resume with LaTeX attached</label>
+                  <select
+                    className="rl-form-select"
+                    value={selectedResumeId}
+                    onChange={e => setSelectedResumeId(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="">Select a resume…</option>
+                    {vaultWithLatex.map(r => (
+                      <option key={r.id} value={r.id}>{r.title || r.fileName}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {modifySource === 'temp' && (
+                <div className="rl-form-group">
+                  <label className="rl-form-label">Paste your current LaTeX source</label>
+                  <textarea
+                    className="rl-form-input"
+                    style={{
+                      minHeight: 160, resize: 'vertical',
+                      fontFamily: 'var(--rf-font-mono)', fontSize: 12, lineHeight: 1.5,
+                    }}
+                    placeholder={'\\documentclass{article}\n…'}
+                    value={latexSource}
+                    onChange={e => setLatexSource(e.target.value)}
+                    disabled={loading}
+                    spellCheck={false}
+                  />
+                  <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', margin: '4px 0 0' }}>
+                    This LaTeX won't be saved. To store it permanently, attach it to a resume in the <strong>Vault</strong>.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -280,18 +305,20 @@ function LatexPreviewSection({ result, compileLatex, fetchPdfBlob }) {
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [compiling, setCompiling] = useState(false);
   const [copied, setCopied] = useState(false);
-  const prevIdRef = useRef(null);
+  const prevKeyRef = useRef(undefined);
   const blobUrlRef = useRef(null);
 
-  // Sync editor content when a new generation loads
+  // Sync editor content when a new generation loads.
+  // Use _genKey (set for each new generation) so even two scratch generations
+  // with id=null correctly update the editor.
   useEffect(() => {
-    const newId = result?.id ?? null;
-    if (prevIdRef.current === newId) return;
-    prevIdRef.current = newId;
+    const newKey = result?._genKey ?? result?.id ?? null;
+    if (prevKeyRef.current === newKey) return;
+    prevKeyRef.current = newKey;
     setLatexCode(result?.latexSource || '');
     if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
     setPdfBlobUrl(null);
-  }, [result?.id, result?.latexSource]);
+  }, [result?._genKey, result?.id, result?.latexSource]);
 
   // Auto-load PDF blob if the generate step already compiled successfully
   useEffect(() => {
@@ -344,8 +371,7 @@ function LatexPreviewSection({ result, compileLatex, fetchPdfBlob }) {
   const canCompile = latexCode.trim().length > 0;
 
   return (
-    <div className="rl-panel" style={{ padding: 0, overflow: 'hidden', marginTop: 20 }}>
-      <div style={{ display: 'flex', height: PANEL_HEIGHT }}>
+    <div style={{ display: 'flex', height: PANEL_HEIGHT }}>
 
         {/* ── Left: LaTeX editor ── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--rf-border-subtle)', minWidth: 0 }}>
@@ -421,7 +447,6 @@ function LatexPreviewSection({ result, compileLatex, fetchPdfBlob }) {
           </div>
         </div>
 
-      </div>
     </div>
   );
 }
@@ -433,7 +458,7 @@ export default function WorkspacePage() {
     api,
     resumes, loadResumes,
     activeAnalysis, analyzeLoading,
-    analyzeJD, setActiveAnalysis,
+    analyzeJD, cancelAnalyze, setActiveAnalysis,
     generateLoading, generateFromLatex, downloadPdf,
     fetchPdfBlob, compileLatex,
     jdText, setJdText,
@@ -447,6 +472,8 @@ export default function WorkspacePage() {
   const [baseResumeId, setBaseResumeId] = useState('');
   const [showStrategyModal, setShowStrategyModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [confirmNewAnalysis, setConfirmNewAnalysis] = useState(false);
+  const [latexOpen, setLatexOpen] = useState(false);
   const [coverLetterText, setCoverLetterText] = useState('');
   const [coverLetterLoading, setCoverLetterLoading] = useState(false);
   const [hrEmailDraft, setHrEmailDraft] = useState(null);
@@ -473,7 +500,6 @@ export default function WorkspacePage() {
             existingButMissingFromResume: data.analysis.existingButMissingFromResume || [],
             recommendedAdditions: data.analysis.recommendedAdditions || [],
             recommendedRemovals: data.analysis.recommendedRemovals || [],
-            sectionRewrites: data.analysis.sectionRewrites || {},
             atsKeywordClusters: data.analysis.atsKeywordClusters || {},
             mentionsYears: !!data.analysis.mentionsYears,
             requiredYearsMin: data.analysis.requiredYearsMin || 0,
@@ -504,6 +530,10 @@ export default function WorkspacePage() {
     setHrEmailDraft(null);
   }, [activeAnalysis?.analysisId]);
 
+  useEffect(() => {
+    if (activeGenerated?.latexSource) setLatexOpen(true);
+  }, [activeGenerated?.latexSource]);
+
   async function handleAnalyze() {
     if (!jdText.trim()) return;
     setActiveGenerated(null);
@@ -514,11 +544,9 @@ export default function WorkspacePage() {
     try {
       const result = await generateFromLatex(payload);
       if (result?.latex) {
-        // Drop the produced LaTeX into the editor as an ad-hoc (no DB record)
-        // generation. LatexPreviewSection compiles via the stateless route
-        // because there's no `id`.
         setActiveGenerated({
           id: null,
+          _genKey: Date.now(),  // unique key per generation to force editor sync
           latexSource: result.latex,
           pdfUrl: null,
           hasPdf: false,
@@ -526,6 +554,8 @@ export default function WorkspacePage() {
           matchScoreAfter:  activeAnalysis?.matchScore || 0,
         });
         setShowStrategyModal(false);
+      } else if (result !== null) {
+        // result was returned but has no latex — context already showed error toast
       }
     } catch {
       /* toast handled by context */
@@ -598,14 +628,14 @@ export default function WorkspacePage() {
           <p className="rl-page__subtitle">Paste a job description, analyze your match, then generate an optimized resume.</p>
         </div>
         {hasResult && (
-          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => { setActiveAnalysis(null); setActiveGenerated(null); }}>
-            <X size={13} /> New Analysis
+          <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setConfirmNewAnalysis(true)}>
+            <RefreshCw size={13} /> New Analysis
           </button>
         )}
       </div>
 
-      {/* ── Input row ── */}
-      {!hasResult && (
+      {/* ── Input row — hidden while loading or results are shown ── */}
+      {!hasResult && !analyzeLoading && (
         <div className="rl-panel" style={{ marginBottom: 24 }}>
           <div className="rl-form-group">
             <label className="rl-form-label">Job Description</label>
@@ -659,11 +689,17 @@ export default function WorkspacePage() {
 
       {/* ── Loading ── */}
       {analyzeLoading && (
-        <div className="rl-panel" style={{ alignItems: 'center', padding: '48px 24px' }}>
+        <div className="rl-panel" style={{ alignItems: 'center', padding: '48px 24px', gap: 16 }}>
           <Loader size={28} className="rf-spin" style={{ color: 'var(--rf-accent)' }} />
           <p style={{ color: 'var(--rf-text-muted)', margin: 0, fontSize: 'var(--rf-text-sm)' }}>
             Analyzing your profile against the JD…
           </p>
+          <button
+            className="rf-btn rf-btn--ghost rf-btn--sm"
+            onClick={() => { cancelAnalyze(); }}
+          >
+            <X size={13} /> Cancel
+          </button>
         </div>
       )}
 
@@ -674,9 +710,9 @@ export default function WorkspacePage() {
           {/* Left: keyword insights */}
           <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {(activeAnalysis.seniority || activeAnalysis.domain) && (
-              <div className="rl-panel" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                {activeAnalysis.seniority && <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-secondary)' }}>{activeAnalysis.seniority}</span>}
-                {activeAnalysis.domain && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontStyle: 'italic' }}>{activeAnalysis.domain}</span>}
+              <div className="rl-panel" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'nowrap', padding: '10px 16px' }}>
+                {activeAnalysis.seniority && <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-secondary)', flexShrink: 0 }}>{activeAnalysis.seniority}</span>}
+                {activeAnalysis.domain && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeAnalysis.domain}</span>}
               </div>
             )}
             <ExperienceMatchChip
@@ -690,7 +726,6 @@ export default function WorkspacePage() {
               <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Missing Keywords (Skill Gap)" icon={AlertCircle} />
               <KwChips items={activeAnalysis.recommendedAdditions}          variant="add"      label="Recommended Additions"       icon={TrendingUp} />
               <KwChips items={activeAnalysis.recommendedRemovals}           variant="remove"   label="Recommended Removals"        icon={MinusCircle} />
-              <SectionRewrites rewrites={activeAnalysis.sectionRewrites} />
             </div>
           </div>
 
@@ -717,9 +752,15 @@ export default function WorkspacePage() {
 
             {RESUME_GENERATION_ENABLED && activeGenerated && (
               <div className="rl-panel" style={{ gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle2 size={14} style={{ color: 'var(--rf-success)', flexShrink: 0 }} />
-                  <span style={{ fontWeight: 600, fontSize: 'var(--rf-text-sm)', color: 'var(--rf-text)' }}>Generated</span>
+                <div>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '4px 12px', borderRadius: 20,
+                    background: 'var(--rf-accent)', color: '#fff',
+                    fontWeight: 600, fontSize: 'var(--rf-text-xs)',
+                  }}>
+                    <CheckCircle2 size={12} /> Generated
+                  </span>
                 </div>
                 <ScoreDelta before={activeGenerated.matchScoreBefore} after={activeGenerated.matchScoreAfter} />
                 <button
@@ -797,13 +838,92 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {/* ── Full-width LaTeX editor + PDF preview (part of locked generation) ── */}
+      {/* ── LaTeX editor + PDF preview — always visible, collapsible ── */}
       {RESUME_GENERATION_ENABLED && (
-        <LatexPreviewSection
-          result={activeGenerated}
-          compileLatex={compileLatex}
-          fetchPdfBlob={fetchPdfBlob}
-        />
+        <div style={{
+          marginTop: 20,
+          borderRadius: 'var(--rf-radius-lg)',
+          border: '1px solid var(--rf-border-subtle)',
+          overflow: 'hidden',
+        }}>
+          <button
+            onClick={() => setLatexOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              width: '100%', padding: '10px 14px',
+              background: 'var(--rf-bg-root)',
+              border: 'none',
+              borderBottom: latexOpen ? '1px solid var(--rf-border-subtle)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 24, height: 24, borderRadius: 6,
+                background: 'var(--rf-accent-muted)', color: 'var(--rf-accent)',
+              }}>
+                <Code2 size={13} />
+              </span>
+              <span style={{
+                fontFamily: 'var(--rf-font-mono)', fontSize: 12, fontWeight: 600,
+                color: 'var(--rf-text)', letterSpacing: '0.02em',
+              }}>
+                LaTeX Editor &amp; PDF Preview
+              </span>
+              {activeGenerated?.latexSource ? (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 7px', borderRadius: 20,
+                  background: 'var(--rf-success-muted)', color: 'var(--rf-success-text)',
+                  fontSize: 10, fontWeight: 700,
+                }}>
+                  ● ready
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, color: 'var(--rf-text-faint)', fontFamily: 'var(--rf-font-mono)' }}>
+                  // no code yet
+                </span>
+              )}
+            </span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: 11, color: 'var(--rf-text-faint)', fontFamily: 'var(--rf-font-mono)',
+            }}>
+              {latexOpen ? <><ChevronUp size={13} /> collapse</> : <><ChevronDown size={13} /> expand</>}
+            </span>
+          </button>
+          {latexOpen && (
+            <LatexPreviewSection
+              result={activeGenerated}
+              compileLatex={compileLatex}
+              fetchPdfBlob={fetchPdfBlob}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ── New Analysis confirmation ── */}
+      {confirmNewAnalysis && (
+        <div className="rf-dialog-overlay" onClick={() => setConfirmNewAnalysis(false)}>
+          <div className="rf-dialog" onClick={e => e.stopPropagation()}>
+            <div className="rf-dialog__title">Start New Analysis?</div>
+            <div className="rf-dialog__body">
+              This will clear the current results, generated resume, and cover letter. Are you sure?
+            </div>
+            <div className="rf-dialog__actions">
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setConfirmNewAnalysis(false)}>Cancel</button>
+              <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => {
+                setActiveAnalysis(null); setActiveGenerated(null);
+                setJdText(''); setJobTitle(''); setCompany(''); setBaseResumeId('');
+                setCoverLetterText(''); setHrEmailDraft(null);
+                setLatexOpen(false); setConfirmNewAnalysis(false);
+              }}>
+                <RefreshCw size={13} /> Start New
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Generate Modal ── */}
@@ -813,6 +933,7 @@ export default function WorkspacePage() {
           onGenerate={handleGenerate}
           onClose={() => setShowStrategyModal(false)}
           loading={generateLoading}
+          vaultResumes={parsedResumes}
         />
       )}
     </div>

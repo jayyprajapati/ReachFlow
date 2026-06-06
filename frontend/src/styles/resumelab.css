@@ -114,9 +114,9 @@
 .rl-badge--fullstack { background: var(--rf-bg-active);     color: var(--rf-text); }
 .rl-badge--custom    { background: var(--rf-bg-overlay);    color: var(--rf-text-secondary); }
 
-.rl-badge--parsed   { background: var(--rf-success-muted); color: var(--rf-success-text); }
-.rl-badge--uploaded { background: var(--rf-warning-muted); color: var(--rf-warning-text); }
-.rl-badge--failed   { background: var(--rf-error-muted);   color: var(--rf-error-text); }
+.rl-badge--parsed   { background: var(--rf-accent); color: #fff; }
+.rl-badge--uploaded { background: var(--rf-warning); color: #fff; }
+.rl-badge--failed   { background: var(--rf-error); color: #fff; }
 
 .rl-badge--analyzed  { background: var(--rf-success-muted); color: var(--rf-success-text); }
 .rl-badge--generated { background: var(--rf-accent-muted);  color: var(--rf-accent-text); }
@@ -353,7 +353,7 @@
   justify-content: center;
   gap: 4px;
   padding: 5px 8px;
-  border: 1px solid var(--rf-border-subtle);
+  border: none;
   border-radius: var(--rf-radius-xs);
   background: transparent;
   font-size: var(--rf-text-xs);
