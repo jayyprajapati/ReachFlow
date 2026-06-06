@@ -134,7 +134,9 @@ See [Mongoose models & collections](#mongoose-models--collections) in CLAUDE.md 
 - **Sub-pages:** VaultPage (uploads), ProfilePage (career profile editor), AnalyzePage (JD match), WorkspacePage (generate), GeneratedPage (preview), HistoryPage
 - **Career Profile:** uploaded resumes are extracted via Brain → merged by LLM into a single `CanonicalProfile` doc
 - **JD Analysis:** Brain analyzes JD vs. canonical profile → returns `matchScore`, gaps, ATS clusters; results cached in-memory (30 min TTL)
-- **Generation:** Brain generates LaTeX → `latexCompiler.js` compiles to PDF
+- **Generation:** Brain generates LaTeX → `injectTemplate()` wraps it into a role-specific template → `latexCompiler.js` compiles to PDF; `latexSource` stored on `GeneratedResume`
+- **LaTeX templates:** `backend/src/resume_templates/` — `backend.tex`, `frontend.tex`, `fullstack.tex`, `from-scratch.tex`; selected by `templateType` param
+- **Direct compile:** `POST /compile-latex` and `POST /generated/:id/compile-latex` accept raw `latexSource` and return PDF
 - **BYOK gate:** `resolveUserLlm()` must succeed; HTTP 402 returned otherwise
 - **flowId:** shared UUID linking an analysis + its generated resume/cover letter/HR email
 
@@ -150,6 +152,7 @@ See [Mongoose models & collections](#mongoose-models--collections) in CLAUDE.md 
 **Purpose:** Algorithm/data-structure problem analysis with multi-approach teaching.
 - **Route:** `GET/POST /api/dsa`
 - **Key files:** `backend/src/routes/dsa.js`, `frontend/src/pages/DsaLab/`, `frontend/src/services/dsaApi.js`
+- **UI components:** `frontend/src/components/dsa/` — `CodeBlock.jsx`, `CodeEditor.jsx`, `DsaResult.jsx`
 - **Model:** `DsaAnalysis` (`reachflow_dsa_analyses`) — problem text + code stored unencrypted (no PII)
 - **LLM gate:** same BYOK enforcement via `resolveUserLlm()`
 - **Safety check:** `src/services/dsaSafety.js` — guards against non-DSA input (Brain response `is_dsa_problem` flag)
@@ -226,12 +229,14 @@ POST /api/resumelab/analyze { jobDescription }
 
 ### Resume Generation (LaTeX → PDF)
 ```
-POST /api/resumelab/generate { analysisId, intensity, … }
+POST /api/resumelab/generate { analysisId, intensity, templateType, … }
 → resolveUserLlm()
 → brainClient.generateResumeLatex() — returns { latex_source }
-→ latexCompiler.compile(latex) — Docker run reachflow-latex
+→ injectTemplate({ templateType, name, contact, generated }) — wraps into .tex template
+→ validateLatex(src) — sanity check; retries once if invalid
+→ latexCompiler.compileToPdf(latexSource) — Docker run reachflow-latex
 → PDF saved to PDF_OUTPUT_DIR
-→ GeneratedResume doc saved (status: generated)
+→ GeneratedResume doc saved (latexSource + pdfPath + status: generated)
 ```
 
 ### Scheduled Campaign Send
@@ -340,7 +345,8 @@ User (1)
 | Change a sensitive field | `dataSecurity.js`, `db.js`, `runMigrations.js` |
 | Add a route | `app.js` (mount), `db.js` (schema if new model) |
 | Resume Lab changes | `.claude/specs/04-resume-lab.spec.md`, `routes/resumelab.js`, `ResumeLabContext.jsx` |
-| DSA Lab changes | `routes/dsa.js`, `dsaSafety.js`, `pages/DsaLab/` |
+| LaTeX template changes | `backend/src/resume_templates/*.tex`, `latexCompiler.js` (`injectTemplate`) |
+| DSA Lab changes | `routes/dsa.js`, `dsaSafety.js`, `pages/DsaLab/`, `components/dsa/` |
 | Gmail OAuth changes | `gmail.js`, `crypto.js`, `app.js` |
 | Frontend routing | `router.jsx`, `App.jsx` (PageRouter switch) |
 | Styling / tokens | `styles/tokens.css`, then feature-specific CSS files |

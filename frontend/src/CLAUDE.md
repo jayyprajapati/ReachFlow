@@ -149,6 +149,18 @@ Purpose: Rich text editor for email body composition (HTML output).
 ### components/GroupManager.jsx
 Purpose: Contact group CRUD and contact management UI.
 
+### components/ApplicationsPage.jsx
+Purpose: Mobile-friendly version of the application pipeline view, rendered as a component (used inside ContactsPage-style bottom-sheet pattern).
+
+### components/dsa/CodeBlock.jsx
+Purpose: Syntax-highlighted code display for DSA analysis results.
+
+### components/dsa/CodeEditor.jsx
+Purpose: Code input editor used on the DSA Analyze page.
+
+### components/dsa/DsaResult.jsx
+Purpose: Renders full DSA analysis result — approaches, complexity, explanations.
+
 ### styles/resumelab.css
 Purpose: All Resume Lab page styles.
 
