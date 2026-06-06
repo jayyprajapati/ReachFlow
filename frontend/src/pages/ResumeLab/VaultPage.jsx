@@ -3,7 +3,7 @@ import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import {
   UploadCloud, FileText, Trash2,
   Loader, CheckCircle, AlertCircle, X, Search,
-  Pencil,
+  Pencil, Code2,
 } from 'lucide-react';
 
 const STATUS_LABEL = { parsed: 'Parsed', uploaded: 'Processing', failed: 'Failed' };
@@ -57,9 +57,61 @@ function UploadBanner({ state, onDismiss }) {
   );
 }
 
+// ── LaTeX Attach Modal ────────────────────────────────────────────────────────
+
+function LatexAttachModal({ resume, onSave, onClose }) {
+  const [code, setCode] = useState(resume.latexSource || '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onSave(resume.id, { latexSource: code });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rf-dialog-overlay" onClick={saving ? undefined : onClose}>
+      <div className="rf-dialog" style={{ maxWidth: 680, width: '92vw' }} onClick={e => e.stopPropagation()}>
+        <div className="rf-dialog__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Code2 size={16} /> Attach LaTeX — {resume.title || resume.fileName || 'Resume'}
+        </div>
+        <div className="rf-dialog__body">
+          <textarea
+            style={{
+              width: '100%', minHeight: 280, resize: 'vertical',
+              fontFamily: 'var(--rf-font-mono)', fontSize: 11, lineHeight: 1.6,
+              border: '1px solid var(--rf-border)', borderRadius: 'var(--rf-radius-md)',
+              padding: '10px 12px', background: 'var(--rf-bg-root)',
+              color: 'var(--rf-text-secondary)', outline: 'none', boxSizing: 'border-box',
+            }}
+            placeholder={'\\documentclass{article}\n…\nPaste your full LaTeX source here'}
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            disabled={saving}
+            spellCheck={false}
+          />
+          <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', marginTop: 6 }}>
+            Stored permanently with this resume. Use it in the Workspace to modify with AI.
+          </p>
+        </div>
+        <div className="rf-dialog__actions">
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={handleSave} disabled={saving}>
+            {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : <><Code2 size={13} /> Save LaTeX</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Resume Row ────────────────────────────────────────────────────────────────
 
-function ResumeRow({ resume, onDelete, onUpdate }) {
+function ResumeRow({ resume, onDelete, onUpdate, onAttachLatex }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleVal, setTitleVal] = useState(resume.title || '');
 
@@ -99,6 +151,9 @@ function ResumeRow({ resume, onDelete, onUpdate }) {
           {resume.fileSize > 0 && (
             <><span>·</span><span>{(resume.fileSize / 1024).toFixed(0)} KB</span></>
           )}
+          {resume.hasLatex && (
+            <><span>·</span><span style={{ color: 'var(--rf-accent-text)', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Code2 size={10} /> LaTeX attached</span></>
+          )}
         </div>
       </div>
 
@@ -111,6 +166,13 @@ function ResumeRow({ resume, onDelete, onUpdate }) {
           title="Rename"
         >
           <Pencil size={12} />
+        </button>
+        <button
+          className={`rl-card-btn${resume.hasLatex ? ' rl-card-btn--primary' : ''}`}
+          onClick={() => onAttachLatex(resume)}
+          title={resume.hasLatex ? 'Edit attached LaTeX' : 'Attach LaTeX code'}
+        >
+          <Code2 size={12} />
         </button>
         <button
           className="rl-card-btn rl-card-btn--danger"
@@ -150,6 +212,7 @@ export default function VaultPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [latexResume, setLatexResume] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => { loadResumes(); }, [loadResumes]);
@@ -309,6 +372,7 @@ export default function VaultPage() {
               resume={r}
               onDelete={requestDelete}
               onUpdate={updateResume}
+              onAttachLatex={setLatexResume}
             />
           ))}
         </div>
@@ -328,6 +392,15 @@ export default function VaultPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* LaTeX attach modal */}
+      {latexResume && (
+        <LatexAttachModal
+          resume={latexResume}
+          onSave={updateResume}
+          onClose={() => setLatexResume(null)}
+        />
       )}
     </div>
   );

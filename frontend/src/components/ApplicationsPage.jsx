@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, ClipboardPaste, Loader2, Plus, Trash2, Copy, Check, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Building2, ClipboardPaste, Loader2, Plus, Trash2, Copy, Check, ChevronDown, ChevronUp, X, Info, SlidersHorizontal } from 'lucide-react';
 
 function CopyButton({ text, title = "Copy" }) {
   const [copied, setCopied] = useState(false);
@@ -321,6 +321,7 @@ export default function ApplicationsPage({
   const [isExpanded, setIsExpanded] = useState(true);
   const [addingCompanyForId, setAddingCompanyForId] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const authedFetchRef = useRef(authedFetch);
   const pendingChangesRef = useRef(new Map());
@@ -691,14 +692,16 @@ export default function ApplicationsPage({
     }
   }
 
+  const hasActiveFilters = filters.status !== 'all' || filters.company !== 'all';
+
   return (
     <div className="applications-shell">
       <div className="applications-head">
-        <div>
+        <div className="applications-head__title">
           <h1 className="applications-title">Applications</h1>
           <p className="applications-subtitle">Paste role text, auto-parse, and track applications in seconds.</p>
         </div>
-        <div className="applications-filters">
+        <div className="applications-filters applications-filters--desktop">
           <div className="app-filter">
             <span className="lbl lbl--upper">Status</span>
             <select
@@ -729,20 +732,67 @@ export default function ApplicationsPage({
       </div>
 
       <div className="applications-input">
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: isExpanded ? '8px' : '0' }}>
+        <div className="app-input-top-row" style={{ marginBottom: isExpanded ? '8px' : '0' }}>
           <button className="btn btn--ghost btn--sm" onClick={() => setIsExpanded(!isExpanded)} style={{ gap: '4px', padding: '4px 8px', fontSize: '12px' }}>
             {isExpanded ? <><ChevronUp size={14} /> Collapse</> : <><Plus size={14} /> Add Application</>}
           </button>
+          <button
+            className={`app-mobile-filter-btn${hasActiveFilters ? ' app-mobile-filter-btn--active' : ''}`}
+            onClick={() => setMobileFiltersOpen(v => !v)}
+            title="Toggle filters"
+            type="button"
+          >
+            <SlidersHorizontal size={14} />
+            {hasActiveFilters && <span className="app-filter-dot" />}
+          </button>
         </div>
+        {mobileFiltersOpen && (
+          <div className="applications-filters applications-filters--mobile">
+            <div className="app-filter">
+              <span className="lbl lbl--upper">Status</span>
+              <select
+                className="app-select"
+                value={filters.status}
+                onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}
+              >
+                <option value="all">All</option>
+                {STATUS_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="app-filter">
+              <span className="lbl lbl--upper">Company</span>
+              <select
+                className="app-select"
+                value={filters.company}
+                onChange={e => setFilters(prev => ({ ...prev, company: e.target.value }))}
+              >
+                <option value="all">All</option>
+                {companyFilterOptions.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
         {isExpanded && (
           <>
-            <textarea
-              className="inp app-textarea"
-              placeholder="Paste job description, title, or role details here..."
-              value={rawInput}
-              onChange={e => setRawInput(e.target.value)}
-              disabled={isBusy}
-            />
+            <div className="app-textarea-wrap">
+              <textarea
+                className="inp app-textarea"
+                placeholder="Paste job description, title, or role details here..."
+                value={rawInput}
+                onChange={e => setRawInput(e.target.value)}
+                disabled={isBusy}
+              />
+              <div className="app-info-wrap">
+                <Info size={14} className="app-info-icon" />
+                <div className="app-info-tip">
+                  Paste a job title, description, or role details. We auto-extract company, title, and job ID. Bulk Paste handles multiple entries at once.
+                </div>
+              </div>
+            </div>
             <div className="applications-toolbar">
               <div className="applications-actions">
                 <button className="btn btn--primary" onClick={handleAddEntry} disabled={isBusy}>
@@ -783,8 +833,6 @@ export default function ApplicationsPage({
           </>
         )}
       </div>
-
-
 
       <div className="app-table-wrap">
         {loading ? (

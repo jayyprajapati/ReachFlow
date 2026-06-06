@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useRouter } from '../router.jsx';
 import {
-  Plus, Trash2, Copy, Loader, LayoutGrid, List, Check, X, Briefcase, Filter,
+  Plus, Trash2, Copy, Loader, LayoutGrid, List, Check, X, Briefcase,
   ChevronRight, ChevronDown, Info, Users, Building2, ArrowUpRight, CheckCheck,
 } from 'lucide-react';
 
@@ -26,7 +26,7 @@ function escapeRegExp(value) {
 function cleanupParsedText(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
-    .replace(/^[\s\-–—|,;:]+|[\s\-–—|,;:]+$/g, '')
+    .replace(/^[\s\-–—|,;:()\[\]{}]+|[\s\-–—|,;:()\[\]{}]+$/g, '')
     .trim();
 }
 function extractKnownCompany(text, groups = []) {
@@ -48,17 +48,20 @@ function extractKnownCompany(text, groups = []) {
   return { group: null, companyName: '', text };
 }
 function extractJobId(text) {
-  const labeled = text.match(/\b(?:job|req|requisition|opening|posting)?\s*(?:id|no|number|#)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,})\b/i);
+  // Match explicit labels: "ID: 1234", "(job number: r323432)", "#REQ-0001", etc.
+  const labeled = text.match(/(?:\(|\b)(?:job|req|requisition|opening|posting|job\s+number|req\s+number|job\s+id|req\s+id)?\s*(?:id|no|number|#)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,})\b\)?/i);
   if (labeled) {
     return {
       jobId: labeled[1],
       text: cleanupParsedText(text.replace(labeled[0], ' ')),
     };
   }
+  // Fallback: token that looks like a real job ID (pure digits, or short letter-prefix then 4+ digits)
   const tokens = text.split(/\s+/);
   for (let i = tokens.length - 1; i >= 0; i -= 1) {
     const clean = tokens[i].replace(/^[#(]+|[),.;:]+$/g, '');
-    if (/^(?=.*\d)[A-Za-z0-9._-]{3,}$/.test(clean)) {
+    // Require: pure digits (≥3), OR ≤4-letter prefix followed by 4+ digits
+    if (/^\d{3,}$/.test(clean) || /^[A-Za-z]{0,4}[-]?\d{4,}[A-Za-z0-9._-]*$/.test(clean)) {
       tokens.splice(i, 1);
       return { jobId: clean, text: cleanupParsedText(tokens.join(' ')) };
     }
@@ -118,7 +121,8 @@ function parseApplicationBlock(text, groups = []) {
     const parts = line.split(/[|\t]/).map(s => s.trim()).filter(Boolean);
     if (parts.length >= 2) {
       const title = parts[0] || '';
-      const jobId = parts[1] || '';
+      const rawId = parts[1] || '';
+      const jobId = extractJobId(rawId).jobId || cleanupParsedText(rawId);
       const company = parts[2] || '';
       const group = groups.find(g => normalizeCompanyKey(g.companyName) === normalizeCompanyKey(company));
       results.push({
@@ -162,7 +166,19 @@ export default function PipelinePage() {
   const [rawInput, setRawInput] = useState('');
   const [parsing, setParsing] = useState(false);
   const [inputOpen, setInputOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [hoverTip, setHoverTip] = useState(null);
+  const showHoverTip = (e, text) => {
+    if (!text) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const estimatedWidth = text.length * 7.5 + 24;
+    const spaceRight = window.innerWidth - rect.right - 15;
+    if (spaceRight >= estimatedWidth) {
+      setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2, dir: 'right' });
+    } else {
+      setHoverTip({ text, x: rect.left - 10, y: rect.top + rect.height / 2, dir: 'left' });
+    }
+  };
+  const hideHoverTip = () => setHoverTip(null);
   const [viewMode, setViewMode] = useState('kanban');
   const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
@@ -331,10 +347,18 @@ export default function PipelinePage() {
     return name ? `snapshot:${name}` : '';
   }
 
+  const uniqueCompanies = useMemo(() => {
+    const seen = new Set();
+    return apps
+      .map(a => getCompanyName(a))
+      .filter(name => { if (!name || seen.has(name)) return false; seen.add(name); return true; })
+      .sort((a, b) => a.localeCompare(b));
+  }, [apps, groupById]);
+
   const filtered = useMemo(() => {
     let list = apps;
     if (statusFilter)  list = list.filter(a => a.status === statusFilter);
-    if (companyFilter) list = list.filter(a => getCompanyName(a).toLowerCase().includes(companyFilter.toLowerCase()));
+    if (companyFilter) list = list.filter(a => getCompanyName(a) === companyFilter);
     return list;
   }, [apps, statusFilter, companyFilter, groupById]);
 
@@ -366,6 +390,18 @@ export default function PipelinePage() {
 
   return (
     <div className="rf-page rf-page--wide rf-pipeline-page">
+      {hoverTip && (
+        <div
+          className={`rf-hover-tip${hoverTip.dir === 'left' ? ' rf-hover-tip--left' : ''}`}
+          role="tooltip"
+          style={hoverTip.dir === 'left'
+            ? { top: hoverTip.y, right: window.innerWidth - hoverTip.x }
+            : { top: hoverTip.y, left: hoverTip.x }
+          }
+        >
+          {hoverTip.text}
+        </div>
+      )}
       {/* sec1: title left, stats right */}
       <div className="rf-pl-sec1">
         <div className="rf-pl-sec1__lead">
@@ -414,15 +450,16 @@ export default function PipelinePage() {
               <option value="">All statuses</option>
               {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
-            <div className="rf-search rf-pl-filter-search">
-              <Filter size={14} className="rf-search__icon" />
-              <input
-                className="rf-search__input"
-                placeholder="Company"
-                value={companyFilter}
-                onChange={e => setCompanyFilter(e.target.value)}
-              />
-            </div>
+            <select
+              className="rf-select rf-input--sm rf-pl-filter-select"
+              value={companyFilter}
+              onChange={e => setCompanyFilter(e.target.value)}
+            >
+              <option value="">All companies</option>
+              {uniqueCompanies.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
           </div>
         )}
       </div>
@@ -433,29 +470,14 @@ export default function PipelinePage() {
           <header className="rf-cp-card__head">
             <div className="rf-cp-card__title">
               <Plus size={16} /> Add applications
-              <button
+              <span
                 className="rf-info-btn"
-                onClick={() => setHelpOpen(v => !v)}
-                title="Show paste format help"
-                aria-label="Help on paste format"
-              ><Info size={14} /></button>
+                aria-label="Paste format help"
+                onMouseEnter={(e) => showHoverTip(e, 'Format: Job Title | Job ID | Company — one per line. Loose format works too.')}
+                onMouseLeave={hideHoverTip}
+              ><Info size={14} /></span>
             </div>
           </header>
-
-          {helpOpen && (
-            <div className="rf-pl-help">
-              <p>
-                <strong>Best:</strong> one application per line, pipe-separated as <code>Job Title | Job ID | Company</code>.
-                <br />
-                <strong>Loose lines work too</strong> — the parser pulls out IDs, "at Company", and matches against your existing contact groups.
-              </p>
-              <pre className="rf-pl-help__example">
-{`Senior SWE | 12345 | Stripe
-Backend Engineer at OpenAI #JR-9921
-Product Manager - Linear`}
-              </pre>
-            </div>
-          )}
 
           <textarea
             className="rf-textarea"

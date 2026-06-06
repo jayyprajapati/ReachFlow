@@ -1,0 +1,250 @@
+{
+  "project": {
+    "name": "ReachFlow",
+    "description": "Privacy-first job search platform: outreach, application tracking, AI resume tooling, DSA analysis, and learning roadmaps",
+    "type": "fullstack-web-app",
+    "tech": {
+      "frontend": ["React 18", "Vite", "custom pushState router", "plain CSS"],
+      "backend": ["Node.js", "Express", "CommonJS", "Firebase Admin SDK"],
+      "database": "MongoDB (Mongoose)",
+      "auth": "Firebase Auth",
+      "ai": "Brain service (external Python LLM+RAG, port 8000)",
+      "email": "Gmail API (OAuth2)",
+      "pdf": "Docker reachflow-latex image"
+    }
+  },
+
+  "areas": [
+    {
+      "name": "Frontend",
+      "path": "frontend/src",
+      "purpose": "React SPA — all user-facing pages and state",
+      "documentation": "frontend/src/CLAUDE.md"
+    },
+    {
+      "name": "Backend",
+      "path": "backend/src",
+      "purpose": "Express REST API — auth, encryption, Gmail, AI orchestration",
+      "documentation": "backend/src/CLAUDE.md"
+    },
+    {
+      "name": "Database Schemas",
+      "path": "backend/src/db.js",
+      "purpose": "All Mongoose schemas, model registrations, migration helpers"
+    },
+    {
+      "name": "LaTeX Docker",
+      "path": "backend/docker/latex",
+      "purpose": "Docker image for LaTeX → PDF compilation (reachflow-latex)"
+    },
+    {
+      "name": "Specs",
+      "path": ".claude/specs",
+      "purpose": "Product truth for all 13 features"
+    },
+    {
+      "name": "Tasks",
+      "path": ".claude/tasks",
+      "purpose": "Engineering implementation tasks for all 13 features"
+    }
+  ],
+
+  "features": [
+    {
+      "name": "Compose (Outreach)",
+      "purpose": "Personalized email campaigns with variable substitution, draft save, Gmail send, scheduled send",
+      "spec": ".claude/specs/01-compose.spec.md",
+      "tasks": ".claude/tasks/01-compose.tasks.md",
+      "critical_files": [
+        "backend/src/routes/campaigns.js",
+        "frontend/src/pages/ComposePage.jsx",
+        "frontend/src/contexts/AppContext.jsx"
+      ],
+      "api_prefix": "/api/campaigns"
+    },
+    {
+      "name": "Contacts & Groups",
+      "purpose": "Company-scoped contacts with dedup, bulk import, CSV export",
+      "spec": ".claude/specs/02-contacts.spec.md",
+      "tasks": ".claude/tasks/02-contacts.tasks.md",
+      "critical_files": [
+        "backend/src/routes/groups.js",
+        "frontend/src/pages/ContactsPage.jsx",
+        "frontend/src/components/GroupManager.jsx"
+      ],
+      "api_prefix": "/api/groups"
+    },
+    {
+      "name": "Application Pipeline",
+      "purpose": "Kanban job application tracker with 7 status stages",
+      "spec": ".claude/specs/03-applications.spec.md",
+      "tasks": ".claude/tasks/03-applications.tasks.md",
+      "critical_files": [
+        "backend/src/routes/applications.js",
+        "frontend/src/pages/PipelinePage.jsx"
+      ],
+      "api_prefix": "/api/applications"
+    },
+    {
+      "name": "Resume Lab",
+      "purpose": "AI resume tailoring: upload → profile merge → JD analysis → LaTeX PDF generation",
+      "spec": ".claude/specs/04-resume-lab.spec.md",
+      "tasks": ".claude/tasks/04-resume-lab.tasks.md",
+      "critical_files": [
+        "backend/src/routes/resumelab.js",
+        "backend/src/services/brainClient.js",
+        "backend/src/services/brainPrompts.js",
+        "backend/src/services/latexCompiler.js",
+        "backend/src/services/llmSettings.js",
+        "frontend/src/pages/ResumeLab/index.jsx",
+        "frontend/src/contexts/ResumeLabContext.jsx",
+        "frontend/src/services/resumeLabApi.js"
+      ],
+      "api_prefix": "/api/resumelab"
+    },
+    {
+      "name": "Roadmap Lab",
+      "purpose": "Self-directed learning tracker: multi-roadmap kanban with resource items and progress rings",
+      "spec": ".claude/specs/05-roadmap-lab.spec.md",
+      "tasks": ".claude/tasks/05-roadmap-lab.tasks.md",
+      "critical_files": [
+        "backend/src/routes/roadmaps.js",
+        "frontend/src/pages/RoadmapLab/index.jsx",
+        "frontend/src/contexts/RoadmapContext.jsx",
+        "frontend/src/services/roadmapApi.js"
+      ],
+      "api_prefix": "/api/roadmaps"
+    },
+    {
+      "name": "DSA Lab",
+      "purpose": "Algorithm/data-structure problem analysis with multi-approach teaching via Brain LLM",
+      "spec": ".claude/specs/13-ai-llm-orchestration.spec.md",
+      "tasks": ".claude/tasks/13-ai-llm-orchestration.tasks.md",
+      "critical_files": [
+        "backend/src/routes/dsa.js",
+        "backend/src/services/dsaSafety.js",
+        "frontend/src/pages/DsaLab/index.jsx",
+        "frontend/src/pages/DsaLab/AnalyzePage.jsx",
+        "frontend/src/services/dsaApi.js"
+      ],
+      "api_prefix": "/api/dsa"
+    },
+    {
+      "name": "Settings",
+      "purpose": "BYOK AI provider setup, sender name, AI personalization, account deletion",
+      "spec": ".claude/specs/06-settings.spec.md",
+      "tasks": ".claude/tasks/06-settings.tasks.md",
+      "critical_files": [
+        "backend/src/routes/settings.js",
+        "backend/src/services/llmSettings.js",
+        "frontend/src/pages/SettingsPage.jsx"
+      ],
+      "api_prefix": "/api/settings"
+    },
+    {
+      "name": "Gmail Integration",
+      "purpose": "Gmail OAuth2 connect/disconnect, refresh token lifecycle, send-from-user",
+      "spec": ".claude/specs/08-gmail-integration.spec.md",
+      "tasks": ".claude/tasks/08-gmail-integration.tasks.md",
+      "critical_files": [
+        "backend/src/gmail.js",
+        "backend/src/utils/crypto.js",
+        "backend/src/app.js"
+      ],
+      "routes": ["/gmail/connect", "/gmail/disconnect", "/gmail/reconnect", "/auth/google/callback"]
+    },
+    {
+      "name": "Templates",
+      "purpose": "Reusable email templates for Compose",
+      "spec": ".claude/specs/09-templates.spec.md",
+      "tasks": ".claude/tasks/09-templates.tasks.md",
+      "critical_files": [
+        "backend/src/routes/templates.js",
+        "frontend/src/pages/TemplatesPage.jsx"
+      ],
+      "api_prefix": "/api/templates"
+    },
+    {
+      "name": "Authentication",
+      "purpose": "Firebase Auth sign-in, token refresh, user upsert, profile management",
+      "spec": ".claude/specs/07-authentication.spec.md",
+      "tasks": ".claude/tasks/07-authentication.tasks.md",
+      "critical_files": [
+        "backend/src/app.js",
+        "frontend/src/contexts/AppContext.jsx"
+      ]
+    }
+  ],
+
+  "entities": [
+    { "name": "User", "collection": "reachflow_users", "key_fields": ["firebaseUid", "encryptedRefreshToken", "gmailConnected", "senderDisplayNameEnc"] },
+    { "name": "Campaign", "collection": "reachflow_outreach_items", "key_fields": ["userId", "status", "scheduledAt", "recipients[]", "encryptedPayload"] },
+    { "name": "Group", "collection": "reachflow_groups", "key_fields": ["userId", "companyKey", "contacts[]"] },
+    { "name": "Template", "collection": "reachflow_templates", "key_fields": ["userId", "encryptedPayload"] },
+    { "name": "Variable", "collection": "reachflow_variables", "key_fields": ["userId", "variableNameKey", "encryptedPayload"] },
+    { "name": "SendLog", "collection": "reachflow_send_logs", "key_fields": ["userId", "sentAt"] },
+    { "name": "Application", "collection": "reachflow_applications", "key_fields": ["userId", "status", "companyGroupId", "encryptedPayload"] },
+    { "name": "Resume", "collection": "reachflow_resumes", "key_fields": ["userId", "parsedDocId", "isBaseResume", "normalizedResumeText"] },
+    { "name": "CanonicalProfile", "collection": "reachflow_canonical_profiles", "key_fields": ["userId", "profileVersion", "canonicalProfile"] },
+    { "name": "ResumeAnalysis", "collection": "reachflow_resume_analyses", "key_fields": ["userId", "flowId", "matchScore", "matchAnalysis"] },
+    { "name": "GeneratedResume", "collection": "reachflow_generated_resumes", "key_fields": ["userId", "analysisId", "flowId", "outputType", "latexSource", "pdfPath"] },
+    { "name": "AISettings", "collection": "reachflow_ai_settings", "key_fields": ["userId", "provider", "apiKeyEncrypted", "isValid", "personalizationPrefs"] },
+    { "name": "DsaAnalysis", "collection": "reachflow_dsa_analyses", "key_fields": ["userId", "problemStatement", "result", "status"] },
+    { "name": "Roadmap", "collection": "reachflow_roadmaps", "key_fields": ["userId", "status", "progressPercent"] },
+    { "name": "RoadmapStage", "collection": "reachflow_roadmap_stages", "key_fields": ["roadmapId", "userId", "order"] },
+    { "name": "RoadmapItem", "collection": "reachflow_roadmap_items", "key_fields": ["roadmapId", "stageId", "userId", "status", "resourceType"] }
+  ],
+
+  "critical_files": [
+    { "path": "backend/src/app.js", "reason": "Boot sequence, middleware, all route mounts, Gmail OAuth, requireAuth, account deletion" },
+    { "path": "backend/src/db.js", "reason": "All Mongoose schemas and model registrations — source of truth for data shape" },
+    { "path": "backend/src/utils/dataSecurity.js", "reason": "AES-256-GCM encrypt/decrypt and HMAC hash — touches every sensitive field" },
+    { "path": "backend/src/utils/crypto.js", "reason": "Gmail refresh token encryption (TOKEN_ENC_KEY, separate key system)" },
+    { "path": "backend/src/services/brainClient.js", "reason": "All LLM/RAG calls to Brain service — Resume Lab, DSA Lab, Compose rewrite" },
+    { "path": "backend/src/services/brainPrompts.js", "reason": "All LLM prompt templates — change here to adjust AI behavior" },
+    { "path": "backend/src/services/llmSettings.js", "reason": "BYOK enforcement — resolveUserLlm() gates all AI features" },
+    { "path": "backend/src/gmail.js", "reason": "Gmail OAuth helpers and send-from-user API calls" },
+    { "path": "frontend/src/App.jsx", "reason": "Component tree root and top-level routing" },
+    { "path": "frontend/src/router.jsx", "reason": "Custom pushState router — no React Router; navigate with useRouter().navigateTo()" },
+    { "path": "frontend/src/contexts/AppContext.jsx", "reason": "Auth, Gmail state, groups, templates, history — shared across all pages" },
+    { "path": "frontend/src/contexts/ResumeLabContext.jsx", "reason": "Resume Lab full state — all Resume Lab pages read from here" },
+    { "path": "frontend/src/styles/tokens.css", "reason": "All CSS custom properties — retheme by editing here" }
+  ],
+
+  "flows": [
+    {
+      "name": "User Authentication",
+      "steps": ["Firebase Auth (client)", "ID token issued", "AppContext stores token", "Every API call: Authorization header", "requireAuth: Firebase Admin verifyIdToken", "User.findOneAndUpdate (upsert)"]
+    },
+    {
+      "name": "Gmail OAuth Connect",
+      "steps": ["POST /gmail/connect", "Random state → User.gmailState", "Return Google OAuth URL", "User authorizes", "GET /auth/google/callback (public)", "State matched → exchangeCodeForUser", "Refresh token encrypted → User.encryptedRefreshToken", "Redirect /?gmail=success"]
+    },
+    {
+      "name": "Resume Upload & Profile Build",
+      "steps": ["POST /api/resumelab/resumes (multipart)", "File saved to disk", "brainClient.extractResume → /v1/extract (5 min)", "Resume doc saved", "brainClient.mergeCanonicalProfile → LLM merge", "CanonicalProfile updated + profileVersion++", "JD cache invalidated"]
+    },
+    {
+      "name": "JD Analysis",
+      "steps": ["POST /api/resumelab/analyze", "resolveUserLlm() BYOK check", "Check in-memory JD cache", "brainClient.analyzeResumeMatch → /v1/generate", "ResumeAnalysis doc saved", "Cache entry set (30 min TTL)"]
+    },
+    {
+      "name": "Resume Generation (LaTeX → PDF)",
+      "steps": ["POST /api/resumelab/generate", "resolveUserLlm()", "brainClient.generateResumeLatex → { latex_source }", "latexCompiler.compile → Docker reachflow-latex", "PDF saved to disk", "GeneratedResume doc saved"]
+    },
+    {
+      "name": "Scheduled Campaign Send",
+      "steps": ["setInterval 60s after Mongo connects", "Find campaigns: status=scheduled, scheduledAt<=now", "getAuthorizedClient(user)", "Gmail API send per recipient", "status → sent | failed"]
+    }
+  ],
+
+  "documentation": {
+    "root": ["CLAUDE.md", "ARCHITECTURE.md", "CODEBASE_MAP.json"],
+    "areas": {
+      "backend": "backend/src/CLAUDE.md",
+      "frontend": "frontend/src/CLAUDE.md"
+    },
+    "specs": ".claude/specs/",
+    "tasks": ".claude/tasks/"
+  }
+}

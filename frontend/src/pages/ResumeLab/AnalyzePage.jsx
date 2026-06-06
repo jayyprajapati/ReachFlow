@@ -4,7 +4,7 @@ import { useRouter } from '../../router.jsx';
 import {
   Microscope, Loader, X, ClipboardCopy, CheckCheck,
   TrendingUp, AlertCircle, Lightbulb, MinusCircle, Info,
-  ChevronDown, ChevronUp, History,
+  ChevronDown, ChevronUp, History, Briefcase,
 } from 'lucide-react';
 
 const TEMPLATE_OPTIONS = [
@@ -113,6 +113,58 @@ function SectionRewrites({ rewrites }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Experience match chip ─────────────────────────────────────────────────────
+
+function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidate }) {
+  if (!mentionsYears || !requiredMin) return null;
+  const have = Number(candidate) || 0;
+  const min = Number(requiredMin) || 0;
+  const max = Number(requiredMax) || 0;
+  const required = max ? `${min}–${max}` : `${min}+`;
+
+  // green: candidate ≥ min
+  // orange: within 1 year below min, or above max by ≥ 3 (overqualified-ish)
+  // red: ≥ 2 years below min OR less than half of min
+  let tone = 'ok';
+  let verdict = 'Strong match';
+  if (have >= min && (!max || have <= max + 2)) {
+    tone = 'ok'; verdict = 'Strong match';
+  } else if (max && have > max + 2) {
+    tone = 'warn'; verdict = 'Likely overqualified';
+  } else if (have >= min - 1) {
+    tone = 'warn'; verdict = 'Borderline match';
+  } else if (have < Math.max(1, Math.floor(min / 2))) {
+    tone = 'err'; verdict = 'Significant gap';
+  } else {
+    tone = 'warn'; verdict = 'Below required';
+  }
+
+  const bg = tone === 'ok' ? 'var(--rf-success-muted)'
+           : tone === 'warn' ? 'var(--rf-warning-muted)'
+           : 'var(--rf-error-muted)';
+  const color = tone === 'ok' ? 'var(--rf-success-text)'
+              : tone === 'warn' ? 'var(--rf-warning-text)'
+              : 'var(--rf-error-text)';
+  const border = tone === 'ok' ? 'rgba(64, 160, 96, 0.32)'
+               : tone === 'warn' ? 'rgba(232, 146, 68, 0.32)'
+               : 'rgba(207, 76, 76, 0.32)';
+
+  return (
+    <div className="rl-panel" style={{
+      background: bg, border: `1px solid ${border}`, color,
+      padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <Briefcase size={16} style={{ flexShrink: 0 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <strong style={{ fontSize: 'var(--rf-text-sm)', lineHeight: 1.2 }}>{verdict}</strong>
+        <span style={{ fontSize: 'var(--rf-text-xs)', opacity: 0.9 }}>
+          JD requires {required} yrs · You have ~{have} yr{have === 1 ? '' : 's'}
+        </span>
+      </div>
     </div>
   );
 }
@@ -282,12 +334,30 @@ export default function AnalyzePage() {
                 )}
               </div>
 
+              {/* Experience-vs-JD match */}
+              <ExperienceMatchChip
+                mentionsYears={result.mentionsYears}
+                requiredMin={result.requiredYearsMin}
+                requiredMax={result.requiredYearsMax}
+                candidate={result.candidateYearsEstimate}
+              />
+
               {/* Keywords panel */}
               <div className="rl-panel" style={{ gap: 18 }}>
-                <KwChips items={result.missingKeywords} variant="missing"  label="Missing Keywords"       icon={AlertCircle} />
-                <KwChips items={result.existingButMissingFromResume} variant="omitted" label="In Profile, Not in Resume" icon={Info} />
-                <KwChips items={result.recommendedAdditions} variant="add"     label="Recommended Additions"  icon={TrendingUp} />
-                <KwChips items={result.recommendedRemovals}  variant="remove"  label="Recommended Removals"   icon={MinusCircle} />
+                <KwChips
+                  items={result.existingButMissingFromResume}
+                  variant="omitted"
+                  label="Suggested Keywords"
+                  icon={Info}
+                />
+                <KwChips
+                  items={result.missingKeywords}
+                  variant="missing"
+                  label="Missing Keywords (Skill Gap)"
+                  icon={AlertCircle}
+                />
+                <KwChips items={result.recommendedAdditions} variant="add"    label="Recommended Additions" icon={TrendingUp} />
+                <KwChips items={result.recommendedRemovals}  variant="remove" label="Recommended Removals"  icon={MinusCircle} />
                 <SectionRewrites rewrites={result.sectionRewrites} />
               </div>
 

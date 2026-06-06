@@ -4,7 +4,7 @@ import { useRouter } from '../router.jsx';
 import {
   Plus, Trash2, Pencil, Check, X, Copy, Search, Linkedin, ClipboardPaste,
   FileDown, Upload, ExternalLink, Loader, Users, Building2, Mail, ArrowUpRight,
-  Send, Briefcase, Info, ArrowUpDown, MessageSquare, Phone, ChevronLeft, ChevronRight,
+  Send, Briefcase, Info, ArrowUpDown, MessageSquare, Phone, ChevronLeft, ChevronRight, ChevronDown,
   MoreVertical, Minus,
 } from 'lucide-react';
 import ConversationsDrawer from '../components/ConversationsDrawer.jsx';
@@ -306,6 +306,9 @@ export default function ContactsPage() {
   const [nameSortDirection, setNameSortDirection] = useState('');
   const pageRef = useRef(null);
   const detailBodyRef = useRef(null);
+  const [mobileCompanySheetOpen, setMobileCompanySheetOpen] = useState(false);
+  const [rowMenuId, setRowMenuId] = useState(null);
+  const rowMenuRef = useRef(null);
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -355,7 +358,13 @@ export default function ContactsPage() {
   const showHoverTip = (e, text) => {
     if (!text) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2 });
+    const estimatedWidth = text.length * 7.5 + 24;
+    const spaceRight = window.innerWidth - rect.right - 15;
+    if (spaceRight >= estimatedWidth) {
+      setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2, dir: 'right' });
+    } else {
+      setHoverTip({ text, x: rect.left - 10, y: rect.top + rect.height / 2, dir: 'left' });
+    }
   };
   const hideHoverTip = () => setHoverTip(null);
 
@@ -515,6 +524,18 @@ export default function ContactsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [detailMenuOpen]);
 
+  // Close contact row kebab menu when clicking outside
+  useEffect(() => {
+    if (!rowMenuId) return;
+    function handleClickOutside(e) {
+      if (rowMenuRef.current && !rowMenuRef.current.contains(e.target)) {
+        setRowMenuId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [rowMenuId]);
+
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyN') {
@@ -649,6 +670,14 @@ export default function ContactsPage() {
   // Contacts in the open company whose email is marked Invalid (legacy "flagged" counts too).
   const detailInvalidCount = useMemo(
     () => (detail?.contacts || []).filter(c => c.email_status === 'not_valid' || c.email_status === 'flagged').length,
+    [detail?.contacts]
+  );
+  const detailTentativeCount = useMemo(
+    () => (detail?.contacts || []).filter(c => c.email_status === 'tentative').length,
+    [detail?.contacts]
+  );
+  const detailValidCount = useMemo(
+    () => (detail?.contacts || []).filter(c => c.email_status === 'verified').length,
     [detail?.contacts]
   );
 
@@ -1010,6 +1039,89 @@ export default function ContactsPage() {
 
   return (
     <div className="rf-page rf-page--wide rf-contacts-page" ref={pageRef}>
+      {/* Mobile company selector bar */}
+      <button
+        className="rf-ct__mobile-company-bar"
+        onClick={() => setMobileCompanySheetOpen(true)}
+        type="button"
+      >
+        {detail?.logoUrl ? (
+          <img src={detail.logoUrl} alt="" className="rf-ct__mobile-company-logo" />
+        ) : (
+          <Building2 size={16} />
+        )}
+        <span className="rf-ct__mobile-company-name">
+          {detail ? detail.companyName : (groups.length === 0 ? 'No companies yet' : 'Select a company')}
+        </span>
+        <ChevronDown size={14} style={{ marginLeft: 'auto', color: 'var(--rf-text-faint)' }} />
+      </button>
+
+      {/* Mobile company bottom sheet */}
+      {mobileCompanySheetOpen && (
+        <div className="rf-ct__mobile-sheet-overlay" onClick={() => setMobileCompanySheetOpen(false)}>
+          <div className="rf-ct__mobile-sheet" onClick={e => e.stopPropagation()}>
+            <div className="rf-ct__mobile-sheet-head">
+              <span className="rf-ct__mobile-sheet-title">Select Company</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setMobileCompanySheetOpen(false)} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="rf-ct__mobile-sheet-search">
+              <div className="rf-search" style={{ width: '100%' }}>
+                <Search size={14} className="rf-search__icon" />
+                <input
+                  className="rf-search__input"
+                  placeholder="Search companies…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  autoFocus
+                />
+                {search && (
+                  <button className="rf-ct__search-clear" onClick={() => setSearch('')} aria-label="Clear search"><X size={13} /></button>
+                )}
+              </div>
+            </div>
+            <div className="rf-ct__mobile-sheet-list">
+              {filtered.length === 0 ? (
+                <div className="rf-ct__mobile-sheet-empty">
+                  {search ? `No companies match "${search}"` : 'No companies yet'}
+                </div>
+              ) : filtered.map(g => (
+                <button
+                  key={g.id}
+                  className={`rf-ct__mobile-sheet-item${selectedId === g.id ? ' rf-ct__mobile-sheet-item--active' : ''}`}
+                  onClick={() => {
+                    openGroup(g.id);
+                    navigateTo(`/contacts/${g.id}`);
+                    setMobileCompanySheetOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span className="rf-ct__mobile-sheet-logo">
+                    {g.logoUrl ? <img src={g.logoUrl} alt="" /> : <Building2 size={14} />}
+                  </span>
+                  <span className="rf-ct__mobile-sheet-company-body">
+                    <span className="rf-ct__mobile-sheet-company-name">{g.companyName}</span>
+                    <span className="rf-ct__mobile-sheet-company-meta">{g.contactCount || 0} contact{(g.contactCount || 0) === 1 ? '' : 's'}</span>
+                  </span>
+                  {selectedId === g.id && <Check size={14} style={{ color: 'var(--rf-accent)', flexShrink: 0 }} />}
+                </button>
+              ))}
+            </div>
+            <div className="rf-ct__mobile-sheet-footer">
+              <button
+                className="rf-btn rf-btn--primary rf-btn--sm"
+                style={{ width: '100%' }}
+                onClick={() => { setMobileCompanySheetOpen(false); setSidebarCollapsed(false); setTimeout(() => startCreateCompany(), 60); }}
+                type="button"
+              >
+                <Plus size={14} /> New Company
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {copyTip && (
         <div
           className="rf-copy-toast"
@@ -1021,9 +1133,12 @@ export default function ContactsPage() {
       )}
       {hoverTip && (
         <div
-          className="rf-hover-tip"
+          className={`rf-hover-tip${hoverTip.dir === 'left' ? ' rf-hover-tip--left' : ''}`}
           role="tooltip"
-          style={{ top: hoverTip.y, left: hoverTip.x }}
+          style={hoverTip.dir === 'left'
+            ? { top: hoverTip.y, right: window.innerWidth - hoverTip.x }
+            : { top: hoverTip.y, left: hoverTip.x }
+          }
         >
           {hoverTip.text}
         </div>
@@ -1114,15 +1229,19 @@ export default function ContactsPage() {
 
           {/* Bottom row — stats + action buttons */}
           <div className="rf-ct__header-meta">
-            <span
-              className="rf-ct__header-stats"
-              title={totalInvalid > 0 ? `${totalInvalid} invalid contact${totalInvalid === 1 ? '' : 's'} excluded from this total` : undefined}
-            >
+            <span className="rf-ct__header-stats">
               <span className="rf-num rf-ct__header-stat-num">{groups.length}</span> companies
               <span className="rf-ct__meta-dot">·</span>
               <span className="rf-num rf-ct__header-stat-num">{totalContacts}</span> contacts
               {totalInvalid > 0 && (
-                <span className="rf-ct__header-invalid">· {totalInvalid} invalid</span>
+                <span
+                  className="rf-ct__count-info"
+                  style={{ marginLeft: 2 }}
+                  onMouseEnter={(e) => showHoverTip(e, `${totalInvalid} invalid contact${totalInvalid !== 1 ? 's' : ''} excluded from total`)}
+                  onMouseLeave={hideHoverTip}
+                >
+                  <Info size={12} className="rf-ct__count-info-icon" />
+                </span>
               )}
             </span>
             <button
@@ -1250,7 +1369,10 @@ export default function ContactsPage() {
                       onClick={startCreateCompany}
                       title={`New company (${newCompanyShortcutLabel})`}
                     >
-                      <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
+                      <Plus size={16} strokeWidth={2.4} />
+                      <span className="rf-ct__nc-new">New</span>
+                      <span className="rf-ct__nc-company"> company</span>
+                      <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
                     </button>
                   </div>
                 </div>
@@ -1405,38 +1527,45 @@ export default function ContactsPage() {
                         <span className="rf-ct__title-people">
                           <span className="rf-num">{(detail.contacts || []).length}</span> people
                         </span>
-                        {detailInvalidCount > 0 && (
+                        <span
+                          className="rf-ct__count-info"
+                          onMouseEnter={(e) => showHoverTip(e, `${detailValidCount} valid · ${detailTentativeCount} tentative · ${detailInvalidCount} invalid`)}
+                          onMouseLeave={hideHoverTip}
+                        >
+                          <Info size={12} className="rf-ct__count-info-icon" />
+                        </span>
+                        {editingCareers ? (
                           <>
                             <span className="rf-ct__meta-dot">·</span>
-                            <span className="rf-ct__invalid-count" title="Contacts whose email is marked Invalid — excluded from the contacts total">
-                              <X size={11} strokeWidth={2.6} />
-                              <span className="rf-num">{detailInvalidCount}</span> invalid
+                            <span className="rf-ct__careers-edit">
+                              <input
+                                className="rf-input rf-input--sm"
+                                style={{ width: 200 }}
+                                value={careersInput}
+                                onChange={e => setCareersInput(e.target.value)}
+                                placeholder="https://company.com/careers"
+                                autoFocus
+                                onKeyDown={e => { if (e.key === 'Enter') saveGroupField('careersPageUrl', careersInput); if (e.key === 'Escape') setEditingCareers(false); }}
+                              />
+                              <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('careersPageUrl', careersInput)} disabled={savingGroupField}><Check size={12} /></button>
+                              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingCareers(false)}><X size={12} /></button>
                             </span>
                           </>
-                        )}
-                        <span className="rf-ct__meta-dot">·</span>
-                        {editingCareers ? (
-                          <span className="rf-ct__careers-edit">
-                            <input
-                              className="rf-input rf-input--sm"
-                              style={{ width: 200 }}
-                              value={careersInput}
-                              onChange={e => setCareersInput(e.target.value)}
-                              placeholder="https://company.com/careers"
-                              autoFocus
-                              onKeyDown={e => { if (e.key === 'Enter') saveGroupField('careersPageUrl', careersInput); if (e.key === 'Escape') setEditingCareers(false); }}
-                            />
-                            <button className="rf-btn rf-btn--primary rf-btn--icon rf-btn--sm" onClick={() => saveGroupField('careersPageUrl', careersInput)} disabled={savingGroupField}><Check size={12} /></button>
-                            <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setEditingCareers(false)}><X size={12} /></button>
-                          </span>
                         ) : detail.careersPageUrl ? (
-                          <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
-                            <ExternalLink size={11} /> Careers page
-                          </a>
+                          <>
+                            <span className="rf-ct__meta-dot">·</span>
+                            <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
+                              <span className="rf-ct__link-label">Careers page</span>
+                              <ExternalLink size={13} />
+                            </a>
+                          </>
                         ) : (
-                          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }}>
-                            <Plus size={11} /> Careers page
-                          </button>
+                          <>
+                            <span className="rf-ct__meta-dot">·</span>
+                            <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }} title="Add careers page URL">
+                              <Plus size={13} /> Careers page
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1448,7 +1577,7 @@ export default function ContactsPage() {
                     <Search size={13} className="rf-search__icon" />
                     <input
                       className="rf-search__input"
-                      placeholder="Search name or email…"
+                      placeholder="Search…"
                       value={contactSearch}
                       onChange={e => setContactSearch(e.target.value)}
                     />
@@ -1467,14 +1596,16 @@ export default function ContactsPage() {
                   <button
                     className="rf-btn rf-btn--ghost rf-btn--sm"
                     onClick={() => { setBulkPasteText(''); setBulkPasteOpen(true); }}
+                    title="Bulk paste contacts"
                   >
-                    <ClipboardPaste size={13} /> Paste
+                    <ClipboardPaste size={13} /> <span className="rf-ct__btn-label">Paste</span>
                   </button>
                   <button
                     className="rf-btn rf-btn--primary rf-btn--sm"
                     onClick={() => { setEditingId('__new__'); setContactForm(contactFormDefaults()); }}
+                    title="Add contact"
                   >
-                    <Plus size={13} /> Add contact
+                    <Plus size={13} /> <span className="rf-ct__btn-label">Add contact</span>
                   </button>
                   <div className="rf-ct__detail-menu" ref={detailMenuRef}>
                     <button
@@ -1643,7 +1774,7 @@ export default function ContactsPage() {
                       ) : (
                         <tr key={c.id}>
                           <td>
-                            <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                               <span className="rf-ct__contact-name" style={{ fontWeight: 600 }}>{renderHighlightedText(c.name, <em style={{ color: 'var(--rf-text-faint)' }}>Unnamed</em>)}</span>
                               {c.linkedin && (
                                 <a href={c.linkedin} target="_blank" rel="noreferrer" title="LinkedIn">
@@ -1697,18 +1828,59 @@ export default function ContactsPage() {
                           </td>
                           <td><span className="rf-badge rf-badge--neutral">{c.role || '—'}</span></td>
                           <td style={{ textAlign: 'right' }}>
-                            <button
-                              className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__conv-btn"
-                              onClick={() => openConversations(c)}
-                              title={`Conversations${(c.conversations || []).length ? ` (${c.conversations.length})` : ''}`}
+                            <span className="rf-ct__row-actions rf-ct__row-actions--desktop">
+                              <button
+                                className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm rf-ct__conv-btn"
+                                onClick={() => openConversations(c)}
+                                title={`Conversations${(c.conversations || []).length ? ` (${c.conversations.length})` : ''}`}
+                              >
+                                <MessageSquare size={13} />
+                                {(c.conversations || []).length > 0 && (
+                                  <span className="rf-ct__conv-badge">{c.conversations.length}</span>
+                                )}
+                              </button>
+                              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => startEdit(c)} title="Edit"><Pencil size={13} /></button>
+                              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => deleteContact(c.id)} title="Delete"><Trash2 size={13} /></button>
+                            </span>
+                            <div
+                              className="rf-ct__row-menu"
+                              ref={rowMenuId === c.id ? rowMenuRef : null}
                             >
-                              <MessageSquare size={13} />
-                              {(c.conversations || []).length > 0 && (
-                                <span className="rf-ct__conv-badge">{c.conversations.length}</span>
+                              <button
+                                className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm"
+                                onClick={() => setRowMenuId(rowMenuId === c.id ? null : c.id)}
+                                title="Actions"
+                              >
+                                <MoreVertical size={14} />
+                              </button>
+                              {rowMenuId === c.id && (
+                                <div className="rf-ct__row-menu-pop">
+                                  <button
+                                    className="rf-ct__row-menu-item"
+                                    onClick={() => { openConversations(c); setRowMenuId(null); }}
+                                  >
+                                    <MessageSquare size={13} />
+                                    Conversations
+                                    {(c.conversations || []).length > 0 && (
+                                      <span className="rf-ct__conv-badge" style={{ position: 'static', marginLeft: 'auto' }}>{c.conversations.length}</span>
+                                    )}
+                                  </button>
+                                  <button
+                                    className="rf-ct__row-menu-item"
+                                    onClick={() => { startEdit(c); setRowMenuId(null); }}
+                                  >
+                                    <Pencil size={13} /> Edit
+                                  </button>
+                                  <div className="rf-ct__row-menu-sep" />
+                                  <button
+                                    className="rf-ct__row-menu-item rf-ct__row-menu-item--danger"
+                                    onClick={() => { deleteContact(c.id); setRowMenuId(null); }}
+                                  >
+                                    <Trash2 size={13} /> Delete
+                                  </button>
+                                </div>
                               )}
-                            </button>
-                            <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => startEdit(c)} title="Edit"><Pencil size={13} /></button>
-                            <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => deleteContact(c.id)} title="Delete"><Trash2 size={13} /></button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1725,7 +1897,7 @@ export default function ContactsPage() {
                       )}
                       {!(detail.contacts || []).length && editingId !== '__new__' && (
                         <tr>
-                          <td colSpan={5} style={{ padding: 36 }}>
+                          <td colSpan={5} style={{ padding: 36, whiteSpace: 'normal' }}>
                             <div className="rf-empty" style={{ padding: 0 }}>
                               <Mail size={22} className="rf-empty__icon" />
                               <div className="rf-empty__title">No contacts yet at {detail.companyName}</div>

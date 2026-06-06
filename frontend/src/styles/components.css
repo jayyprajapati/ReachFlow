@@ -430,6 +430,12 @@
   max-width: 100%;
 }
 
+/* Solid-colour chip per state */
+.rf-toast--success { background: var(--rf-accent);  color: #fff; border-color: transparent; }
+.rf-toast--error   { background: var(--rf-error);   color: #fff; border-color: transparent; }
+.rf-toast--info    { background: var(--rf-info, #2563EB); color: #fff; border-color: transparent; }
+.rf-toast--warning { background: var(--rf-warning); color: #fff; border-color: transparent; }
+
 .rf-toast__icon {
   display: inline-flex;
   align-items: center;
@@ -439,10 +445,10 @@
   border-radius: var(--rf-radius-full);
   flex-shrink: 0;
 }
-.rf-toast--success .rf-toast__icon { background: var(--rf-accent-muted);  color: var(--rf-accent-text); }
-.rf-toast--error   .rf-toast__icon { background: var(--rf-error-muted);   color: var(--rf-error-text); }
-.rf-toast--info    .rf-toast__icon { background: var(--rf-info-muted);    color: var(--rf-info-text); }
-.rf-toast--warning .rf-toast__icon { background: var(--rf-warning-muted); color: var(--rf-warning-text); }
+.rf-toast--success .rf-toast__icon,
+.rf-toast--error   .rf-toast__icon,
+.rf-toast--info    .rf-toast__icon,
+.rf-toast--warning .rf-toast__icon { background: rgba(255,255,255,0.2); color: #fff; }
 
 .rf-toast__message {
   min-width: 0;
@@ -469,6 +475,14 @@
   transition: color var(--rf-duration-fast), background var(--rf-duration-fast);
 }
 .rf-toast__close:hover { color: var(--rf-text); background: var(--rf-bg-hover); }
+.rf-toast--success .rf-toast__close,
+.rf-toast--error   .rf-toast__close,
+.rf-toast--info    .rf-toast__close,
+.rf-toast--warning .rf-toast__close { color: rgba(255,255,255,0.75); }
+.rf-toast--success .rf-toast__close:hover,
+.rf-toast--error   .rf-toast__close:hover,
+.rf-toast--info    .rf-toast__close:hover,
+.rf-toast--warning .rf-toast__close:hover { background: rgba(255,255,255,0.18); color: #fff; }
 
 @keyframes rf-toast-in {
   from { opacity: 0; transform: translateY(-12px) scale(0.96); }
@@ -804,6 +818,12 @@
   border: 5px solid transparent;
   border-right-color: var(--rf-text);
 }
+.rf-hover-tip--left::before {
+  right: auto;
+  left: 100%;
+  border-right-color: transparent;
+  border-left-color: var(--rf-text);
+}
 @keyframes rf-hover-tip-in {
   from { opacity: 0; transform: translateY(-50%) translateX(-2px); }
   to   { opacity: 1; transform: translateY(-50%) translateX(0); }
@@ -928,7 +948,7 @@
   color: var(--rf-text-muted);
   background: none;
   border: none;
-  cursor: help;
+  cursor: default;
   transition: color var(--rf-duration-fast);
 }
 .rf-info-btn:hover { color: var(--rf-text); }

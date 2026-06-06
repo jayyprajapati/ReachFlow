@@ -3,7 +3,7 @@ import { useRouter } from '../../router.jsx';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import {
   Vault, User, LayoutDashboard, Clock,
-  Brain, AlertTriangle, Loader, ArrowUpRight,
+  Brain, AlertTriangle, Loader, ArrowUpRight,FolderOpen
 } from 'lucide-react';
 import VaultPage from './VaultPage.jsx';
 import ProfilePage from './ProfilePage.jsx';
@@ -11,16 +11,16 @@ import WorkspacePage from './WorkspacePage.jsx';
 import HistoryPage from './HistoryPage.jsx';
 
 const SUB_ROUTES = [
-  { path: '/resume-lab/vault',     label: 'Vault',     icon: Vault,           desc: 'Upload & manage' },
+  { path: '/resume-lab/workspace', label: 'Analysis',  icon: LayoutDashboard, desc: 'Analyze & generate' },
+  { path: '/resume-lab/vault',     label: 'Vault',     icon: FolderOpen,           desc: 'Upload & manage' },
   { path: '/resume-lab/profile',   label: 'Profile',   icon: User,            desc: 'Merged career profile' },
-  { path: '/resume-lab/workspace', label: 'Workspace', icon: LayoutDashboard, desc: 'Analyze & generate' },
   { path: '/resume-lab/history',   label: 'History',   icon: Clock,           desc: 'Past analyses & resumes' },
 ];
 
 function SubRouter({ path }) {
-  if (path === '/resume-lab/profile')   return <ProfilePage />;
-  if (path === '/resume-lab/workspace') return <WorkspacePage />;
-  if (path === '/resume-lab/history')   return <HistoryPage />;
+  if (path === '/resume-lab/profile')                              return <ProfilePage />;
+  if (path === '/resume-lab/workspace' || path === '/resume-lab') return <WorkspacePage />;
+  if (path === '/resume-lab/history')                             return <HistoryPage />;
   return <VaultPage />;
 }
 
@@ -77,7 +77,7 @@ function ResumeLabPageInner({ path, navigateTo }) {
   const { aiSettings, aiSettingsLoading } = useResumeLab();
   const blocked = aiSettingsLoading || !aiSettings?.isValid;
 
-  const isActive = (itemPath) => path === itemPath || (path === '/resume-lab' && itemPath === '/resume-lab/vault');
+  const isActive = (itemPath) => path === itemPath || (path === '/resume-lab' && itemPath === '/resume-lab/workspace');
 
   return (
     <div className="rf-page rf-page--wide rf-rl-page">

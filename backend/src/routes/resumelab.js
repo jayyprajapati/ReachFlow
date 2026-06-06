@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume } = require('../db');
-const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateCoverLetter, generateHrEmail, deleteResumeVectors, deleteAllUserVectors, BrainError, brainDetail } = require('../services/brainClient');
+const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateCoverLetter, generateHrEmail, generateResumeLatex, deleteResumeVectors, deleteAllUserVectors, BrainError, brainDetail } = require('../services/brainClient');
 const { resolveUserLlm, isByokError } = require('../services/llmSettings');
 const { injectTemplate, compileToPdf, validateLatex } = require('../services/latexCompiler');
 
@@ -110,6 +110,8 @@ function toResumeResponse(doc) {
     uploadedAt: doc.uploadedAt,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+    latexSource: doc.latexSource || '',
+    hasLatex: !!(doc.latexSource || '').trim(),
   };
 }
 
@@ -377,6 +379,9 @@ router.patch('/resumes/:id', async (req, res) => {
     }
     if (Object.prototype.hasOwnProperty.call(incoming, 'isBaseResume')) {
       doc.isBaseResume = !!incoming.isBaseResume;
+    }
+    if (Object.prototype.hasOwnProperty.call(incoming, 'latexSource')) {
+      doc.latexSource = String(incoming.latexSource || '').slice(0, 500_000);
     }
 
     await doc.save();
@@ -694,8 +699,11 @@ function toAnalysisFull(doc) {
     irrelevantContent: analysis.irrelevant_content || [],
     recommendedAdditions: analysis.recommended_additions || [],
     recommendedRemovals: analysis.recommended_removals || [],
-    sectionRewrites: analysis.section_rewrites || {},
     atsKeywordClusters: analysis.ats_keyword_clusters || {},
+    mentionsYears: !!analysis.mentions_years,
+    requiredYearsMin: Number(analysis.required_years_min) || 0,
+    requiredYearsMax: Number(analysis.required_years_max) || 0,
+    candidateYearsEstimate: Number(analysis.candidate_years_estimate) || 0,
     status: doc.status,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
@@ -857,7 +865,10 @@ router.post('/analyze', async (req, res) => {
     irrelevantContent: matchAnalysis.irrelevant_content || [],
     recommendedAdditions: matchAnalysis.recommended_additions || [],
     recommendedRemovals: matchAnalysis.recommended_removals || [],
-    sectionRewrites: matchAnalysis.section_rewrites || {},
+    mentionsYears: !!matchAnalysis.mentions_years,
+    requiredYearsMin: Number(matchAnalysis.required_years_min) || 0,
+    requiredYearsMax: Number(matchAnalysis.required_years_max) || 0,
+    candidateYearsEstimate: Number(matchAnalysis.candidate_years_estimate) || 0,
   });
 });
 
@@ -1511,6 +1522,113 @@ router.post('/generate-hr-email', async (req, res) => {
     console.error(`[resumelab] generate-hr-email failed — userId: ${userId}: ${detail}`);
     return res.status(502).json({ error: 'HR email generation failed.', detail });
   }
+});
+
+// ── From-scratch LaTeX template (cached) ─────────────────────────────────────
+
+const FROM_SCRATCH_TEMPLATE_PATH = path.join(__dirname, '..', 'resume_templates', 'from-scratch.tex');
+let _fromScratchTemplateCache = null;
+function readFromScratchTemplate() {
+  if (_fromScratchTemplateCache !== null) return _fromScratchTemplateCache;
+  _fromScratchTemplateCache = fs.readFileSync(FROM_SCRATCH_TEMPLATE_PATH, 'utf8');
+  return _fromScratchTemplateCache;
+}
+
+// ── POST /api/resumelab/generate-from-latex ──────────────────────────────────
+//
+// Two-mode resume builder driven by the JD analysis + the user's choice of
+// intensity. Returns final LaTeX source so the frontend can drop it into the
+// editor and request a compile separately.
+
+router.post('/generate-from-latex', async (req, res) => {
+  const userId = req.user._id;
+  const {
+    mode,           // 'modify' | 'scratch'
+    latexSource,    // required when mode === 'modify'
+    intensity,      // 'minor' | 'balanced' | 'major'
+    userPrompt,     // optional freeform tweak
+    analysisId,     // required — anchors generation to a prior analysis
+  } = req.body || {};
+
+  if (mode !== 'modify' && mode !== 'scratch') {
+    return res.status(400).json({ error: "mode must be 'modify' or 'scratch'" });
+  }
+  if (mode === 'modify' && (!latexSource || !String(latexSource).trim())) {
+    return res.status(400).json({ error: 'latexSource is required when mode is modify' });
+  }
+  if (!analysisId || !Types.ObjectId.isValid(analysisId)) {
+    return res.status(400).json({ error: 'analysisId is required' });
+  }
+
+  const intensityKey = ['minor', 'balanced', 'major'].includes(intensity) ? intensity : 'balanced';
+  const trimmedUserPrompt = userPrompt ? String(userPrompt).trim().slice(0, 1000) : '';
+
+  let llm;
+  try {
+    llm = await resolveUserLlm(userId);
+  } catch (err) {
+    if (isByokError(err)) return res.status(402).json({ error: err.message, code: err.code });
+    return res.status(500).json({ error: 'Failed to load AI settings' });
+  }
+
+  const analysisDoc = await ResumeAnalysis.findOne({ _id: analysisId, userId });
+  if (!analysisDoc) return res.status(404).json({ error: 'Analysis not found' });
+
+  const profileDoc = await CanonicalProfile.findOne({ userId });
+  if (!profileDoc?.canonicalProfile) {
+    return res.status(400).json({ error: 'No Career Profile found. Upload at least one resume first.' });
+  }
+
+  const cortexLlm = { ...llm };
+  const personalizationPrefs = cortexLlm._personalizationPrefs || null;
+  const userSystemPrompt = cortexLlm._userSystemPrompt || undefined;
+  delete cortexLlm._personalizationPrefs;
+  delete cortexLlm._userSystemPrompt;
+
+  const candidateName = req.user.displayName || profileDoc.canonicalProfile?.contact?.name || '';
+  const candidateContact = profileDoc.canonicalProfile?.contact
+    ? [profileDoc.canonicalProfile.contact.email, profileDoc.canonicalProfile.contact.phone, profileDoc.canonicalProfile.contact.location]
+        .filter(Boolean).join(' • ')
+    : '';
+
+  console.log(`[resumelab] POST /generate-from-latex — userId: ${userId}, mode: ${mode}, intensity: ${intensityKey}`);
+
+  let result;
+  const _t0 = Date.now();
+  try {
+    result = await generateResumeLatex({
+      userId: userId.toString(),
+      mode,
+      latexSource: mode === 'modify' ? String(latexSource) : '',
+      templateLatex: mode === 'scratch' ? readFromScratchTemplate() : '',
+      intensity: intensityKey,
+      userPrompt: trimmedUserPrompt || undefined,
+      jobDescription: analysisDoc.jobDescriptionRaw || '',
+      matchAnalysis: analysisDoc.matchAnalysis || {},
+      canonicalProfile: profileDoc.canonicalProfile,
+      candidateName,
+      candidateContact,
+      llm: cortexLlm,
+      personalizationPrefs,
+      userSystemPrompt,
+    });
+    console.log(`[resumelab] [latency] generate-from-latex.llm=${Date.now() - _t0}ms userId:${userId}`);
+  } catch (err) {
+    const detail = brainDetail(err);
+    console.error(`[resumelab] generate-from-latex failed — userId: ${userId}: ${detail}`);
+    return res.status(502).json({ error: 'Resume generation failed. Please try again.', detail });
+  }
+
+  const latex = String(result.latex_source || '').trim();
+  if (!latex) return res.status(502).json({ error: 'AI returned an empty document. Please try again.' });
+
+  const validationErrors = validateLatex(latex);
+  if (validationErrors.length) {
+    console.warn(`[resumelab] generated LaTeX failed validation — userId: ${userId}: ${validationErrors.join('; ')}`);
+    // Return anyway — the user can fix in the editor and recompile.
+  }
+
+  return res.json({ latex, validationWarnings: validationErrors });
 });
 
 module.exports = router;

@@ -169,6 +169,32 @@ function injectTemplate({ templateType, name, contact = '', generated, canonical
   return filled;
 }
 
+// ── Pre-compile LaTeX sanitizer ──────────────────────────────────────────────
+
+/**
+ * Escape unescaped & characters that appear outside tabular/array/align
+ * environments, where & is a fatal syntax error (misplaced alignment tab).
+ *
+ * Strategy: temporarily swap every table/math environment that legally uses &
+ * for a placeholder, fix bare & in the remaining text, then restore.
+ */
+function fixUnescapedAmpersands(src) {
+  const envRe = /\\begin\{(tabular\*?|array|longtable|tabulary|tabu|align\*?|alignat\*?|eqnarray|IEEEeqnarray\*?|cases|split|aligned)\}[\s\S]*?\\end\{\1\}/g;
+
+  const saved = [];
+  let idx = 0;
+  const withPlaceholders = src.replace(envRe, (m) => {
+    saved.push(m);
+    return `\x00AMP_ENV_${idx++}\x00`;
+  });
+
+  // Replace bare & (not already preceded by \) with \&
+  const fixed = withPlaceholders.replace(/(?<!\\)&/g, '\\&');
+
+  // Restore saved environments
+  return fixed.replace(/\x00AMP_ENV_(\d+)\x00/g, (_, n) => saved[parseInt(n, 10)]);
+}
+
 // ── PDF compilation ──────────────────────────────────────────────────────────
 
 /**
@@ -209,6 +235,13 @@ async function compileToPdf({ latexSource, userId, outputName }) {
         src = src.replace(/\\usepackage(?:\[[^\]]*\])?\{fullpage\}/g, '\\usepackage[margin=1in]{geometry}');
       }
     }
+
+    // Safety-net: fix unescaped & outside tabular/array/align environments.
+    // LLMs often write "AT&T" instead of "AT\&T", causing "Misplaced alignment
+    // tab character &" fatal errors. We protect genuine table environments, then
+    // escape any remaining bare &.
+    src = fixUnescapedAmpersands(src);
+
     fs.writeFileSync(texFile, src, 'utf8');
 
     await runPdflatex(tmpDir, texFile);

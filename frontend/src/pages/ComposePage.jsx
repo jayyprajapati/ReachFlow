@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
+import { useResumeLab } from '../contexts/ResumeLabContext.jsx';
 import { useRouter } from '../router.jsx';
 import {
   Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
@@ -101,6 +102,8 @@ export default function ComposePage() {
     scheduled, scheduledLoading, loadScheduled,
     senderName, hydrateProfile,
   } = useApp();
+  const { aiSettings } = useResumeLab();
+  const savedRewritePref = (aiSettings?.systemPrompt || '').trim();
   const { navigateTo } = useRouter();
 
   /* State (unchanged from before — keep all behavior intact) */
@@ -393,15 +396,15 @@ export default function ComposePage() {
     finally { setIsPreviewing(false); }
   }
 
-  async function doRewrite() {
+  async function runRewrite(instruction) {
     if (!strip(body)) { setNotice({ type: 'error', message: 'Write some body text before rewriting.' }); return; }
-    const instruction = rewriteInstruction.trim();
-    if (!instruction) { setNotice({ type: 'error', message: 'Describe how the AI should rewrite it.' }); return; }
+    const cleaned = (instruction || '').trim();
+    if (!cleaned) { setNotice({ type: 'error', message: 'Describe how the AI should rewrite it.' }); return; }
     setIsRewriting(true);
     try {
       const res = await authedFetch(`${API_BASE}/api/campaigns/rewrite-body`, {
         method: 'POST', headers: hdrs,
-        body: JSON.stringify({ subject, body_html: body, context: instruction }),
+        body: JSON.stringify({ subject, body_html: body, context: cleaned }),
       });
       const d = await res.json();
       if (!res.ok) {
@@ -417,6 +420,21 @@ export default function ComposePage() {
     } catch (e) {
       setNotice({ type: 'error', message: e.message || 'Rewrite failed' });
     } finally { setIsRewriting(false); }
+  }
+
+  function doRewrite() { return runRewrite(rewriteInstruction); }
+
+  // Header button: if the user has a saved rewrite preference, fire directly
+  // (no modal). Otherwise toggle the modal as before.
+  function handleRewriteClick() {
+    if (isRewriting) return;
+    if (rewriteOpen) { setRewriteOpen(false); return; }
+    if (savedRewritePref) {
+      if (!strip(body)) { setNotice({ type: 'error', message: 'Write some body text before rewriting.' }); return; }
+      runRewrite(savedRewritePref);
+      return;
+    }
+    setRewriteOpen(true);
   }
 
   function revertRewrite() {
@@ -669,20 +687,43 @@ export default function ComposePage() {
 
       {!gmailConnected && (
         <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 12,
+          display: 'flex', flexDirection: 'column', gap: 10,
           padding: '12px 16px', marginBottom: 'var(--rf-sp-5)',
           background: 'var(--rf-warning-muted)',
           border: '1px solid rgba(232, 146, 68, 0.32)',
           borderRadius: 'var(--rf-radius-md)',
           color: 'var(--rf-warning-text)',
         }}>
-          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1, fontSize: 'var(--rf-text-base)' }}>
-            <strong>Gmail is not connected.</strong> Connect your Google account in Settings before you can preview or send.
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1, fontSize: 'var(--rf-text-base)' }}>
+              <strong>Gmail is not connected.</strong> Connect your Google account in Settings before you can preview or send.
+            </div>
+            <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => navigateTo('/settings')}>
+              Open Settings <ChevronRight size={13} />
+            </button>
           </div>
-          <button className="rf-btn rf-btn--secondary rf-btn--sm" onClick={() => navigateTo('/settings')}>
-            Open Settings <ChevronRight size={13} />
-          </button>
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            paddingTop: 8,
+            borderTop: '1px solid rgba(232, 146, 68, 0.2)',
+            fontSize: 'var(--rf-text-sm)',
+            opacity: 0.9,
+          }}>
+            <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+            <p style={{ margin: 0, lineHeight: 1.5 }}>
+              <strong>Gmail send is under Google OAuth review</strong> for public access.
+              The <code style={{ fontSize: '0.85em', background: 'rgba(232,146,68,0.15)', padding: '1px 5px', borderRadius: 3 }}>gmail.send</code> scope
+              is pending approval to be available for all users. Meanwhile, if you&apos;d like early access,{' '}
+              <a
+                href="mailto:jay.prajapati5717@gmail.com?subject=ReachFlow%20test%20user%20access%20request"
+                style={{ color: 'inherit', fontWeight: 600, textDecoration: 'underline' }}
+              >
+                raise a request to be added as a test user
+              </a>{' '}
+              — it&apos;s completely secure and your emails always send from your own Gmail account.
+            </p>
+          </div>
         </div>
       )}
 
@@ -870,9 +911,11 @@ export default function ComposePage() {
               <button
                 className={`rf-btn rf-btn--ghost rf-btn--sm${rewriteOpen ? ' rf-btn--active' : ''}`}
                 type="button"
-                onClick={() => setRewriteOpen(o => !o)}
+                onClick={handleRewriteClick}
                 disabled={isRewriting}
-                title="Refine the message body with AI"
+                title={savedRewritePref
+                  ? 'Refine using your saved AI preference from Settings'
+                  : 'Refine the message body with AI'}
               >
                 {isRewriting ? <Loader size={12} className="rf-spin" /> : <Sparkles size={12} />} Rewrite with AI
               </button>
@@ -880,26 +923,31 @@ export default function ComposePage() {
           </header>
 
           {rewriteOpen && (
-            <div className="rf-cp-rewrite" style={{ display: 'flex', gap: 6, marginBottom: 'var(--rf-sp-3)' }}>
-              <input
-                className="rf-input rf-input--sm"
-                style={{ flex: 1 }}
-                placeholder="How should the AI rewrite it? e.g. “make it more concise and confident”"
-                value={rewriteInstruction}
-                onChange={e => setRewriteInstruction(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); doRewrite(); }
-                  if (e.key === 'Escape') setRewriteOpen(false);
-                }}
-                autoFocus
-                disabled={isRewriting}
-              />
-              <button className="rf-btn rf-btn--primary rf-btn--sm" type="button" onClick={doRewrite} disabled={isRewriting}>
-                {isRewriting ? <><Loader size={12} className="rf-spin" /> Rewriting…</> : <><Wand2 size={12} /> Apply</>}
-              </button>
-              <button className="rf-btn rf-btn--ghost rf-btn--sm" type="button" onClick={() => setRewriteOpen(false)} disabled={isRewriting}>
-                Cancel
-              </button>
+            <div className="rf-cp-rewrite" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 'var(--rf-sp-3)' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="rf-input rf-input--sm"
+                  style={{ flex: 1 }}
+                  placeholder="How should the AI rewrite it? e.g. “make it more concise and confident”"
+                  value={rewriteInstruction}
+                  onChange={e => setRewriteInstruction(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); doRewrite(); }
+                    if (e.key === 'Escape') setRewriteOpen(false);
+                  }}
+                  autoFocus
+                  disabled={isRewriting}
+                />
+                <button className="rf-btn rf-btn--primary rf-btn--sm" type="button" onClick={doRewrite} disabled={isRewriting}>
+                  {isRewriting ? <><Loader size={12} className="rf-spin" /> Rewriting…</> : <><Wand2 size={12} /> Apply</>}
+                </button>
+                <button className="rf-btn rf-btn--ghost rf-btn--sm" type="button" onClick={() => setRewriteOpen(false)} disabled={isRewriting}>
+                  Cancel
+                </button>
+              </div>
+              <small style={{ color: 'var(--rf-text-faint)', fontSize: 'var(--rf-text-xs)' }}>
+                Tip — set a default in <a href="#" onClick={(e) => { e.preventDefault(); navigateTo('/settings'); }} style={{ color: 'var(--rf-text-muted)', textDecoration: 'underline' }}>Settings → AI Personalization</a> to skip this step next time.
+              </small>
             </div>
           )}
 

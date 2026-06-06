@@ -228,6 +228,46 @@ async function generateHrEmail({ userId, jobDescription, canonicalProfile, recip
   return withRetry(() => generate({ system, prompt, llm, json: true }), label);
 }
 
+// ── LaTeX resume: generate or modify ─────────────────────────────────────────
+//
+// Returns the parsed JSON shape { latex_source }. Token budget is generous
+// because the whole .tex file lives in the response. Output is NOT cached
+// across requests because intensity/userPrompt vary per-call.
+
+async function generateResumeLatex({
+  userId,
+  mode,
+  latexSource,
+  templateLatex,
+  intensity,
+  userPrompt,
+  jobDescription,
+  matchAnalysis,
+  canonicalProfile,
+  candidateName,
+  candidateContact,
+  llm,
+  personalizationPrefs,
+  userSystemPrompt,
+}) {
+  const label = `generateResumeLatex (user: ${userId}, mode: ${mode})`;
+  const styleBlock = styleBlockFrom(llm, personalizationPrefs, userSystemPrompt);
+  const { system, prompt } = prompts.generateFromLatexPrompt({
+    mode,
+    latexSource,
+    templateLatex,
+    intensity,
+    userPrompt,
+    jobDescription,
+    matchAnalysis,
+    canonicalProfile,
+    candidateName,
+    candidateContact,
+    styleBlock,
+  });
+  return withRetry(() => generate({ system, prompt, llm, json: true, maxTokens: 12000 }), label);
+}
+
 // ── Compose body rewrite ──────────────────────────────────────────────────────
 
 async function composeRewrite({ userId, instruction, bodyHtml, bodyText, subject, llm, personalizationPrefs, userSystemPrompt }) {
@@ -293,6 +333,7 @@ module.exports = {
   analyzeResumeMatch,
   generateCoverLetter,
   generateHrEmail,
+  generateResumeLatex,
   composeRewrite,
   analyzeDsa,
   deleteResumeVectors,

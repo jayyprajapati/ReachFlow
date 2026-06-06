@@ -91,7 +91,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 1px;
+  gap: 4px;
   line-height: 1.05;
 }
 
@@ -653,9 +653,8 @@
   align-items: center;
   gap: var(--rf-sp-1);
   border-bottom: 1px solid var(--rf-border-subtle);
-  margin-bottom: var(--rf-sp-7);
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: visible;
+  margin-bottom: 8px;
 }
 .rf-subnav::-webkit-scrollbar { display: none; }
 
@@ -861,6 +860,8 @@
     margin-right: calc(var(--rf-sp-3) * -1);
     padding: 0 var(--rf-sp-3);
     margin-bottom: var(--rf-sp-5);
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .rf-subnav__item {
