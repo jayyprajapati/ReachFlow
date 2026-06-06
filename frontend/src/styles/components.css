@@ -818,6 +818,12 @@
   border: 5px solid transparent;
   border-right-color: var(--rf-text);
 }
+.rf-hover-tip--left::before {
+  right: auto;
+  left: 100%;
+  border-right-color: transparent;
+  border-left-color: var(--rf-text);
+}
 @keyframes rf-hover-tip-in {
   from { opacity: 0; transform: translateY(-50%) translateX(-2px); }
   to   { opacity: 1; transform: translateY(-50%) translateX(0); }
@@ -942,7 +948,7 @@
   color: var(--rf-text-muted);
   background: none;
   border: none;
-  cursor: help;
+  cursor: default;
   transition: color var(--rf-duration-fast);
 }
 .rf-info-btn:hover { color: var(--rf-text); }

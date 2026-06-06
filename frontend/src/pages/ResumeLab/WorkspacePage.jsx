@@ -4,7 +4,7 @@ import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
   Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle,
-  Sparkles, Download, CheckCheck,
+  Sparkles, CheckCheck,
   CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink, Briefcase,
   Vault, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
@@ -75,26 +75,6 @@ function KwChips({ items, variant, label, icon: Icon }) {
 }
 
 
-// ── Score delta ───────────────────────────────────────────────────────────────
-
-function ScoreDelta({ before, after }) {
-  const gain = (after || 0) - (before || 0);
-  return (
-    <div className="rl-score-delta">
-      <span className="rl-score-delta__before">{Math.round(before || 0)}%</span>
-      <span className="rl-score-delta__arrow">→</span>
-      <span className="rl-score-delta__after" style={{ fontWeight: 700, color: after >= 70 ? 'var(--rf-success-text)' : 'var(--rf-text)' }}>
-        {Math.round(after || 0)}%
-      </span>
-      {gain !== 0 && (
-        <span className={`rl-score-delta__gain rl-score-delta__gain--${gain > 0 ? 'pos' : 'neg'}`}>
-          {gain > 0 ? '+' : ''}{Math.round(gain)}
-        </span>
-      )}
-    </div>
-  );
-}
-
 // ── Experience match chip ─────────────────────────────────────────────────────
 
 function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidate }) {
@@ -111,27 +91,17 @@ function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidat
   else if (have < Math.max(1, Math.floor(min / 2))) { tone = 'err'; verdict = 'Significant gap'; }
   else                                          { tone = 'warn'; verdict = 'Below required'; }
 
-  const bg = tone === 'ok' ? 'var(--rf-success-muted)'
-           : tone === 'warn' ? 'var(--rf-warning-muted)'
-           : 'var(--rf-error-muted)';
   const color = tone === 'ok' ? 'var(--rf-success-text)'
               : tone === 'warn' ? 'var(--rf-warning-text)'
               : 'var(--rf-error-text)';
-  const border = tone === 'ok' ? 'rgba(64, 160, 96, 0.32)'
-               : tone === 'warn' ? 'rgba(232, 146, 68, 0.32)'
-               : 'rgba(207, 76, 76, 0.32)';
 
   return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6,
-      padding: '4px 10px 4px 8px', borderRadius: 20,
-      background: bg, border: `1px solid ${border}`, color,
-      fontSize: 'var(--rf-text-xs)', fontWeight: 500, alignSelf: 'flex-start',
-    }}>
-      <Briefcase size={12} style={{ flexShrink: 0 }} />
-      <strong style={{ fontWeight: 700 }}>{verdict}</strong>
-      <span style={{ opacity: 0.7 }}>·</span>
-      <span>JD {required} yrs · ~{have} yr{have === 1 ? '' : 's'}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, fontSize: 'var(--rf-text-xs)', color }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+        <Briefcase size={11} style={{ flexShrink: 0 }} />
+        {verdict}
+      </div>
+      <span style={{ fontWeight: 400, opacity: 0.8 }}>JD {required} yrs · ~{have} yr{have === 1 ? '' : 's'}</span>
     </div>
   );
 }
@@ -459,7 +429,7 @@ export default function WorkspacePage() {
     resumes, loadResumes,
     activeAnalysis, analyzeLoading,
     analyzeJD, cancelAnalyze, setActiveAnalysis,
-    generateLoading, generateFromLatex, downloadPdf,
+    generateLoading, generateFromLatex,
     fetchPdfBlob, compileLatex,
     jdText, setJdText,
     activeGenerated, setActiveGenerated,
@@ -471,7 +441,6 @@ export default function WorkspacePage() {
   const [company, setCompany] = useState('');
   const [baseResumeId, setBaseResumeId] = useState('');
   const [showStrategyModal, setShowStrategyModal] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [confirmNewAnalysis, setConfirmNewAnalysis] = useState(false);
   const [latexOpen, setLatexOpen] = useState(false);
   const [coverLetterText, setCoverLetterText] = useState('');
@@ -562,11 +531,6 @@ export default function WorkspacePage() {
     }
   }
 
-  async function handleDownload(id, filename) {
-    setDownloading(true);
-    try { await downloadPdf(id, filename); } finally { setDownloading(false); }
-  }
-
   async function handleGenerateCoverLetter() {
     if (!activeAnalysis?.analysisId) return;
     setCoverLetterLoading(true);
@@ -624,7 +588,7 @@ export default function WorkspacePage() {
     <div className="rl-page">
       <div className="rl-page__header">
         <div className="rl-page__header-left">
-          <h1 className="rl-page__title">Workspace</h1>
+          <h1 className="rl-page__title">JD Analysis against your resume</h1>
           <p className="rl-page__subtitle">Paste a job description, analyze your match, then generate an optimized resume.</p>
         </div>
         {hasResult && (
@@ -709,18 +673,6 @@ export default function WorkspacePage() {
 
           {/* Left: keyword insights */}
           <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {(activeAnalysis.seniority || activeAnalysis.domain) && (
-              <div className="rl-panel" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'nowrap', padding: '10px 16px' }}>
-                {activeAnalysis.seniority && <span className="rl-badge" style={{ background: 'var(--rf-bg-overlay)', color: 'var(--rf-text-secondary)', flexShrink: 0 }}>{activeAnalysis.seniority}</span>}
-                {activeAnalysis.domain && <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeAnalysis.domain}</span>}
-              </div>
-            )}
-            <ExperienceMatchChip
-              mentionsYears={activeAnalysis.mentionsYears}
-              requiredMin={activeAnalysis.requiredYearsMin}
-              requiredMax={activeAnalysis.requiredYearsMax}
-              candidate={activeAnalysis.candidateYearsEstimate}
-            />
             <div className="rl-panel" style={{ gap: 18 }}>
               <KwChips items={activeAnalysis.existingButMissingFromResume}  variant="omitted"  label="Suggested Keywords"          icon={Info} />
               <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Missing Keywords (Skill Gap)" icon={AlertCircle} />
@@ -731,9 +683,34 @@ export default function WorkspacePage() {
 
           {/* Right: score + generate actions */}
           <div style={{ flex: '0 1 260px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="rl-panel" style={{ alignItems: 'center', gap: 8 }}>
+            <div className="rl-panel" style={{ alignItems: 'center', gap: 10 }}>
+              {/* Role at top — plain text, no bg */}
+              {(activeAnalysis.seniority || activeAnalysis.domain) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {activeAnalysis.seniority && (
+                    <span style={{ fontWeight: 700, fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-secondary)' }}>
+                      {activeAnalysis.seniority}
+                    </span>
+                  )}
+                  {activeAnalysis.seniority && activeAnalysis.domain && (
+                    <span style={{ color: 'var(--rf-text-faint)', fontSize: 'var(--rf-text-xs)' }}>/</span>
+                  )}
+                  {activeAnalysis.domain && (
+                    <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', fontStyle: 'italic' }}>
+                      {activeAnalysis.domain}
+                    </span>
+                  )}
+                </div>
+              )}
               <ScoreRing score={activeAnalysis.matchScore || 0} size={120} />
               <div className="rl-score-label">ATS Match Score</div>
+              {/* YOE match at bottom — plain colored text */}
+              <ExperienceMatchChip
+                mentionsYears={activeAnalysis.mentionsYears}
+                requiredMin={activeAnalysis.requiredYearsMin}
+                requiredMax={activeAnalysis.requiredYearsMax}
+                candidate={activeAnalysis.candidateYearsEstimate}
+              />
             </div>
 
             {RESUME_GENERATION_ENABLED && !activeGenerated && (
@@ -751,27 +728,18 @@ export default function WorkspacePage() {
             )}
 
             {RESUME_GENERATION_ENABLED && activeGenerated && (
-              <div className="rl-panel" style={{ gap: 10 }}>
-                <div>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                    padding: '4px 12px', borderRadius: 20,
-                    background: 'var(--rf-accent)', color: '#fff',
-                    fontWeight: 600, fontSize: 'var(--rf-text-xs)',
-                  }}>
-                    <CheckCircle2 size={12} /> Generated
-                  </span>
-                </div>
-                <ScoreDelta before={activeGenerated.matchScoreBefore} after={activeGenerated.matchScoreAfter} />
-                <button
-                  className="rf-btn rf-btn--primary rf-btn--sm"
-                  style={{ width: '100%' }}
-                  onClick={() => handleDownload(activeGenerated.id, `resume_${activeGenerated.id}.pdf`)}
-                  disabled={!(activeGenerated.pdfUrl || activeGenerated.hasPdf) || downloading}
-                  title={!(activeGenerated.pdfUrl || activeGenerated.hasPdf) ? 'Compile first to enable download' : 'Download PDF'}
-                >
-                  {downloading ? <><Loader size={13} className="rf-spin" /> Downloading…</> : <><Download size={13} /> Download PDF</>}
-                </button>
+              <div className="rl-panel" style={{ gap: 10, alignItems: 'flex-start' }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 12px', borderRadius: 20,
+                  background: 'var(--rf-accent)', color: '#fff',
+                  fontWeight: 600, fontSize: 'var(--rf-text-xs)',
+                }}>
+                  <CheckCircle2 size={12} /> Generated
+                </span>
+                <p style={{ margin: 0, fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)' }}>
+                  Edit LaTeX below and compile to preview your optimized resume.
+                </p>
               </div>
             )}
 

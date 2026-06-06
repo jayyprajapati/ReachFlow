@@ -1667,15 +1667,35 @@
 }
 .rf-ct__new-company-action {
   min-width: 0;
+  container-type: inline-size;
 }
 .rf-ct__new-company {
   width: 100%;
   min-height: 34px;
   justify-content: flex-start;
   padding-right: 8px;
+  overflow: hidden;
 }
 .rf-ct__new-company svg {
   flex: 0 0 16px;
+}
+.rf-ct__nc-new,
+.rf-ct__nc-company {
+  white-space: nowrap;
+}
+
+/* step 1 — hide shortcut */
+@container (max-width: 130px) {
+  .rf-ct__shortcut { display: none; }
+}
+/* step 2 — hide "company", keep "New" */
+@container (max-width: 96px) {
+  .rf-ct__nc-company { display: none; }
+}
+/* step 3 — icon only */
+@container (max-width: 60px) {
+  .rf-ct__nc-new { display: none; }
+  .rf-ct__new-company { justify-content: center; padding-right: 0; }
 }
 .rf-ct__shortcut {
   margin-left: auto;
@@ -4086,10 +4106,9 @@
 
 /* ── Contacts: count info tooltip ──────────────────────── */
 .rf-ct__count-info {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  cursor: help;
+  cursor: default;
   margin-left: 4px;
   flex-shrink: 0;
 }
@@ -4097,53 +4116,12 @@
   color: var(--rf-text-faint);
   transition: color var(--rf-duration-fast);
 }
-.rf-ct__count-info:hover .rf-ct__count-info-icon,
-.rf-ct__count-info:focus .rf-ct__count-info-icon { color: var(--rf-text-muted); }
-.rf-ct__count-tip {
-  display: none;
-  flex-direction: column;
-  gap: 3px;
-  position: absolute;
-  bottom: calc(100% + 7px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 160px;
-  background: var(--rf-bg-inverse, #1a1a2e);
-  color: var(--rf-text-inverse, #f0f0f5);
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 8px 12px;
-  border-radius: 8px;
-  z-index: 300;
-  pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-}
-.rf-ct__count-tip::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: var(--rf-bg-inverse, #1a1a2e);
-}
-.rf-ct__count-info:hover .rf-ct__count-tip,
-.rf-ct__count-info:focus .rf-ct__count-tip {
-  display: flex;
-}
-.rf-ct__count-tip-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.rf-ct__count-tip-row--ok { color: #6ee7b7; }
-.rf-ct__count-tip-row--mid { color: #fde68a; }
-.rf-ct__count-tip-row--bad { color: #fca5a5; }
+.rf-ct__count-info:hover .rf-ct__count-info-icon { color: var(--rf-text-muted); }
 
-/* Careers link icon-only variant */
-.rf-ct__link--icon { padding: 2px 4px; }
-.rf-ct__link--icon:hover { text-decoration: none; opacity: 0.8; }
+/* Careers link — label hidden on compact/mobile */
+@media (max-width: 980px) {
+  .rf-ct__link-label { display: none; }
+}
 
 /* ── Coming-soon page ────────────────────────────────────── */
 

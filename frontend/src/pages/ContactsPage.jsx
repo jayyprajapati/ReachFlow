@@ -358,7 +358,13 @@ export default function ContactsPage() {
   const showHoverTip = (e, text) => {
     if (!text) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2 });
+    const estimatedWidth = text.length * 7.5 + 24;
+    const spaceRight = window.innerWidth - rect.right - 15;
+    if (spaceRight >= estimatedWidth) {
+      setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2, dir: 'right' });
+    } else {
+      setHoverTip({ text, x: rect.left - 10, y: rect.top + rect.height / 2, dir: 'left' });
+    }
   };
   const hideHoverTip = () => setHoverTip(null);
 
@@ -1127,9 +1133,12 @@ export default function ContactsPage() {
       )}
       {hoverTip && (
         <div
-          className="rf-hover-tip"
+          className={`rf-hover-tip${hoverTip.dir === 'left' ? ' rf-hover-tip--left' : ''}`}
           role="tooltip"
-          style={{ top: hoverTip.y, left: hoverTip.x }}
+          style={hoverTip.dir === 'left'
+            ? { top: hoverTip.y, right: window.innerWidth - hoverTip.x }
+            : { top: hoverTip.y, left: hoverTip.x }
+          }
         >
           {hoverTip.text}
         </div>
@@ -1225,13 +1234,14 @@ export default function ContactsPage() {
               <span className="rf-ct__meta-dot">·</span>
               <span className="rf-num rf-ct__header-stat-num">{totalContacts}</span> contacts
               {totalInvalid > 0 && (
-                <div className="rf-ct__count-info" tabIndex={0} style={{ marginLeft: 2 }}>
+                <span
+                  className="rf-ct__count-info"
+                  style={{ marginLeft: 2 }}
+                  onMouseEnter={(e) => showHoverTip(e, `${totalInvalid} invalid contact${totalInvalid !== 1 ? 's' : ''} excluded from total`)}
+                  onMouseLeave={hideHoverTip}
+                >
                   <Info size={12} className="rf-ct__count-info-icon" />
-                  <div className="rf-ct__count-tip">
-                    <span className="rf-ct__count-tip-row rf-ct__count-tip-row--bad"><X size={10} strokeWidth={2.5} /> {totalInvalid} invalid excluded</span>
-                    <span className="rf-ct__count-tip-row" style={{ color: 'rgba(240,240,245,0.7)', fontSize: 11 }}>Invalid contacts are hidden from the total</span>
-                  </div>
-                </div>
+                </span>
               )}
             </span>
             <button
@@ -1359,7 +1369,10 @@ export default function ContactsPage() {
                       onClick={startCreateCompany}
                       title={`New company (${newCompanyShortcutLabel})`}
                     >
-                      <Plus size={16} strokeWidth={2.4} /> New company <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
+                      <Plus size={16} strokeWidth={2.4} />
+                      <span className="rf-ct__nc-new">New</span>
+                      <span className="rf-ct__nc-company"> company</span>
+                      <kbd className="rf-ct__shortcut">{newCompanyShortcutLabel}</kbd>
                     </button>
                   </div>
                 </div>
@@ -1514,14 +1527,13 @@ export default function ContactsPage() {
                         <span className="rf-ct__title-people">
                           <span className="rf-num">{(detail.contacts || []).length}</span> people
                         </span>
-                        <div className="rf-ct__count-info" tabIndex={0}>
+                        <span
+                          className="rf-ct__count-info"
+                          onMouseEnter={(e) => showHoverTip(e, `${detailValidCount} valid · ${detailTentativeCount} tentative · ${detailInvalidCount} invalid`)}
+                          onMouseLeave={hideHoverTip}
+                        >
                           <Info size={12} className="rf-ct__count-info-icon" />
-                          <div className="rf-ct__count-tip">
-                            <span className="rf-ct__count-tip-row rf-ct__count-tip-row--ok"><Check size={10} strokeWidth={2.5} /> {detailValidCount} valid</span>
-                            <span className="rf-ct__count-tip-row rf-ct__count-tip-row--mid">— {detailTentativeCount} tentative</span>
-                            <span className="rf-ct__count-tip-row rf-ct__count-tip-row--bad"><X size={10} strokeWidth={2.5} /> {detailInvalidCount} invalid</span>
-                          </div>
-                        </div>
+                        </span>
                         {editingCareers ? (
                           <>
                             <span className="rf-ct__meta-dot">·</span>
@@ -1542,15 +1554,16 @@ export default function ContactsPage() {
                         ) : detail.careersPageUrl ? (
                           <>
                             <span className="rf-ct__meta-dot">·</span>
-                            <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link rf-ct__link--icon" title="Open careers page">
+                            <a href={detail.careersPageUrl} target="_blank" rel="noreferrer" className="rf-ct__link" title="Open careers page">
+                              <span className="rf-ct__link-label">Careers page</span>
                               <ExternalLink size={13} />
                             </a>
                           </>
                         ) : (
                           <>
                             <span className="rf-ct__meta-dot">·</span>
-                            <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }} title="Add careers page URL">
-                              <ExternalLink size={13} />
+                            <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setCareersInput(''); setEditingCareers(true); }} title="Add careers page URL">
+                              <Plus size={13} /> Careers page
                             </button>
                           </>
                         )}
@@ -1761,7 +1774,7 @@ export default function ContactsPage() {
                       ) : (
                         <tr key={c.id}>
                           <td>
-                            <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                               <span className="rf-ct__contact-name" style={{ fontWeight: 600 }}>{renderHighlightedText(c.name, <em style={{ color: 'var(--rf-text-faint)' }}>Unnamed</em>)}</span>
                               {c.linkedin && (
                                 <a href={c.linkedin} target="_blank" rel="noreferrer" title="LinkedIn">
@@ -1884,7 +1897,7 @@ export default function ContactsPage() {
                       )}
                       {!(detail.contacts || []).length && editingId !== '__new__' && (
                         <tr>
-                          <td colSpan={5} style={{ padding: 36 }}>
+                          <td colSpan={5} style={{ padding: 36, whiteSpace: 'normal' }}>
                             <div className="rf-empty" style={{ padding: 0 }}>
                               <Mail size={22} className="rf-empty__icon" />
                               <div className="rf-empty__title">No contacts yet at {detail.companyName}</div>

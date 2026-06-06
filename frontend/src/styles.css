@@ -3093,11 +3093,11 @@ body {
 }
 
 .gm-name-link {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  max-width: 100%;
+  flex: 1;
   color: var(--text);
   text-decoration: none;
 }

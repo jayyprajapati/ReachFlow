@@ -475,10 +475,11 @@
 .rl-tabs {
   display: flex;
   gap: 2px;
-  border-bottom: 1px solid var(--rf-border-subtle);
+  /* border-bottom: 1px solid var(--rf-border-subtle); */
   margin-bottom: 20px;
-  overflow-x: auto;
+  scrollbar-width: none;
 }
+.rl-tabs::-webkit-scrollbar { display: none; }
 
 .rl-tab {
   padding: 8px 14px;

@@ -316,9 +316,6 @@ export default function ProfilePage() {
         <div className="rl-page__header-left">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h1 className="rl-page__title">Career Profile</h1>
-            {profile?.profileVersion > 0 && (
-              <span className="rl-version-badge">v{profile.profileVersion}</span>
-            )}
           </div>
           <p className="rl-page__subtitle">
             Your merged professional intelligence — built from all uploaded resumes.
@@ -400,7 +397,7 @@ export default function ProfilePage() {
                 );
               })}
             </div>
-            <div className="rl-search" style={{ marginBottom: 0, marginLeft: 12 }}>
+            <div className="rl-search" style={{ marginBottom: 4, marginLeft: 12 }}>
               <Search size={13} style={{ color: 'var(--rf-text-faint)' }} />
               <input
                 placeholder={`Search ${activeSection}…`}

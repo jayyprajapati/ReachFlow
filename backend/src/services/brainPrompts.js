@@ -282,7 +282,12 @@ function generateFromLatexPrompt({
     '\\begin{document} … \\end{document}). NEVER fabricate experience, employers, dates, ' +
     'degrees, or metrics — every fact must be derivable from the user\'s Career Profile or ' +
     '(in modify mode) already present in the source LaTeX. Prefer concrete, quantified ' +
-    'bullets. Escape LaTeX special characters correctly (% & $ # _ { } ~ ^ \\). ' +
+    'bullets. ' +
+    'CRITICAL — escape ALL LaTeX special characters in every text node: ' +
+    '& → \\& (most common failure: "AT&T" must be "AT\\&T", "R&D" must be "R\\&D"), ' +
+    '% → \\%, $ → \\$, # → \\#, _ → \\_, { → \\{, } → \\}, ~ → \\textasciitilde{}, ' +
+    '^ → \\textasciicircum{}. An unescaped & outside a tabular environment is a fatal ' +
+    'compile error. Double-check every company name, skill, and bullet for bare &. ' +
     JSON_RULE + (styleBlock || '');
 
   const shape =

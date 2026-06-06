@@ -91,7 +91,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 1px;
+  gap: 4px;
   line-height: 1.05;
 }
 
@@ -654,6 +654,7 @@
   gap: var(--rf-sp-1);
   border-bottom: 1px solid var(--rf-border-subtle);
   overflow: visible;
+  margin-bottom: 8px;
 }
 .rf-subnav::-webkit-scrollbar { display: none; }
 
