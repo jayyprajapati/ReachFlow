@@ -38,6 +38,11 @@
       "purpose": "Docker image for LaTeX → PDF compilation (reachflow-latex)"
     },
     {
+      "name": "LaTeX Resume Templates",
+      "path": "backend/src/resume_templates",
+      "purpose": "Role-specific .tex templates: backend.tex, frontend.tex, fullstack.tex, from-scratch.tex. Loaded and injected by latexCompiler.js injectTemplate()."
+    },
+    {
       "name": "Specs",
       "path": ".claude/specs",
       "purpose": "Product truth for all 13 features"
@@ -96,11 +101,13 @@
         "backend/src/services/brainPrompts.js",
         "backend/src/services/latexCompiler.js",
         "backend/src/services/llmSettings.js",
+        "backend/src/resume_templates/",
         "frontend/src/pages/ResumeLab/index.jsx",
         "frontend/src/contexts/ResumeLabContext.jsx",
         "frontend/src/services/resumeLabApi.js"
       ],
-      "api_prefix": "/api/resumelab"
+      "api_prefix": "/api/resumelab",
+      "latex_endpoints": ["/compile-latex", "/generated/:id/compile-latex", "/generate-from-latex"]
     },
     {
       "name": "Roadmap Lab",
@@ -125,7 +132,10 @@
         "backend/src/services/dsaSafety.js",
         "frontend/src/pages/DsaLab/index.jsx",
         "frontend/src/pages/DsaLab/AnalyzePage.jsx",
-        "frontend/src/services/dsaApi.js"
+        "frontend/src/services/dsaApi.js",
+        "frontend/src/components/dsa/CodeBlock.jsx",
+        "frontend/src/components/dsa/CodeEditor.jsx",
+        "frontend/src/components/dsa/DsaResult.jsx"
       ],
       "api_prefix": "/api/dsa"
     },
@@ -203,6 +213,8 @@
     { "path": "backend/src/services/brainClient.js", "reason": "All LLM/RAG calls to Brain service — Resume Lab, DSA Lab, Compose rewrite" },
     { "path": "backend/src/services/brainPrompts.js", "reason": "All LLM prompt templates — change here to adjust AI behavior" },
     { "path": "backend/src/services/llmSettings.js", "reason": "BYOK enforcement — resolveUserLlm() gates all AI features" },
+    { "path": "backend/src/services/latexCompiler.js", "reason": "LaTeX → PDF via Docker; owns injectTemplate() (role-specific .tex templates) and validateLatex()" },
+    { "path": "backend/src/resume_templates/", "reason": "Role-specific LaTeX templates (backend/frontend/fullstack/from-scratch). Changes here affect all PDF layouts." },
     { "path": "backend/src/gmail.js", "reason": "Gmail OAuth helpers and send-from-user API calls" },
     { "path": "frontend/src/App.jsx", "reason": "Component tree root and top-level routing" },
     { "path": "frontend/src/router.jsx", "reason": "Custom pushState router — no React Router; navigate with useRouter().navigateTo()" },
@@ -230,7 +242,7 @@
     },
     {
       "name": "Resume Generation (LaTeX → PDF)",
-      "steps": ["POST /api/resumelab/generate", "resolveUserLlm()", "brainClient.generateResumeLatex → { latex_source }", "latexCompiler.compile → Docker reachflow-latex", "PDF saved to disk", "GeneratedResume doc saved"]
+      "steps": ["POST /api/resumelab/generate { analysisId, intensity, templateType }", "resolveUserLlm()", "brainClient.generateResumeLatex → { latex_source }", "injectTemplate({ templateType }) → wraps into resume_templates/*.tex", "validateLatex → retry once if invalid", "compileToPdf → Docker reachflow-latex", "PDF saved to disk", "GeneratedResume doc saved (latexSource + pdfPath)"]
     },
     {
       "name": "Scheduled Campaign Send",

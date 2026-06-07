@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
   LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Binary,
   Search, ChevronsLeft, ChevronsRight,
-  LogOut, XCircle, CheckCircle2,
-  Sun, Moon, Settings, MailWarning, Sparkles, Lock,
+  LogOut,
+  Sun, Moon, Settings, Sparkles, Lock,
+  FolderOpen,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -28,27 +29,18 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
   const {
     API_BASE, authedFetch,
     appUser, gmailConnected,
-    confirmLogout, confirmDisconnectGmail, connectGmail, gmailActionLoading,
+    confirmLogout,
     theme, toggleTheme,
   } = useApp();
   const { path, navigateTo } = useRouter();
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [llmValid, setLlmValid] = useState(null);
   const [hoverTip, setHoverTip] = useState(null); // { text, x, y }
-  const menuRef = useRef(null);
 
   const showHoverTip = (e, text) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2 });
   };
   const hideHoverTip = () => setHoverTip(null);
-
-  useEffect(() => {
-    if (!userMenuOpen) return;
-    const onClick = (e) => { if (!menuRef.current?.contains(e.target)) setUserMenuOpen(false); };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [userMenuOpen]);
 
   useEffect(() => {
     if (!authedFetch || !API_BASE) return;
@@ -185,6 +177,18 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
           <span className="rf-sidebar__link-label">Settings</span>
         </button>
 
+        <button
+          className={`rf-sidebar__link${path === '/resources' ? ' rf-sidebar__link--active' : ''}`}
+          onClick={() => { goTo('/resources'); hideHoverTip(); }}
+          onMouseEnter={collapsed ? (e) => showHoverTip(e, 'Resources') : undefined}
+          onMouseLeave={collapsed ? hideHoverTip : undefined}
+          onFocus={collapsed ? (e) => showHoverTip(e, 'Resources') : undefined}
+          onBlur={collapsed ? hideHoverTip : undefined}
+        >
+          <span className="rf-sidebar__link-icon"><FolderOpen size={18} strokeWidth={1.8} /></span>
+          <span className="rf-sidebar__link-label">Resources</span>
+        </button>
+
         {/* Theme toggle as a row */}
         <button
           className="rf-sidebar__theme-row"
@@ -203,11 +207,10 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
         </button>
 
         {/* User */}
-        <div ref={menuRef} className="rf-sidebar__user-wrap">
-          <button
+        <div className="rf-sidebar__user-wrap">
+          <div
             className="rf-sidebar__user"
-            onClick={() => { setUserMenuOpen(v => !v); hideHoverTip(); }}
-            onMouseEnter={collapsed && !userMenuOpen ? (e) => showHoverTip(e, displayName) : undefined}
+            onMouseEnter={collapsed ? (e) => showHoverTip(e, displayName) : undefined}
             onMouseLeave={collapsed ? hideHoverTip : undefined}
           >
             <span className="rf-avatar rf-avatar--sm">{initial}</span>
@@ -215,36 +218,20 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
               <span className="rf-sidebar__user-name">{displayName}</span>
               <span className="rf-sidebar__user-email">{appUser?.email || ''}</span>
             </span>
+          </div>
+          <button
+            type="button"
+            className="rf-sidebar__logout"
+            onClick={() => { hideHoverTip(); confirmLogout(); }}
+            aria-label="Log out"
+            title="Log out"
+            onMouseEnter={collapsed ? (e) => showHoverTip(e, 'Log out') : undefined}
+            onMouseLeave={collapsed ? hideHoverTip : undefined}
+            onFocus={collapsed ? (e) => showHoverTip(e, 'Log out') : undefined}
+            onBlur={collapsed ? hideHoverTip : undefined}
+          >
+            <LogOut size={14} strokeWidth={1.8} />
           </button>
-
-          {userMenuOpen && (
-            <div className="rf-sidebar__user-menu">
-              {gmailConnected ? (
-                <button
-                  className="rf-sidebar__user-menu-item"
-                  onClick={() => { setUserMenuOpen(false); confirmDisconnectGmail(); }}
-                  disabled={gmailActionLoading}
-                >
-                  <XCircle size={14} /> {gmailActionLoading ? 'Working…' : 'Disconnect Gmail'}
-                </button>
-              ) : (
-                <button
-                  className="rf-sidebar__user-menu-item"
-                  onClick={() => { setUserMenuOpen(false); connectGmail(); }}
-                  disabled={gmailActionLoading}
-                >
-                  <CheckCircle2 size={14} /> {gmailActionLoading ? 'Connecting…' : 'Connect Gmail'}
-                </button>
-              )}
-              <div className="rf-sidebar__user-menu-divider" />
-              <button
-                className="rf-sidebar__user-menu-item rf-sidebar__user-menu-item--danger"
-                onClick={() => { setUserMenuOpen(false); confirmLogout(); }}
-              >
-                <LogOut size={14} /> Log out
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Legal */}

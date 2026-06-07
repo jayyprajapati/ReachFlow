@@ -3,11 +3,13 @@ import ReactQuill, { Quill } from 'react-quill';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useResumeLab } from '../contexts/ResumeLabContext.jsx';
 import { useRouter } from '../router.jsx';
+import { makeResourcesApi, uploadResourceFile } from '../services/resourcesApi.js';
 import {
   Send, FileText, Bookmark, RotateCcw, Plus, Trash2, UserPlus, Users, Clock, Eye,
   Paperclip, X, Shuffle, Calendar, Loader, History, CheckCheck, Sparkles, ClipboardPaste,
   Info, ChevronRight, AtSign, Variable, Wand2, MailCheck, AlertTriangle, ArrowUpRight,
   ChevronDown,
+  FolderOpen, Check, Search,
 } from 'lucide-react';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -87,13 +89,30 @@ function buildRoleBuckets(contacts = []) {
   return [...map.values()];
 }
 
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightWithQuery(value, query) {
+  const text = String(value || '');
+  if (!text) return text;
+  const terms = String(query || '').trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return text;
+  const re = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'ig');
+  return text.split(re).map((part, index) => (
+    terms.some(term => part.toLowerCase() === term.toLowerCase())
+      ? <mark key={`${part}-${index}`} className="rf-resource-match">{part}</mark>
+      : part
+  ));
+}
+
 /* ──────────────────────────────────────────────────────────
    ComposePage
    ────────────────────────────────────────────────────────── */
 
 export default function ComposePage() {
   const {
-    API_BASE, authedFetch, gmailConnected, setNotice, setWarningDialog,
+    API_BASE, authedFetch, idToken, gmailConnected, setNotice, setWarningDialog,
     variables, setVariables, loadVariables,
     groups, loadGroups,
     templates, templatesLoading, loadTemplates,
@@ -103,6 +122,7 @@ export default function ComposePage() {
     senderName, hydrateProfile,
   } = useApp();
   const { aiSettings } = useResumeLab();
+  const resourcesApi = useMemo(() => makeResourcesApi(authedFetch), [authedFetch]);
   const savedRewritePref = (aiSettings?.systemPrompt || '').trim();
   const { navigateTo } = useRouter();
 
@@ -137,6 +157,11 @@ export default function ComposePage() {
   const [slashHighlight, setSlashHighlight] = useState(0);
   const [slashTriggerIdx, setSlashTriggerIdx] = useState(null);
   const [attachments, setAttachments] = useState([]);
+  const [resourceLibrary, setResourceLibrary] = useState([]);
+  const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
+  const [resourceSearch, setResourceSearch] = useState('');
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [resourceUploading, setResourceUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteOpen, setRewriteOpen] = useState(false);
@@ -146,6 +171,7 @@ export default function ComposePage() {
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
   const [importingGroupId, setImportingGroupId] = useState('');
+  const [groupSearch, setGroupSearch] = useState('');
   const quillRef = useRef(null);
   const fileInputRef = useRef(null);
   const dropRef = useRef(null);
@@ -280,7 +306,54 @@ export default function ComposePage() {
   }
 
   /* Attachments */
-  function validateAndAddFiles(files) {
+  async function loadResourceLibrary(showError = false) {
+    setResourcesLoading(true);
+    try {
+      const data = await resourcesApi.list();
+      setResourceLibrary(data.resources || []);
+      return data.resources || [];
+    } catch (err) {
+      if (showError) setNotice({ type: 'error', message: err.message });
+      return [];
+    } finally {
+      setResourcesLoading(false);
+    }
+  }
+
+  function resourceToAttachment(resource) {
+    return {
+      id: resource.id,
+      resourceId: resource.id,
+      name: resource.name,
+      mimeType: resource.mimeType,
+      size: resource.fileSize || 0,
+    };
+  }
+
+  function attachStoredResource(resource) {
+    if (attachments.some(att => att.resourceId === resource.id)) return;
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setNotice({ type: 'error', message: `Max ${MAX_ATTACHMENTS} attachments` });
+      return;
+    }
+    const nextSize = attachments.reduce((sum, att) => sum + (att.size || 0), 0) + (resource.fileSize || 0);
+    if (nextSize > MAX_ATTACHMENT_TOTAL_MB * 1024 * 1024) {
+      setNotice({ type: 'error', message: `Total attachments exceed ${MAX_ATTACHMENT_TOTAL_MB}MB` });
+      return;
+    }
+    setAttachments(current => [...current, resourceToAttachment(resource)]);
+  }
+
+  function toggleStoredResource(resource) {
+    const selected = attachments.some(att => att.resourceId === resource.id);
+    if (selected) {
+      removeAttachment(resource.id);
+      return;
+    }
+    attachStoredResource(resource);
+  }
+
+  async function validateAndAddFiles(files) {
     const existing = [...attachments];
     const remaining = MAX_ATTACHMENTS - existing.length;
     if (remaining <= 0) { setNotice({ type: 'error', message: `Max ${MAX_ATTACHMENTS} attachments` }); return; }
@@ -300,15 +373,28 @@ export default function ComposePage() {
       toAdd.push(file);
     }
 
-    toAdd.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const dataUrl = e.target.result;
-        const base64 = dataUrl.split(',')[1];
-        setAttachments(prev => [...prev, { id: uid(), name: file.name, mimeType: file.type || 'application/octet-stream', data: base64, size: file.size }]);
-      };
-      reader.readAsDataURL(file);
-    });
+    if (!toAdd.length) return;
+    setResourceUploading(true);
+    try {
+      for (const file of toAdd) {
+        const result = await uploadResourceFile(idToken, file, 'compose');
+        const resource = result.resource;
+        setResourceLibrary(current => {
+          const without = current.filter(item => item.id !== resource.id);
+          return [resource, ...without];
+        });
+        setAttachments(current => current.some(att => att.resourceId === resource.id)
+          ? current
+          : [...current, resourceToAttachment(resource)]);
+        if (result.deduplicated) {
+          setNotice({ type: 'info', message: `"${file.name}" was already in Resources and has been reused.` });
+        }
+      }
+    } catch (err) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setResourceUploading(false);
+    }
   }
   function removeAttachment(id) { setAttachments(p => p.filter(a => a.id !== id)); }
 
@@ -354,7 +440,7 @@ export default function ComposePage() {
       recipients: recipients.map(r => ({ ...r, email: (r.email || '').toLowerCase().trim(), name: (r.name || '').trim() })),
       variables: variables.map(v => v.variableName).filter(Boolean),
       group_imports: groupImports,
-      attachments: attachments.map(({ name, mimeType, data, size }) => ({ name, mimeType, data, size })),
+      attachments: attachments.map(({ resourceId }) => ({ resourceId })),
     };
   }
 
@@ -500,7 +586,9 @@ export default function ComposePage() {
       const d = await res.json(); if (!res.ok) throw new Error(d.error);
       setSubject(d.subject || ''); setBody(d.body_html || ''); setNameFormat(d.name_format === 'full' ? 'full' : 'first');
       const recs = (d.recipients || []).map(r => ({ ...r, _id: r._id || uid() }));
-      setRecipients(recs); setDraftId(d.id);
+      setRecipients(recs);
+      setAttachments((d.attachments || []).filter(resource => resource.id && !resource.legacy).map(resourceToAttachment));
+      setDraftId(d.id);
       setNotice({ type: 'info', message: 'Draft loaded' });
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
@@ -653,6 +741,19 @@ export default function ComposePage() {
   }, []);
 
   const totalAttachmentBytes = useMemo(() => attachments.reduce((s, a) => s + (a.size || 0), 0), [attachments]);
+  const filteredResourceLibrary = useMemo(() => {
+    const q = resourceSearch.trim().toLowerCase();
+    if (!q) return resourceLibrary;
+    return resourceLibrary.filter(resource => {
+      const sources = (resource.sources || []).map(resourceSourceLabel).join(' ');
+      return `${resource.name} ${sources}`.toLowerCase().includes(q);
+    });
+  }, [resourceLibrary, resourceSearch]);
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter(group => String(group.companyName || '').toLowerCase().includes(q));
+  }, [groups, groupSearch]);
   const recipientCount = recipients.length;
   const canSend = gmailConnected && !isSending && !isPreviewing;
 
@@ -767,7 +868,7 @@ export default function ComposePage() {
               <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => setBulkMode(v => !v)}>
                 <ClipboardPaste size={13} /> {bulkMode ? 'Manual' : 'Paste bulk'}
               </button>
-              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { loadGroups(); setImportModalOpen(true); }}>
+              <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={() => { setGroupSearch(''); loadGroups(); setImportModalOpen(true); }}>
                 <UserPlus size={13} /> From group
               </button>
               {recipientCount > 0 && (
@@ -1034,9 +1135,15 @@ export default function ComposePage() {
               <button
                 className="rf-btn rf-btn--ghost rf-btn--sm"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={attachments.length >= MAX_ATTACHMENTS}
+                disabled={attachments.length >= MAX_ATTACHMENTS || resourceUploading}
               >
-                <Paperclip size={13} /> Attach file
+                {resourceUploading ? <><Loader size={13} className="rf-spin" /> Uploading...</> : <><Paperclip size={13} /> Attach file</>}
+              </button>
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                onClick={() => { setResourceSearch(''); setResourcePickerOpen(true); loadResourceLibrary(true); }}
+              >
+                <FolderOpen size={13} /> From resources
               </button>
               <input
                 ref={fileInputRef}
@@ -1151,6 +1258,97 @@ export default function ComposePage() {
             </div>
           </div>
         </>
+      )}
+
+      {resourcePickerOpen && (
+        <div className="rf-dialog-overlay" onClick={() => setResourcePickerOpen(false)}>
+          <div className="rf-dialog rf-resource-picker" onClick={event => event.stopPropagation()}>
+            <div className="rf-resource-picker__head">
+              <div>
+                <span className="rf-resource-picker__eyebrow"><span /> Attachment library</span>
+                <h2>Choose resources</h2>
+                <p>Reuse files already stored in your workspace.</p>
+              </div>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setResourcePickerOpen(false)} aria-label="Close resource picker">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="rf-resource-picker__toolbar">
+              <div className="rf-cp-dialog-search">
+                <Search size={14} />
+                <input
+                  value={resourceSearch}
+                  onChange={event => setResourceSearch(event.target.value)}
+                  placeholder="Search resources..."
+                  autoFocus
+                />
+                {resourceSearch && (
+                  <button type="button" onClick={() => setResourceSearch('')} aria-label="Clear resource search"><X size={12} /></button>
+                )}
+              </div>
+              <span className="rf-resource-picker__capacity">
+                <strong>{attachments.length}/{MAX_ATTACHMENTS}</strong> attached
+                <span>·</span>
+                {formatFileSize(totalAttachmentBytes)}
+              </span>
+            </div>
+
+            <div className="rf-resource-picker__content">
+              {resourcesLoading ? (
+                <div className="rf-resource-loading"><Loader size={16} className="rf-spin" /> Loading resources...</div>
+              ) : resourceLibrary.length === 0 ? (
+                <div className="rf-empty">
+                  <FolderOpen size={22} className="rf-empty__icon" />
+                  <div className="rf-empty__title">No resources yet</div>
+                  <p className="rf-empty__desc">Attach a new file here or upload a resume in Resume Vault.</p>
+                </div>
+              ) : filteredResourceLibrary.length === 0 ? (
+                <div className="rf-resource-picker__no-results">
+                  <Search size={18} />
+                  <strong>No matching resources</strong>
+                  <span>Try a different file name or source.</span>
+                </div>
+              ) : (
+                <div className="rf-resource-picker__list">
+                  {filteredResourceLibrary.map(resource => {
+                    const selected = attachments.some(att => att.resourceId === resource.id);
+                    const tooLarge = totalAttachmentBytes + (resource.fileSize || 0) > MAX_ATTACHMENT_TOTAL_MB * 1024 * 1024;
+                    return (
+                      <button
+                        key={resource.id}
+                        className={`rf-resource-picker__row${selected ? ' rf-resource-picker__row--selected' : ''}`}
+                        onClick={() => toggleStoredResource(resource)}
+                        disabled={!selected && (tooLarge || attachments.length >= MAX_ATTACHMENTS)}
+                      >
+                        <span className="rf-resource-picker__icon"><FileText size={15} /></span>
+                        <span className="rf-resource-picker__body">
+                          <strong>{highlightWithQuery(resource.name, resourceSearch)}</strong>
+                          <small>
+                            {formatFileSize(resource.fileSize || 0)}
+                            {(resource.sources || []).length > 0 && (
+                              <>
+                                {' · '}
+                                {highlightWithQuery((resource.sources || []).map(resourceSourceLabel).join(' + '), resourceSearch)}
+                              </>
+                            )}
+                          </small>
+                        </span>
+                        <span className={`rf-resource-picker__check${selected ? ' rf-resource-picker__check--selected' : ''}`}>
+                          {selected ? <Check size={13} /> : tooLarge ? '!' : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="rf-resource-picker__footer">
+              <span>{Math.max(0, MAX_ATTACHMENTS - attachments.length)} attachment slot{MAX_ATTACHMENTS - attachments.length === 1 ? '' : 's'} remaining</span>
+              <button className="rf-btn rf-btn--primary rf-btn--sm" onClick={() => setResourcePickerOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Schedule modal */}
@@ -1361,6 +1559,20 @@ export default function ComposePage() {
               <p className="rf-help" style={{ marginTop: 0, marginBottom: 'var(--rf-sp-4)' }}>
                 Pulls contacts from the selected company group. If the group has multiple roles, choose one before importing. Already-added emails are skipped.
               </p>
+              {groups.length > 0 && (
+                <div className="rf-cp-dialog-search rf-cp-dialog-search--groups">
+                  <Search size={14} />
+                  <input
+                    value={groupSearch}
+                    onChange={event => setGroupSearch(event.target.value)}
+                    placeholder="Search companies..."
+                    autoFocus
+                  />
+                  {groupSearch && (
+                    <button type="button" onClick={() => setGroupSearch('')} aria-label="Clear company search"><X size={12} /></button>
+                  )}
+                </div>
+              )}
               {groups.length === 0 ? (
                 <div className="rf-empty">
                   <Users size={20} className="rf-empty__icon" />
@@ -1370,9 +1582,15 @@ export default function ComposePage() {
                     Open Contacts <ArrowUpRight size={13} />
                   </button>
                 </div>
+              ) : filteredGroups.length === 0 ? (
+                <div className="rf-cp-dialog-empty">
+                  <Search size={18} />
+                  <strong>No matching companies</strong>
+                  <span>Try another company name.</span>
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {groups.map(g => (
+                <div className="rf-cp-group-list">
+                  {filteredGroups.map(g => (
                     <button
                       key={g.id}
                       className="rf-cp-group-row"
@@ -1420,6 +1638,12 @@ function PenLineDot() {
       display: 'inline-block',
     }} />
   );
+}
+
+function resourceSourceLabel(source) {
+  if (source === 'resume_vault') return 'Resume Vault';
+  if (source === 'compose') return 'Compose';
+  return 'Resources';
 }
 
 function HistorySection({ title, icon, loading, empty, items, renderMeta, statusBadge, trailing, onItemClick }) {

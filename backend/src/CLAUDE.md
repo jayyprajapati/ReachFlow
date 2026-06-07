@@ -56,7 +56,7 @@ All LLM prompt builders. Change here to adjust AI output quality, format, or beh
 `resolveUserLlm(userId)` — enforces BYOK. Must be called at the top of every AI route. Throws `LLM_NOT_CONFIGURED`, `LLM_NOT_VALIDATED`, `LLM_KEY_ERROR`. `isByokError(err)` — use in catch blocks to return 402 vs. 500.
 
 ### services/latexCompiler.js
-Compiles LaTeX source → PDF by running the `reachflow-latex` Docker container. Writes temp `.tex` files to `LATEX_TEMP_DIR`, output PDFs to `PDF_OUTPUT_DIR`.
+Compiles LaTeX source → PDF by running the `reachflow-latex` Docker container. Exports: `compileToPdf`, `injectTemplate` (wraps generated content into a role-specific `.tex` template), `validateLatex` (pre-compile sanity check), `escapeLaTeX`, `TEMPLATE_FILES`. Templates live in `backend/src/resume_templates/`. Writes temp `.tex` files to `LATEX_TEMP_DIR`, output PDFs to `PDF_OUTPUT_DIR`.
 
 ### gmail.js
 Gmail OAuth2 helpers. `getAuthUrl()`, `exchangeCodeForUser()`, `getAuthorizedClient()`, `clearGmailAuthorization()`, `introspectTokenScopes()`. Refresh token encrypted via `crypto.js`.
@@ -110,7 +110,7 @@ Purpose: Gmail OAuth2 — token exchange, authorized client, scope introspection
 Purpose: Campaign CRUD + Gmail send + scheduled send. Exports `router` and `processScheduledCampaigns`.
 
 ### routes/resumelab.js
-Purpose: Resume upload, profile operations, JD analysis, resume/cover letter/HR email generation.
+Purpose: Resume upload, profile operations, JD analysis, resume/cover letter/HR email generation, direct LaTeX compile (`/compile-latex`, `/generated/:id/compile-latex`), and template-based generation (`/generate-from-latex`).
 
 ### routes/dsa.js
 Purpose: DSA problem analysis endpoint. Calls `dsaSafety.js` + `brainClient.analyzeDsa`.
