@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Search, LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Binary, Settings, ArrowRight, CornerDownLeft, Lock,
+  Search, LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Binary, Settings, ArrowRight, CornerDownLeft, Lock, FolderOpen,
 } from 'lucide-react';
 
 const NAV_COMMANDS = [
@@ -14,6 +14,7 @@ const NAV_COMMANDS = [
   { id: 'nav-dsa',       label: 'DSA Analysis',  hint: 'Algorithm analysis', path: '/dsa-lab', icon: Binary,  section: 'Workspace' },
   { id: 'nav-roadmap',   label: 'Roadmaps',      hint: 'Skill tracks', path: '/roadmaps',   icon: Compass,     section: 'Workspace' },
   { id: 'nav-settings',  label: 'Settings',      hint: '',             path: '/settings',   icon: Settings,    section: 'Workspace' },
+  { id: 'nav-resources', label: 'Resources',     hint: 'Uploaded files', path: '/resources', icon: FolderOpen, section: 'Workspace' },
 ];
 
 export default function CommandPalette({ onClose }) {

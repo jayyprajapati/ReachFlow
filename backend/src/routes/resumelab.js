@@ -3,11 +3,16 @@
 const crypto = require('crypto');
 const express = require('express');
 const { Types } = require('mongoose');
-const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { Resume, CanonicalProfile, ResumeAnalysis, GeneratedResume } = require('../db');
+const {
+  resourceDiskStorage,
+  registerStoredResource,
+  detachResumeResource,
+  safeDeleteFile,
+} = require('../services/resourceStorage');
 const { extractResume, mergeCanonicalProfile, analyzeResumeMatch, generateCoverLetter, generateHrEmail, generateResumeLatex, deleteResumeVectors, deleteAllUserVectors, BrainError, brainDetail } = require('../services/brainClient');
 const { resolveUserLlm, isByokError } = require('../services/llmSettings');
 const { injectTemplate, compileToPdf, validateLatex } = require('../services/latexCompiler');
@@ -17,11 +22,6 @@ const router = express.Router();
 // ── Config ─────────────────────────────────────────────────────────────────
 
 const MAX_RESUME_UPLOAD_MB = parseInt(process.env.MAX_RESUME_UPLOAD_MB || '10', 10);
-
-// Default storage is ~/.reachflow/uploads/resumes — outside the project directory.
-// Override with RESUME_UPLOAD_DIR for production (e.g. a mounted DO Volume or S3-backed path).
-const RESUME_UPLOAD_DIR = process.env.RESUME_UPLOAD_DIR
-  || path.join(os.homedir(), '.reachflow', 'uploads', 'resumes');
 
 const ALLOWED_MIME = new Set([
   'application/pdf',
@@ -33,28 +33,8 @@ const RESUME_TYPES = new Set(['frontend', 'backend', 'fullstack', 'custom']);
 
 // ── Multer ──────────────────────────────────────────────────────────────────
 
-const storage = multer.diskStorage({
-  destination: (req, _file, cb) => {
-    const dir = path.join(RESUME_UPLOAD_DIR, req.user._id.toString());
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    } catch (err) {
-      cb(err);
-    }
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const base = path
-      .basename(file.originalname, ext)
-      .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .slice(0, 60);
-    cb(null, `${base}_${Date.now()}${ext}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: resourceDiskStorage,
   limits: { fileSize: MAX_RESUME_UPLOAD_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME.has(file.mimetype)) return cb(null, true);
@@ -126,16 +106,6 @@ function profileStats(profile) {
     education: (profile.education || []).length,
     certifications: (profile.certifications || []).length,
   };
-}
-
-async function safeDeleteFile(filePath) {
-  try {
-    await fs.promises.unlink(filePath);
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.warn(`[resumelab] Could not delete file ${filePath}: ${err.message}`);
-    }
-  }
 }
 
 // BYOK resolution (resolveUserLlm + isByokError) lives in ../services/llmSettings
@@ -222,6 +192,25 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
     return res.status(500).json({ error: 'Failed to save resume metadata' });
   }
 
+  try {
+    const registered = await registerStoredResource({
+      userId,
+      file,
+      source: 'resume_vault',
+      resumeId: resumeDoc._id,
+    });
+    resumeDoc.storagePath = registered.resource.storagePath;
+    resumeDoc.fileSize = registered.resource.fileSize;
+    resumeDoc.mimeType = registered.resource.mimeType;
+    await resumeDoc.save();
+  } catch (resourceErr) {
+    await Resume.deleteOne({ _id: resumeDoc._id, userId });
+    return res.status(resourceErr.status || 500).json({
+      error: resourceErr.message || 'Failed to store resume resource',
+      code: resourceErr.code,
+    });
+  }
+
   // ── Steps 1 + 2 in parallel: extract + fetch existing profile ──────────
   // Both are independent — extract is the slow path (Cortex LLM), profile
   // fetch is a fast MongoDB read. Running them concurrently saves ~200-400 ms.
@@ -230,7 +219,7 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
   try {
     [extractResult, profileDoc] = await Promise.all([
       extractResume({
-        filePath: file.path,
+        filePath: resumeDoc.storagePath,
         userId: userId.toString(),
         docId: resumeDoc._id.toString(),
         llm,
@@ -430,7 +419,8 @@ router.delete('/resumes/:id', async (req, res) => {
       { $set: { lastMergedResumeId: null } }
     );
 
-    if (storagePath) await safeDeleteFile(storagePath);
+    const managedByResources = await detachResumeResource({ userId, resumeId: doc._id, storagePath });
+    if (storagePath && !managedByResources) await safeDeleteFile(storagePath);
 
     console.log(`[resumelab] DELETE /resumes/${id} — deleted, userId: ${userId}`);
     res.json({ ok: true });
@@ -498,11 +488,14 @@ router.delete('/profile', async (req, res) => {
     ]);
 
     // Best-effort file cleanup on disk.
-    await Promise.all(
-      resumes
-        .filter(r => r.storagePath)
-        .map(r => safeDeleteFile(r.storagePath))
-    );
+    for (const resume of resumes) {
+      const managedByResources = await detachResumeResource({
+        userId,
+        resumeId: resume._id,
+        storagePath: resume.storagePath,
+      });
+      if (resume.storagePath && !managedByResources) await safeDeleteFile(resume.storagePath);
+    }
 
     // Best-effort: wipe every vector for this user (namespace-level). A Brain
     // outage must not fail the delete — the Mongo records are already gone.

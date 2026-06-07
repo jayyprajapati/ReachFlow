@@ -41,7 +41,7 @@ Optional:
 - `BRAIN_BASE_URL` (default `http://localhost:8000`) — Brain LLM+RAG service URL
 - `BRAIN_API_KEY` (default `change-me`) — Bearer key for Brain service
 - `BRAIN_APP_NAME` (default `reachflow_resumes`) — Qdrant collection name
-- `RESUME_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/`
+- `RESOURCE_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/` (`RESUME_UPLOAD_DIR` remains a legacy fallback)
 - `RATE_LIMIT_BYPASS_EMAILS` — comma-separated emails exempt from send rate limits
 - `VITE_LINKEDIN_EXTENSION_ID` (frontend) — Chrome extension ID for LinkedIn integration
 

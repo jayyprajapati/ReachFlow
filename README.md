@@ -118,7 +118,7 @@ npm run dev       # port 5173
 ### Backend Optional
 
 - `CORTEX_BASE_URL` — default `http://localhost:8000`
-- `RESUME_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/`
+- `RESOURCE_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/` (`RESUME_UPLOAD_DIR` remains a legacy fallback)
 - `RATE_LIMIT_BYPASS_EMAILS` — comma-separated emails exempt from send rate limits
 
 See `backend/.env.example` for expected format and defaults.

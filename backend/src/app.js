@@ -18,6 +18,8 @@ const settingsRoutes = require('./routes/settings');
 const roadmapRoutes = require('./routes/roadmaps');
 const dsaRoutes = require('./routes/dsa');
 const todayRoutes = require('./routes/today');
+const resourceRoutes = require('./routes/resources');
+const { deleteUserResourceFolder } = require('./services/resourceStorage');
 const {
   connectMongo,
   User,
@@ -28,6 +30,7 @@ const {
   SendLog,
   Application,
   Resume,
+  Resource,
   CanonicalProfile,
   ResumeAnalysis,
   GeneratedResume,
@@ -109,7 +112,7 @@ async function deleteCurrentUserAppData(user) {
       opts
     );
 
-    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, canonicalProfiles, resumeAnalyses, generatedResumes, aiSettings, dsaAnalyses] = await Promise.all([
+    const [templates, campaigns, groups, variables, sendLogs, applications, resumes, resources, canonicalProfiles, resumeAnalyses, generatedResumes, aiSettings, dsaAnalyses] = await Promise.all([
       Template.deleteMany({ userId }, opts),
       Campaign.deleteMany({ userId }, opts),
       Group.deleteMany({ userId }, opts),
@@ -117,6 +120,7 @@ async function deleteCurrentUserAppData(user) {
       SendLog.deleteMany({ userId }, opts),
       Application.deleteMany({ userId }, opts),
       Resume.deleteMany({ userId }, opts),
+      Resource.deleteMany({ userId }, opts),
       CanonicalProfile.deleteMany({ userId }, opts),
       ResumeAnalysis.deleteMany({ userId }, opts),
       GeneratedResume.deleteMany({ userId }, opts),
@@ -135,6 +139,7 @@ async function deleteCurrentUserAppData(user) {
       sendLogs: sendLogs.deletedCount || 0,
       applications: applications.deletedCount || 0,
       resumes: resumes.deletedCount || 0,
+      resources: resources.deletedCount || 0,
       canonicalProfiles: canonicalProfiles.deletedCount || 0,
       resumeAnalyses: resumeAnalyses.deletedCount || 0,
       generatedResumes: generatedResumes.deletedCount || 0,
@@ -152,12 +157,15 @@ async function deleteCurrentUserAppData(user) {
     await session.withTransaction(async () => {
       summary = await runDeletion(session);
     });
+    await deleteUserResourceFolder(user);
     return summary;
   } catch (err) {
     const txUnsupported = /Transaction numbers are only allowed|replica set|transactions are not supported/i.test(err?.message || '');
     if (!txUnsupported) throw err;
     console.warn('[data] Transactions not supported — running deletion without transaction');
-    return runDeletion(null);
+    const summary = await runDeletion(null);
+    await deleteUserResourceFolder(user);
+    return summary;
   } finally {
     if (session) await session.endSession();
   }
@@ -431,6 +439,7 @@ app.use('/api/settings', requireAuth, settingsRoutes);
 app.use('/api/roadmaps', requireAuth, roadmapRoutes);
 app.use('/api/dsa', requireAuth, dsaRoutes);
 app.use('/api/today', requireAuth, todayRoutes);
+app.use('/api/resources', requireAuth, resourceRoutes);
 
 connectMongo()
   .then(() => {

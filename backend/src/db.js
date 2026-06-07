@@ -34,6 +34,7 @@ const userSchema = new mongoose.Schema(
     encryptedRefreshToken: { type: String },
     gmailState: { type: String },
     gmailStateExpiresAt: { type: Date },
+    resourceFolderName: { type: String, trim: true, default: '' },
   },
   { timestamps: true, versionKey: false }
 );
@@ -230,6 +231,26 @@ resumeSchema.index({ userId: 1 });
 resumeSchema.index({ userId: 1, type: 1 });
 resumeSchema.index({ userId: 1, isBaseResume: 1 });
 
+const resourceSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    name: { type: String, trim: true, required: true },
+    storagePath: { type: String, trim: true, required: true },
+    mimeType: { type: String, trim: true, default: 'application/octet-stream' },
+    fileSize: { type: Number, min: 0, default: 0 },
+    sha256: { type: String, trim: true, required: true },
+    sources: {
+      type: [{ type: String, enum: ['compose', 'resume_vault', 'manual'] }],
+      default: [],
+    },
+    resumeIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resume' }],
+  },
+  { timestamps: true, versionKey: false }
+);
+
+resourceSchema.index({ userId: 1, sha256: 1 }, { unique: true });
+resourceSchema.index({ userId: 1, updatedAt: -1 });
+
 const canonicalProfileSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
@@ -411,6 +432,7 @@ const Group = mongoose.model('Group', groupSchema, 'reachflow_groups');
 const Application = mongoose.model('Application', applicationSchema, 'reachflow_applications');
 const Template = mongoose.model('Template', templateSchema, 'reachflow_templates');
 const Resume = mongoose.model('Resume', resumeSchema, 'reachflow_resumes');
+const Resource = mongoose.model('Resource', resourceSchema, 'reachflow_resources');
 const CanonicalProfile = mongoose.model('CanonicalProfile', canonicalProfileSchema, 'reachflow_canonical_profiles');
 const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema, 'reachflow_resume_analyses');
 const GeneratedResume = mongoose.model('GeneratedResume', generatedResumeSchema, 'reachflow_generated_resumes');
@@ -718,6 +740,7 @@ module.exports = {
   Application,
   Template,
   Resume,
+  Resource,
   CanonicalProfile,
   ResumeAnalysis,
   GeneratedResume,
