@@ -13,11 +13,21 @@ const LATEX_TEMP_DIR = process.env.LATEX_TEMP_DIR || '/tmp/reachflow-latex';
 // Override with PDF_OUTPUT_DIR for production (e.g. a mounted DO Volume).
 const PDF_OUTPUT_DIR = process.env.PDF_OUTPUT_DIR || path.join(os.homedir(), '.reachflow', 'pdfs');
 const COMPILE_TIMEOUT_MS = 30_000;
-const DOCKER_COMPILE_TIMEOUT_MS = 120_000; // first run pulls the image
+const DOCKER_COMPILE_TIMEOUT_MS = 120_000;
+const DOCKER_BUILD_TIMEOUT_MS = 15 * 60_000; // tlmgr installs can take a while
 const DOCKER_LATEX_IMAGE = process.env.DOCKER_LATEX_IMAGE || 'reachflow-latex';
+const DOCKER_LATEX_BUILD_CONTEXT = path.join(__dirname, '../../docker/latex');
 const DOCKER_COMPILE_MAX_RETRIES = 2;
+// Force Docker-based compilation regardless of host pdflatex. Default ON so the
+// pipeline behaves identically across environments (the user explicitly asked
+// for "docker based execution …every time AI responds"). Set FORCE_DOCKER_LATEX=0
+// to opt back into the native pdflatex path for local debugging.
+const FORCE_DOCKER_LATEX = String(process.env.FORCE_DOCKER_LATEX ?? '1') !== '0';
 
 const TEMPLATE_DIR = path.join(__dirname, '../resume_templates');
+
+// One-shot image-readiness check — re-runs only on process restart.
+let _imageReadyPromise = null;
 
 // Template files for each type; 'custom' falls back to fullstack layout.
 const TEMPLATE_FILES = {
@@ -244,7 +254,12 @@ async function compileToPdf({ latexSource, userId, outputName }) {
 
     fs.writeFileSync(texFile, src, 'utf8');
 
-    await runPdflatex(tmpDir, texFile);
+    if (FORCE_DOCKER_LATEX) {
+      await ensureDockerImage();
+      await runPdflatexDockerWithRetry(tmpDir, path.basename(texFile));
+    } else {
+      await runPdflatex(tmpDir, texFile);
+    }
 
     const compiledPdf = path.join(tmpDir, 'resume.pdf');
     if (!fs.existsSync(compiledPdf)) {
@@ -327,7 +342,10 @@ function runPdflatex(workDir, texFile) {
       if (err.code === 'ENOENT') {
         // pdflatex not on PATH — try Docker fallback (with retries for transient failures)
         settled = true;
-        runPdflatexDockerWithRetry(workDir, path.basename(texFile)).then(resolve).catch(reject);
+        ensureDockerImage()
+          .then(() => runPdflatexDockerWithRetry(workDir, path.basename(texFile)))
+          .then(resolve)
+          .catch(reject);
       } else {
         settled = true;
         reject(err);
@@ -358,6 +376,7 @@ function runPdflatexDocker(workDir, texFilename) {
     let settled = false;
     const proc = spawn('docker', [
       'run', '--rm',
+      '--pull=never',
       '--network=none',
       '-v', `${workDir}:/workspace`,
       '-w', '/workspace',
@@ -408,4 +427,91 @@ function runPdflatexDocker(workDir, texFilename) {
   });
 }
 
-module.exports = { injectTemplate, compileToPdf, escapeLaTeX, validateLatex, TEMPLATE_FILES };
+// ── Docker image bootstrap ──────────────────────────────────────────────────
+// The reachflow-latex image is local-only — it's never published to a registry,
+// so `docker run` would otherwise hit "pull access denied" on a fresh machine.
+// We check once per process, build from backend/docker/latex if missing, and
+// reuse the same promise so concurrent compiles share a single build.
+
+function ensureDockerImage() {
+  if (_imageReadyPromise) return _imageReadyPromise;
+  _imageReadyPromise = (async () => {
+    try {
+      const exists = await dockerImageExists(DOCKER_LATEX_IMAGE);
+      if (exists) return;
+      if (!fs.existsSync(path.join(DOCKER_LATEX_BUILD_CONTEXT, 'Dockerfile'))) {
+        throw new Error(
+          `Docker image "${DOCKER_LATEX_IMAGE}" not found and Dockerfile missing at ${DOCKER_LATEX_BUILD_CONTEXT}. ` +
+          `Build it manually with: docker build -t ${DOCKER_LATEX_IMAGE} ${DOCKER_LATEX_BUILD_CONTEXT}`
+        );
+      }
+      console.log(`[latexCompiler] Building Docker image "${DOCKER_LATEX_IMAGE}" — first run may take several minutes…`);
+      await dockerBuildImage(DOCKER_LATEX_IMAGE, DOCKER_LATEX_BUILD_CONTEXT);
+      console.log(`[latexCompiler] Docker image "${DOCKER_LATEX_IMAGE}" built successfully.`);
+    } catch (err) {
+      // Reset so a later attempt can retry (e.g. user starts Docker Desktop).
+      _imageReadyPromise = null;
+      throw err;
+    }
+  })();
+  return _imageReadyPromise;
+}
+
+function dockerImageExists(image) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('docker', ['image', 'inspect', image], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('close', (code) => resolve(code === 0));
+    proc.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        reject(new Error('Docker CLI not found on PATH. Install Docker Desktop and ensure it is running.'));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
+function dockerBuildImage(image, context) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const proc = spawn('docker', ['build', '-t', image, context], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      proc.kill('SIGKILL');
+      reject(new Error(`Docker build timed out after ${DOCKER_BUILD_TIMEOUT_MS / 1000}s`));
+    }, DOCKER_BUILD_TIMEOUT_MS);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      if (code === 0) {
+        resolve();
+      } else {
+        const tail = (stderr || stdout).split('\n').filter(Boolean).slice(-8).join(' | ');
+        reject(new Error(`docker build failed (exit ${code}): ${tail}`));
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      if (err.code === 'ENOENT') {
+        reject(new Error('Docker CLI not found on PATH. Install Docker Desktop and ensure it is running.'));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
+module.exports = { injectTemplate, compileToPdf, escapeLaTeX, validateLatex, ensureDockerImage, TEMPLATE_FILES };
