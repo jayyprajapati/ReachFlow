@@ -498,6 +498,8 @@
   position: fixed;
   inset: 0;
   background: rgba(26, 24, 21, 0.32);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: var(--rf-z-command);
   display: flex;
   align-items: flex-start;

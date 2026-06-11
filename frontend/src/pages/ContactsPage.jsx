@@ -301,7 +301,12 @@ export default function ContactsPage() {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [sortCompaniesAZ, setSortCompaniesAZ] = useState(false);
+  // 3-state cycle: 'recent' (default; backend returns updatedAt desc) → 'asc' → 'desc' → 'recent'.
+  // In 'recent' mode we sink companies with zero contacts to the bottom so the
+  // user's active outreach floats up. In alphabetical modes we leave them in
+  // their natural alphabetical position.
+  const [sortMode, setSortMode] = useState('recent');
+  const cycleSortMode = () => setSortMode(m => (m === 'recent' ? 'asc' : m === 'asc' ? 'desc' : 'recent'));
   const [contactSearch, setContactSearch] = useState('');
   const [nameSortDirection, setNameSortDirection] = useState('');
   const pageRef = useRef(null);
@@ -557,9 +562,18 @@ export default function ContactsPage() {
     const source = search.trim()
       ? groups.filter(g => g.companyName?.toLowerCase().includes(search.toLowerCase()))
       : groups;
-    if (!sortCompaniesAZ) return source;
-    return [...source].sort((a, b) => String(a.companyName || '').localeCompare(String(b.companyName || ''), undefined, { sensitivity: 'base' }));
-  }, [groups, search, sortCompaniesAZ]);
+    const collator = (a, b) => String(a.companyName || '').localeCompare(String(b.companyName || ''), undefined, { sensitivity: 'base' });
+    if (sortMode === 'asc')  return [...source].sort(collator);
+    if (sortMode === 'desc') return [...source].sort((a, b) => collator(b, a));
+    // 'recent' (latest activity, the backend default). Zero-contact companies
+    // sink so the active pipeline stays at the top of the list.
+    const isZero = g => !(Number(g.contactCount) || 0);
+    return [...source].sort((a, b) => {
+      const az = isZero(a), bz = isZero(b);
+      if (az !== bz) return az ? 1 : -1;
+      return 0; // stable — preserves backend's updatedAt order within each bucket
+    });
+  }, [groups, search, sortMode]);
 
   const globalParsed = useMemo(() => parseGlobalBulkText(globalPasteText, groups), [globalPasteText, groups]);
   const globalReady = globalParsed.filter(p => p.targetGroup && p.name);
@@ -1293,11 +1307,11 @@ export default function ContactsPage() {
                 <Search size={14} />
               </button>
               <button
-                className={`rf-ct__collapsed-action${sortCompaniesAZ ? ' rf-ct__collapsed-action--active' : ''}`}
-                onClick={() => setSortCompaniesAZ(v => !v)}
-                onMouseEnter={(e) => showHoverTip(e, sortCompaniesAZ ? 'Sorted A–Z (click to reset)' : 'Sort companies A–Z')}
+                className={`rf-ct__collapsed-action${sortMode !== 'recent' ? ' rf-ct__collapsed-action--active' : ''}`}
+                onClick={cycleSortMode}
+                onMouseEnter={(e) => showHoverTip(e, sortMode === 'asc' ? 'Sorted A–Z (click for Z–A)' : sortMode === 'desc' ? 'Sorted Z–A (click for latest activity)' : 'Latest activity (click for A–Z)')}
                 onMouseLeave={hideHoverTip}
-                aria-label="Sort companies A-Z"
+                aria-label="Cycle company sort"
               >
                 <ArrowUpDown size={14} />
               </button>
@@ -1357,11 +1371,11 @@ export default function ContactsPage() {
                 </div>
                 <div className="rf-ct__sidebar-actions">
                   <button
-                    className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortCompaniesAZ ? ' rf-ct__sort--active' : ''}`}
-                    onClick={() => setSortCompaniesAZ(v => !v)}
-                    title={sortCompaniesAZ ? 'Using alphabetical order' : 'Sort companies A-Z'}
+                    className={`rf-btn rf-btn--ghost rf-btn--sm rf-ct__sort${sortMode !== 'recent' ? ' rf-ct__sort--active' : ''}`}
+                    onClick={cycleSortMode}
+                    title={sortMode === 'asc' ? 'Sorted A–Z — click for Z–A' : sortMode === 'desc' ? 'Sorted Z–A — click for latest activity' : 'Latest activity — click for A–Z'}
                   >
-                    <ArrowUpDown size={13} /> Sort
+                    <ArrowUpDown size={13} /> {sortMode === 'asc' ? 'A–Z' : sortMode === 'desc' ? 'Z–A' : 'Recent'}
                   </button>
                   <div className="rf-ct__new-company-action">
                     <button

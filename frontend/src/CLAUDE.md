@@ -108,11 +108,8 @@ Purpose: Resume upload list + file management.
 ### pages/ResumeLab/ProfilePage.jsx
 Purpose: Career Profile viewer and manual editor (add experience, education, certs, projects).
 
-### pages/ResumeLab/AnalyzePage.jsx
-Purpose: JD paste and analysis trigger; shows match score, gaps, ATS clusters.
-
 ### pages/ResumeLab/WorkspacePage.jsx
-Purpose: Resume generation controls (intensity, user prompt, template type).
+Purpose: JD analysis + resume generation workspace. Paste a JD, analyze match score and keyword gaps, then generate an optimized resume.
 
 ### pages/ResumeLab/GeneratedPage.jsx
 Purpose: Generated resume/cover letter/HR email preview + PDF download.
