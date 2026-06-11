@@ -22,6 +22,7 @@ React SPA for all user interactions. Custom pushState router, no React Router. F
 | `/pipeline` | Application kanban | `pages/PipelinePage.jsx` |
 | `/contacts` | Contacts & groups | `pages/ContactsPage.jsx` |
 | `/templates` | Email templates | `pages/TemplatesPage.jsx` |
+| `/resources` | Resource library | `pages/ResourcesPage.jsx` |
 | `/history` | Send history | `pages/HistoryPage.jsx` |
 | `/settings` | Settings & AI setup | `pages/SettingsPage.jsx` |
 | `/resume-lab/*` | Resume Lab suite | `pages/ResumeLab/index.jsx` |
@@ -62,6 +63,9 @@ All `/api/roadmaps/*` calls. Consumed by `RoadmapContext`.
 
 ### services/dsaApi.js
 All `/api/dsa/*` calls. Consumed by DSA Lab pages.
+
+### services/resourcesApi.js
+`makeResourcesApi(authedFetch)` for list/delete plus `uploadResourceFile(idToken, file, source)` and `downloadResourceFile(idToken, resource)` for multipart upload / binary download. Used by `ResourcesPage` and Compose's attachment picker.
 
 ### styles/tokens.css
 All CSS custom properties (`--rf-*`). Retheme by editing here. Supports dark/light via `[data-theme]` attribute on `<html>`.
@@ -115,6 +119,9 @@ Purpose: Generated resume/cover letter/HR email preview + PDF download.
 
 ### pages/ResumeLab/HistoryPage.jsx
 Purpose: Full history of analyses and generated documents. Click to restore workspace state.
+
+### pages/ResourcesPage.jsx
+Purpose: Resource library UI — upload, search/filter, dedup notice, per-row source badges (`Compose` / `Resume Vault` / `Resources`), download, delete (disabled when linked to Resume Vault).
 
 ### pages/DsaLab/AnalyzePage.jsx
 Purpose: Problem input + code editor + analysis trigger.

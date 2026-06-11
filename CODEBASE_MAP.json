@@ -140,6 +140,17 @@
       "api_prefix": "/api/dsa"
     },
     {
+      "name": "Resources",
+      "purpose": "Shared file library across Compose attachments and Resume Vault; per-user SHA-256-deduped storage with limit enforcement",
+      "critical_files": [
+        "backend/src/routes/resources.js",
+        "backend/src/services/resourceStorage.js",
+        "frontend/src/pages/ResourcesPage.jsx",
+        "frontend/src/services/resourcesApi.js"
+      ],
+      "api_prefix": "/api/resources"
+    },
+    {
       "name": "Settings",
       "purpose": "BYOK AI provider setup, sender name, AI personalization, account deletion",
       "spec": ".claude/specs/06-settings.spec.md",
@@ -194,7 +205,8 @@
     { "name": "Variable", "collection": "reachflow_variables", "key_fields": ["userId", "variableNameKey", "encryptedPayload"] },
     { "name": "SendLog", "collection": "reachflow_send_logs", "key_fields": ["userId", "sentAt"] },
     { "name": "Application", "collection": "reachflow_applications", "key_fields": ["userId", "status", "companyGroupId", "encryptedPayload"] },
-    { "name": "Resume", "collection": "reachflow_resumes", "key_fields": ["userId", "parsedDocId", "isBaseResume", "normalizedResumeText"] },
+    { "name": "Resume", "collection": "reachflow_resumes", "key_fields": ["userId", "parsedDocId", "isBaseResume", "normalizedResumeText", "storagePath"] },
+    { "name": "Resource", "collection": "reachflow_resources", "key_fields": ["userId", "sha256", "storagePath", "sources[]", "resumeIds[]"] },
     { "name": "CanonicalProfile", "collection": "reachflow_canonical_profiles", "key_fields": ["userId", "profileVersion", "canonicalProfile"] },
     { "name": "ResumeAnalysis", "collection": "reachflow_resume_analyses", "key_fields": ["userId", "flowId", "matchScore", "matchAnalysis"] },
     { "name": "GeneratedResume", "collection": "reachflow_generated_resumes", "key_fields": ["userId", "analysisId", "flowId", "outputType", "latexSource", "pdfPath"] },
@@ -211,6 +223,7 @@
     { "path": "backend/src/utils/dataSecurity.js", "reason": "AES-256-GCM encrypt/decrypt and HMAC hash — touches every sensitive field" },
     { "path": "backend/src/utils/crypto.js", "reason": "Gmail refresh token encryption (TOKEN_ENC_KEY, separate key system)" },
     { "path": "backend/src/services/brainClient.js", "reason": "All LLM/RAG calls to Brain service — Resume Lab, DSA Lab, Compose rewrite" },
+    { "path": "backend/src/services/resourceStorage.js", "reason": "Per-user file storage, SHA-256 dedup, Resume↔Resource sync, attachment resolution for Compose send" },
     { "path": "backend/src/services/brainPrompts.js", "reason": "All LLM prompt templates — change here to adjust AI behavior" },
     { "path": "backend/src/services/llmSettings.js", "reason": "BYOK enforcement — resolveUserLlm() gates all AI features" },
     { "path": "backend/src/services/latexCompiler.js", "reason": "LaTeX → PDF via Docker; owns injectTemplate() (role-specific .tex templates) and validateLatex()" },
@@ -243,6 +256,14 @@
     {
       "name": "Resume Generation (LaTeX → PDF)",
       "steps": ["POST /api/resumelab/generate { analysisId, intensity, templateType }", "resolveUserLlm()", "brainClient.generateResumeLatex → { latex_source }", "injectTemplate({ templateType }) → wraps into resume_templates/*.tex", "validateLatex → retry once if invalid", "compileToPdf → Docker reachflow-latex", "PDF saved to disk", "GeneratedResume doc saved (latexSource + pdfPath)"]
+    },
+    {
+      "name": "Resource Upload & Dedup",
+      "steps": ["POST /api/resources/upload (multer disk storage to RESOURCE_UPLOAD_DIR/<user.resourceFolderName>)", "sha256File on disk", "Resource.findOne({ userId, sha256 })", "If exists: append source/resumeId → deduplicated:true", "Else: check MAX_RESOURCES_PER_USER (10)", "Resource.create({ name, storagePath, mimeType, fileSize, sha256, sources, resumeIds })", "Return resource doc"]
+    },
+    {
+      "name": "Compose Attachment Send",
+      "steps": ["Draft saved with attachments[] referencing resourceId", "On send: resolveResourceAttachments(userId, attachments)", "fs.readFile each resource.storagePath → base64", "Gmail API send with attachment bytes", "describeResourceAttachments returns metadata for draft restore (no bytes)"]
     },
     {
       "name": "Scheduled Campaign Send",

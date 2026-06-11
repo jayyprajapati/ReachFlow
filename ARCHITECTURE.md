@@ -157,26 +157,37 @@ See [Mongoose models & collections](#mongoose-models--collections) in CLAUDE.md 
 - **LLM gate:** same BYOK enforcement via `resolveUserLlm()`
 - **Safety check:** `src/services/dsaSafety.js` — guards against non-DSA input (Brain response `is_dsa_problem` flag)
 
-### 7. Settings
+### 7. Resources (Shared file library)
+**Purpose:** Single source of truth for user-uploaded files; powers Compose attachments and links to Resume Vault entries.
+- **Route:** `GET/POST/DELETE /api/resources` (`/upload`, `/:id/download`, `/:id`)
+- **Key files:** `backend/src/routes/resources.js`, `backend/src/services/resourceStorage.js`, `frontend/src/pages/ResourcesPage.jsx`, `frontend/src/services/resourcesApi.js`
+- **Storage:** files written to `RESOURCE_UPLOAD_DIR/<user.resourceFolderName>/` (per-user folder). `user.resourceFolderName` is lazily assigned + persisted.
+- **Dedup:** SHA-256 of file bytes; `(userId, sha256)` unique index — re-uploads return the existing doc with `deduplicated: true`.
+- **Limits:** `MAX_RESOURCES_PER_USER = 10`, `MAX_RESOURCE_UPLOAD_MB` (default 20).
+- **Cross-linking:** `sources[]` records origin (`compose`, `resume_vault`, `manual`); `resumeIds[]` tracks Resume Vault references. `syncResumeResources(user)` migrates legacy Resume files into the resource library on first `GET /api/resources` call.
+- **Delete guard:** resources still linked to a Resume return 409 — user must remove the resume from Vault first.
+- **Compose integration:** Compose attachments reference resources by `resourceId`; `resolveResourceAttachments()` materializes bytes (base64) for send time; `describeResourceAttachments()` returns metadata for draft restoration.
+
+### 8. Settings
 **Purpose:** AI provider setup, sender name, account deletion.
 - **Route:** `GET/POST/PATCH /api/settings`
 - **Key files:** `backend/src/routes/settings.js`, `frontend/src/pages/SettingsPage.jsx`
 - **BYOK:** provider + API key saved to `AISettings` doc, encrypted; `llmPing()` validates before `isValid` set to true
 - **AI personalization:** `personalizationPrefs` (tone, verbosity, formatting) + `systemPrompt` stored on `AISettings`
 
-### 8. Gmail Integration
+### 9. Gmail Integration
 **Purpose:** OAuth2 send-from-Gmail with refresh token lifecycle management.
 - **Routes (in app.js):** `POST /gmail/connect`, `GET /auth/google/callback`, `POST /gmail/disconnect`, `POST /gmail/reconnect`
 - **Key files:** `backend/src/gmail.js`, `backend/src/utils/crypto.js`
 - **Token storage:** refresh token stored in `User.encryptedRefreshToken` (encrypted via `TOKEN_ENC_KEY`)
 - **State correlation:** CSRF-style: random `gmailState` stored on User doc, matched on callback
 
-### 9. Templates
+### 10. Templates
 **Purpose:** Reusable email templates for Compose.
 - **Route:** `GET/POST/PATCH/DELETE /api/templates`
 - **Key files:** `backend/src/routes/templates.js`, `frontend/src/pages/TemplatesPage.jsx`
 
-### 10. Today / Dashboard
+### 11. Today / Dashboard
 **Purpose:** Homepage dashboard aggregating activity and stats.
 - **Route:** `GET /api/today`
 - **Key files:** `backend/src/routes/today.js`, `frontend/src/pages/HomePage.jsx`
@@ -253,13 +264,14 @@ setInterval(processScheduledCampaigns, 60s) [in app.js after Mongo connects]
 
 ```
 User (1)
-  ├─── Campaign (N) — outreach_items, embed recipients[]
+  ├─── Campaign (N) — outreach_items, embed recipients[]; attachments[] → Resource (ref via resourceId)
   ├─── Group (N) — embed contacts[]
   ├─── Template (N)
   ├─── Variable (N)
   ├─── SendLog (N)
   ├─── Application (N) → Group (ref)
-  ├─── Resume (N)
+  ├─── Resume (N) ↔ Resource (linked via storagePath / resumeIds[])
+  ├─── Resource (N) — shared file library; sources[] + resumeIds[] backrefs
   ├─── CanonicalProfile (1)
   ├─── ResumeAnalysis (N)
   ├─── GeneratedResume (N) → ResumeAnalysis (ref)
@@ -334,6 +346,8 @@ User (1)
 - **LaTeX compile failures**: `pdfError` stored on GeneratedResume; PDF may not exist even when `status: 'generated'`.
 - **`autoIndex: true`**: Mongoose creates indexes on connect in dev; in production ensure indexes are pre-built.
 - **DSA Lab is not encrypted**: `DsaAnalysis.problemStatement` and `userCode` are stored as plain strings — intentional, no PII.
+- **Resources sync on read**: `GET /api/resources` calls `syncResumeResources()` first — legacy Resume Vault files get backfilled into the Resource collection on first visit. Be aware of the side-effect when load-testing or mocking.
+- **Resource delete guard**: deleting a Resource that's referenced by a Resume returns HTTP 409. The frontend must surface "remove from Resume Vault first." Resume deletion calls `detachResumeResource()` to release the link.
 
 ---
 
@@ -347,6 +361,7 @@ User (1)
 | Resume Lab changes | `.claude/specs/04-resume-lab.spec.md`, `routes/resumelab.js`, `ResumeLabContext.jsx` |
 | LaTeX template changes | `backend/src/resume_templates/*.tex`, `latexCompiler.js` (`injectTemplate`) |
 | DSA Lab changes | `routes/dsa.js`, `dsaSafety.js`, `pages/DsaLab/`, `components/dsa/` |
+| Resources / attachments | `routes/resources.js`, `services/resourceStorage.js`, `pages/ResourcesPage.jsx` |
 | Gmail OAuth changes | `gmail.js`, `crypto.js`, `app.js` |
 | Frontend routing | `router.jsx`, `App.jsx` (PageRouter switch) |
 | Styling / tokens | `styles/tokens.css`, then feature-specific CSS files |
