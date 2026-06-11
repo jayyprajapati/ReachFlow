@@ -498,6 +498,10 @@
   padding: 8px 4px;
 }
 
+.rf-shell__sidebar--collapsed .rf-sidebar__cmd {
+  border-color: transparent;
+}
+
 .rf-shell__sidebar--collapsed .rf-sidebar__user-wrap {
   flex-direction: column;
   gap: var(--rf-sp-1);

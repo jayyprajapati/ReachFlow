@@ -5,7 +5,7 @@ import {
   LayoutGrid, PenLine, Briefcase, Users, FileText, Compass, Binary,
   Search, ChevronsLeft, ChevronsRight,
   LogOut,
-  Sun, Moon, Settings, Sparkles, Lock,
+  Sun, Moon, Settings, Lock, Waypoints,
   FolderOpen,
 } from 'lucide-react';
 
@@ -82,7 +82,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCommand, on
       {/* Brand */}
       <button className="rf-sidebar__brand" onClick={() => goTo('/')}>
         <span className="rf-sidebar__logo">
-          <Sparkles size={16} strokeWidth={2.2} />
+          <Waypoints size={17} strokeWidth={2} />
         </span>
         <span className="rf-sidebar__brand-text">
           <span className="rf-sidebar__brand-name">ReachFlow</span>

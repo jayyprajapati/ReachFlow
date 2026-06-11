@@ -42,6 +42,7 @@ Optional:
 - `BRAIN_API_KEY` (default `change-me`) — Bearer key for Brain service
 - `BRAIN_APP_NAME` (default `reachflow_resumes`) — Qdrant collection name
 - `RESOURCE_UPLOAD_DIR`, `PDF_OUTPUT_DIR`, `LATEX_TEMP_DIR` — default to `~/.reachflow/` (`RESUME_UPLOAD_DIR` remains a legacy fallback)
+- `MAX_RESOURCE_UPLOAD_MB` (default `20`) — per-file upload cap for Resources
 - `RATE_LIMIT_BYPASS_EMAILS` — comma-separated emails exempt from send rate limits
 - `VITE_LINKEDIN_EXTENSION_ID` (frontend) — Chrome extension ID for LinkedIn integration
 
@@ -50,7 +51,7 @@ Optional:
 ### Backend request flow
 1. `src/app.js`: Firebase Admin init → crypto config assert → Helmet/CORS/rate limiters → routes.
 2. All `/api/*` routes: `requireAuth` verifies Firebase ID token and **upserts a User doc** (`firebaseUid` key).
-3. Routes in `src/routes/`: campaigns, groups, recipients, templates, variables, applications, resumelab, roadmaps, settings, dsa, today.
+3. Routes in `src/routes/`: campaigns, groups, recipients, templates, variables, applications, resumelab, roadmaps, settings, dsa, today, resources.
 4. `/auth/google/callback` is **public** — correlates OAuth state via `gmailState` on user doc.
 5. Scheduled campaign worker: `setInterval(processScheduledCampaigns, 60s)` starts after Mongo connects.
 
@@ -74,6 +75,7 @@ All collections prefixed `reachflow_*`. All defined in `src/db.js`.
 | SendLog | `reachflow_send_logs` |
 | Application | `reachflow_applications` |
 | Resume | `reachflow_resumes` |
+| Resource | `reachflow_resources` |
 | CanonicalProfile | `reachflow_canonical_profiles` |
 | ResumeAnalysis | `reachflow_resume_analyses` |
 | GeneratedResume | `reachflow_generated_resumes` |

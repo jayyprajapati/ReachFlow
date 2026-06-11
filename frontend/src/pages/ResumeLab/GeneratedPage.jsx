@@ -21,7 +21,7 @@ function ScoreDelta({ before, after }) {
     <div className="rl-score-delta">
       <span className="rl-score-delta__before">{Math.round(before || 0)}%</span>
       <span className="rl-score-delta__arrow">→</span>
-      <span className="rl-score-delta__after" style={{ fontWeight: 700, color: after >= 70 ? 'var(--rf-success-text)' : 'var(--rf-text)' }}>
+      <span className="rl-score-delta__after" style={{ fontWeight: 700, color: after >= 70 ? '#22c55e' : after >= 40 ? 'var(--rf-warning-text)' : 'var(--rf-error-text)' }}>
         {Math.round(after || 0)}%
       </span>
       {gain !== 0 && (

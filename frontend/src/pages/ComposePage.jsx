@@ -204,7 +204,8 @@ export default function ComposePage() {
               const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
               const d = await r.json();
               if (r.ok && d.contacts) {
-                maybeImportGroupByRole(d.contacts, companyName || d.companyName || 'group');
+                const cn = companyName || d.companyName || '';
+                maybeImportGroupByRole(d.contacts, cn || 'group', cn);
               }
             } catch { /* silent */ }
           })();
@@ -646,27 +647,84 @@ export default function ComposePage() {
   }
 
   /* Groups */
-  function maybeImportGroupByRole(contacts, groupName = 'group') {
+  function maybeImportGroupByRole(contacts, groupName = 'group', companyName) {
     const incoming = contacts || [];
     const roles = buildRoleBuckets(incoming);
+    const company = companyName || groupName;
     if (roles.length > 1) {
-      setRoleImportPrompt({ contacts: incoming, groupName, roles });
+      setRoleImportPrompt({ contacts: incoming, groupName, roles, companyName: company });
       return true;
     }
-    handleGroupImport(incoming, groupName);
+    handleGroupImport(incoming, groupName, company);
     return false;
   }
 
   function importSelectedRole(role) {
     if (!roleImportPrompt) return;
     const selected = roleImportPrompt.contacts.filter(c => roleKey(c.role) === role.key);
+    const company = roleImportPrompt.companyName || roleImportPrompt.groupName;
     setRoleImportPrompt(null);
-    handleGroupImport(selected, `${roleImportPrompt.groupName} · ${role.label}`);
+    handleGroupImport(selected, `${roleImportPrompt.groupName} · ${role.label}`, company);
   }
 
-  function handleGroupImport(contacts, groupName = 'group') {
+  // After an import bumps the recipient list, check whether they now span two
+  // or more distinct companies. If so, ensure a "company" custom variable
+  // exists in the user's library and pre-fill each recipient row with the
+  // company they were imported from — so the user doesn't have to wire
+  // {{company}} mappings up by hand. Silently no-op on quota or 409 collisions.
+  async function ensureCompanyVariableForMultiImport(nextRecipients) {
+    const distinct = new Set();
+    for (const r of nextRecipients) {
+      const c = String(r.importedCompany || '').trim();
+      if (c) distinct.add(c);
+    }
+    if (distinct.size < 2) return;
+
+    const has = variables.some(v => v.variableName === 'company');
+    let createdNow = false;
+    if (!has) {
+      if (variables.length >= MAX_CUSTOM_VARIABLES) {
+        // Quota full — fall back to leaving the import column blank. Don't
+        // surprise the user by deleting one of their existing variables.
+        return;
+      }
+      try {
+        const res = await authedFetch(`${API_BASE}/api/variables`, {
+          method: 'POST', headers: hdrs,
+          body: JSON.stringify({ variableName: 'company', description: 'Auto-added — set from imported group name' }),
+        });
+        const d = await res.json();
+        if (res.ok) {
+          setVariables(p => [...p, d]);
+          createdNow = true;
+        } else if (res.status !== 409) {
+          // 409 = race; another tab created it. Anything else, give up silently.
+          return;
+        } else {
+          // Refresh so local state sees the existing one.
+          loadVariables?.();
+        }
+      } catch {
+        return;
+      }
+    }
+
+    setRecipients(prev => prev.map(r => {
+      if (!r.importedCompany) return r;
+      const existing = r.variables?.company;
+      if (existing && String(existing).trim()) return r; // user edits win
+      return { ...r, variables: { ...(r.variables || {}), company: r.importedCompany } };
+    }));
+
+    if (createdNow) {
+      setNotice({ type: 'info', message: 'Multiple companies imported — added a {{company}} variable for you.' });
+    }
+  }
+
+  function handleGroupImport(contacts, groupName = 'group', companyName) {
     const incoming = contacts || [];
     if (!incoming.length) { setNotice({ type: 'error', message: 'No contacts to import' }); return; }
+    const importedCompany = String(companyName || '').trim();
     const existing = new Set(recipients.map(r => (r.email || '').toLowerCase()));
     const adds = [];
     const invalid = [];
@@ -680,7 +738,14 @@ export default function ComposePage() {
       }
       if (existing.has(e)) { duplicateCount++; continue; }
       existing.add(e);
-      adds.push({ _id: uid(), email: e, name: (c.name || '').trim() || nameFrom(e), variables: {}, status: 'pending' });
+      adds.push({
+        _id: uid(),
+        email: e,
+        name: (c.name || '').trim() || nameFrom(e),
+        variables: {},
+        status: 'pending',
+        importedCompany: importedCompany || undefined,
+      });
     }
     const invalidMsg = invalid.length
       ? ` Not imported as invalid: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? `, +${invalid.length - 3} more` : ''}.`
@@ -694,13 +759,15 @@ export default function ComposePage() {
       });
       return;
     }
-    setRecipients(p => [...p, ...adds]);
+    const next = [...recipients, ...adds];
+    setRecipients(next);
     setLastImportSource({ groupName, added: adds.length });
     setRecipientsCollapsed(true);
     setNotice({
       type: invalid.length ? 'warning' : 'info',
       message: `Imported ${adds.length} contact${adds.length !== 1 ? 's' : ''}${duplicateCount ? `, skipped ${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''}` : ''}.${invalidMsg}`,
     });
+    ensureCompanyVariableForMultiImport(next);
   }
 
   async function importGroupRecipients(groupId) {
@@ -709,7 +776,7 @@ export default function ComposePage() {
     try {
       const r = await authedFetch(`${API_BASE}/api/groups/${groupId}`);
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
-      maybeImportGroupByRole(d.contacts || [], d.companyName || 'group');
+      maybeImportGroupByRole(d.contacts || [], d.companyName || 'group', d.companyName);
       setImportModalOpen(false);
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setImportingGroupId(''); }

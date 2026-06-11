@@ -12,11 +12,7 @@ function fmt(iso) {
 }
 
 function ScoreBadge({ score }) {
-  const color = score >= 70
-    ? 'var(--rf-success-text)'
-    : score >= 40
-    ? 'var(--rf-warning-text)'
-    : 'var(--rf-error-text)';
+  const color = score >= 70 ? '#22c55e' : score >= 40 ? 'var(--rf-warning-text)' : 'var(--rf-error-text)';
   return <span style={{ fontWeight: 700, color, fontSize: 'var(--rf-text-sm)' }}>{Math.round(score || 0)}%</span>;
 }
 

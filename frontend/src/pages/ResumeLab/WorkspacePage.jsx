@@ -1,15 +1,54 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useResumeLab } from '../../contexts/ResumeLabContext.jsx';
 import { useApp } from '../../contexts/AppContext.jsx';
 import { useRouter } from '../../router.jsx';
 import {
-  Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle,
+  Microscope, Loader, X, TrendingUp, AlertCircle, Info, MinusCircle, Lightbulb,
   Sparkles, CheckCheck,
   CheckCircle2, Code2, Copy, FileText, Zap, Mail, ExternalLink, Briefcase,
   Vault, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 const RESUME_GENERATION_ENABLED = true;
+
+const POPULAR_POSITIONS = [
+  'Software Engineer', 'Senior Software Engineer', 'Staff Software Engineer',
+  'Principal Software Engineer', 'Software Engineer Intern',
+  'Frontend Engineer', 'Senior Frontend Engineer',
+  'Backend Engineer', 'Senior Backend Engineer',
+  'Full Stack Engineer', 'Senior Full Stack Engineer',
+  'Mobile Engineer', 'iOS Engineer', 'Android Engineer', 'React Native Engineer',
+  'DevOps Engineer', 'Site Reliability Engineer', 'Platform Engineer',
+  'Cloud Engineer', 'Infrastructure Engineer',
+  'Data Engineer', 'Senior Data Engineer', 'Data Scientist',
+  'Machine Learning Engineer', 'AI Engineer', 'MLOps Engineer', 'Research Scientist',
+  'Product Manager', 'Senior Product Manager', 'Technical Product Manager',
+  'Engineering Manager', 'Senior Engineering Manager', 'Engineering Lead', 'Tech Lead',
+  'Solutions Architect', 'Software Architect', 'Security Engineer',
+  'QA Engineer', 'SDET', 'Embedded Software Engineer', 'Game Developer',
+  'Database Administrator', 'Systems Engineer', 'Developer Advocate',
+  'UI/UX Designer', 'Product Designer', 'Business Analyst',
+];
+
+const SECTION_HELP = {
+  recommended: 'Skills the JD asks for that you have demonstrated in your Career Profile, but that are missing from this selected resume. Safe to add back — you genuinely have this experience.',
+  gap:         "Skills the JD asks for that you've never shown on any resume — not here and not in your Career Profile. These are real gaps you'd need to learn or omit.",
+  removal:     "Items already on this resume that don't help for this specific JD and are taking up scarce space. Trim or shorten these to make room for what matters.",
+  additions:   'Skills and technologies that would strengthen your match for this JD. Consider adding them if you have relevant experience.',
+};
+
+function SectionInfo({ text, onMouseEnter, onMouseLeave }) {
+  return (
+    <span
+      className="rf-info-btn"
+      style={{ marginLeft: 4 }}
+      onMouseEnter={e => onMouseEnter && onMouseEnter(e, text)}
+      onMouseLeave={onMouseLeave}
+    >
+      <Info size={14} />
+    </span>
+  );
+}
 
 const INTENSITY_OPTIONS = [
   { value: 'minor',    label: 'Minor',    desc: 'Tweak phrasing and slot in missing keywords. Preserve structure and voice.' },
@@ -28,7 +67,7 @@ function ScoreRing({ score, size = 110 }) {
   const r = (size - 16) / 2;
   const circ = 2 * Math.PI * r;
   const filled = Math.min(score / 100, 1) * circ;
-  const color = score >= 70 ? 'var(--rf-success)' : score >= 40 ? 'var(--rf-warning)' : 'var(--rf-error)';
+  const color = score >= 70 ? '#22c55e' : score >= 40 ? 'var(--rf-warning)' : 'var(--rf-error)';
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
@@ -49,7 +88,7 @@ function ScoreRing({ score, size = 110 }) {
 
 // ── Keyword chips ─────────────────────────────────────────────────────────────
 
-function KwChips({ items, variant, label, icon: Icon }) {
+function KwChips({ items, variant, label, icon: Icon, tooltip, showTip, hideTip }) {
   const [copied, setCopied] = useState('');
   if (!items?.length) return null;
   function copy(w) {
@@ -62,6 +101,7 @@ function KwChips({ items, variant, label, icon: Icon }) {
       <div className="rl-kw-section__title">
         {Icon && <Icon size={12} />}
         {label} <span style={{ fontWeight: 400, color: 'var(--rf-text-faint)' }}>({items.length})</span>
+        {tooltip && <SectionInfo text={tooltip} onMouseEnter={showTip} onMouseLeave={hideTip} />}
       </div>
       <div className="rl-kw-chips">
         {items.map((kw, i) => (
@@ -91,7 +131,7 @@ function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidat
   else if (have < Math.max(1, Math.floor(min / 2))) { tone = 'err'; verdict = 'Significant gap'; }
   else                                          { tone = 'warn'; verdict = 'Below required'; }
 
-  const color = tone === 'ok' ? 'var(--rf-success-text)'
+  const color = tone === 'ok' ? '#22c55e'
               : tone === 'warn' ? 'var(--rf-warning-text)'
               : 'var(--rf-error-text)';
 
@@ -102,6 +142,82 @@ function ExperienceMatchChip({ mentionsYears, requiredMin, requiredMax, candidat
         {verdict}
       </div>
       <span style={{ fontWeight: 400, opacity: 0.8 }}>JD {required} yrs · ~{have} yr{have === 1 ? '' : 's'}</span>
+    </div>
+  );
+}
+
+// ── Autocomplete input ────────────────────────────────────────────────────────
+
+function AutocompleteInput({ value, onChange, suggestions, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const wrapRef = useRef(null);
+
+  const filtered = useMemo(() => {
+    const q = (value || '').trim().toLowerCase();
+    const list = q ? suggestions.filter(s => s.toLowerCase().includes(q)) : suggestions;
+    return list.slice(0, 8);
+  }, [value, suggestions]);
+
+  useEffect(() => {
+    function onDown(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  function handleKey(e) {
+    if (!open || !filtered.length) {
+      if (e.key === 'ArrowDown' && filtered.length) { setOpen(true); setActiveIdx(0); }
+      return;
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)); }
+    else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); onChange(filtered[activeIdx]); setOpen(false); setActiveIdx(-1); }
+    else if (e.key === 'Escape') { setOpen(false); setActiveIdx(-1); }
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <input
+        className="rl-form-input"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true); setActiveIdx(-1); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKey}
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 200,
+          background: 'var(--rf-bg-canvas)',
+          border: '1px solid var(--rf-border-subtle)',
+          borderRadius: 'var(--rf-radius-md)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
+          overflow: 'hidden',
+          maxHeight: 240,
+          overflowY: 'auto',
+        }}>
+          {filtered.map((s, i) => (
+            <div
+              key={s}
+              onMouseDown={e => { e.preventDefault(); onChange(s); setOpen(false); setActiveIdx(-1); }}
+              onMouseEnter={() => setActiveIdx(i)}
+              style={{
+                padding: '8px 12px',
+                fontSize: 'var(--rf-text-sm)',
+                color: i === activeIdx ? 'var(--rf-text)' : 'var(--rf-text-secondary)',
+                background: i === activeIdx ? 'var(--rf-bg-overlay)' : 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -434,12 +550,28 @@ export default function WorkspacePage() {
     jdText, setJdText,
     activeGenerated, setActiveGenerated,
   } = useResumeLab();
-  const { API_BASE, authedFetch, setNotice } = useApp();
+  const { API_BASE, authedFetch, setNotice, groups } = useApp();
   const { navigateTo } = useRouter();
 
   const [jobTitle, setJobTitle] = useState('');
   const [company, setCompany] = useState('');
   const [baseResumeId, setBaseResumeId] = useState('');
+  const [hoverTip, setHoverTip] = useState(null);
+  const showHoverTip = (e, text) => {
+    if (!text) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const wrap = text.length > 60;
+    const tipWidth = wrap ? 260 : text.length * 7.5 + 24;
+    const spaceRight = window.innerWidth - rect.right - 15;
+    if (spaceRight >= tipWidth) {
+      setHoverTip({ text, x: rect.right + 10, y: rect.top + rect.height / 2, dir: 'right', wrap });
+    } else {
+      // clamp so the tip never bleeds off the left edge
+      const x = Math.max(tipWidth + 15, rect.left - 10);
+      setHoverTip({ text, x, y: rect.top + rect.height / 2, dir: 'left', wrap });
+    }
+  };
+  const hideHoverTip = () => setHoverTip(null);
   const [showStrategyModal, setShowStrategyModal] = useState(false);
   const [confirmNewAnalysis, setConfirmNewAnalysis] = useState(false);
   const [latexOpen, setLatexOpen] = useState(false);
@@ -448,6 +580,20 @@ export default function WorkspacePage() {
   const [hrEmailDraft, setHrEmailDraft] = useState(null);
   const [hrEmailLoading, setHrEmailLoading] = useState(false);
   const [flowRestoring, setFlowRestoring] = useState(false);
+
+  const knownCompanies = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const g of groups || []) {
+      const name = String(g.companyName || '').trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    return out.sort((a, b) => a.localeCompare(b));
+  }, [groups]);
 
   // Prefill workspace from a history flow when ?flow=<id> is in the URL
   useEffect(() => {
@@ -580,9 +726,9 @@ export default function WorkspacePage() {
     navigateTo('/');
   }
 
-  const canAnalyze = jdText.trim().length > 20 && !analyzeLoading;
-  const hasResult = !analyzeLoading && activeAnalysis;
   const parsedResumes = resumes.filter(r => r.status === 'parsed');
+  const canAnalyze = jdText.trim().length > 20 && !analyzeLoading && !!baseResumeId;
+  const hasResult = !analyzeLoading && activeAnalysis;
 
   return (
     <div className="rl-page">
@@ -625,21 +771,35 @@ export default function WorkspacePage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div className="rl-form-group" style={{ flex: 1, minWidth: 160 }}>
               <label className="rl-form-label">Job Title (optional)</label>
-              <input className="rl-form-input" placeholder="e.g. Senior Frontend Engineer" value={jobTitle} onChange={e => setJobTitle(e.target.value)} />
+              <AutocompleteInput
+                value={jobTitle}
+                onChange={setJobTitle}
+                suggestions={POPULAR_POSITIONS}
+                placeholder="e.g. Senior Frontend Engineer"
+              />
             </div>
             <div className="rl-form-group" style={{ flex: 1, minWidth: 160 }}>
               <label className="rl-form-label">Company (optional)</label>
-              <input className="rl-form-input" placeholder="e.g. Acme Corp" value={company} onChange={e => setCompany(e.target.value)} />
+              <AutocompleteInput
+                value={company}
+                onChange={setCompany}
+                suggestions={knownCompanies}
+                placeholder="e.g. Acme Corp"
+              />
             </div>
-            {parsedResumes.length > 0 && (
-              <div className="rl-form-group" style={{ flex: 1, minWidth: 180 }}>
-                <label className="rl-form-label">Base Resume</label>
+            <div className="rl-form-group" style={{ flex: 1, minWidth: 180 }}>
+              <label className="rl-form-label">Base Resume</label>
+              {parsedResumes.length > 0 ? (
                 <select className="rl-form-select" value={baseResumeId} onChange={e => setBaseResumeId(e.target.value)}>
-                  <option value="">Use canonical profile</option>
+                  <option value="">Select a resume…</option>
                   {parsedResumes.map(r => <option key={r.id} value={r.id}>{r.title || r.fileName}</option>)}
                 </select>
-              </div>
-            )}
+              ) : (
+                <p style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-faint)', margin: 0, lineHeight: 1.5 }}>
+                  Upload a resume in the Vault to enable analysis.
+                </p>
+              )}
+            </div>
           </div>
 
           <button className="rf-btn rf-btn--primary" style={{ alignSelf: 'flex-start' }} onClick={handleAnalyze} disabled={!canAnalyze}>
@@ -674,10 +834,10 @@ export default function WorkspacePage() {
           {/* Left: keyword insights */}
           <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="rl-panel" style={{ gap: 18 }}>
-              <KwChips items={activeAnalysis.existingButMissingFromResume}  variant="omitted"  label="Suggested Keywords"          icon={Info} />
-              <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Missing Keywords (Skill Gap)" icon={AlertCircle} />
-              <KwChips items={activeAnalysis.recommendedAdditions}          variant="add"      label="Recommended Additions"       icon={TrendingUp} />
-              <KwChips items={activeAnalysis.recommendedRemovals}           variant="remove"   label="Recommended Removals"        icon={MinusCircle} />
+              <KwChips items={activeAnalysis.missingKeywords}               variant="missing"  label="Skill Gap"             icon={AlertCircle} tooltip={SECTION_HELP.gap}         showTip={showHoverTip} hideTip={hideHoverTip} />
+              <KwChips items={activeAnalysis.existingButMissingFromResume}  variant="omitted"  label="Recommended Skills"    icon={Lightbulb}   tooltip={SECTION_HELP.recommended}  showTip={showHoverTip} hideTip={hideHoverTip} />
+              <KwChips items={activeAnalysis.recommendedRemovals}           variant="remove"   label="Suggested Removals"    icon={MinusCircle} tooltip={SECTION_HELP.removal}       showTip={showHoverTip} hideTip={hideHoverTip} />
+              <KwChips items={activeAnalysis.recommendedAdditions}          variant="add"      label="Recommended Additions"  icon={TrendingUp}  tooltip={SECTION_HELP.additions}    showTip={showHoverTip} hideTip={hideHoverTip} />
             </div>
           </div>
 
@@ -891,6 +1051,19 @@ export default function WorkspacePage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Hover tooltip ── */}
+      {hoverTip && (
+        <div
+          className={`rf-hover-tip${hoverTip.dir === 'left' ? ' rf-hover-tip--left' : ''}${hoverTip.wrap ? ' rf-hover-tip--wrap' : ''}`}
+          style={hoverTip.dir === 'left'
+            ? { top: hoverTip.y, right: window.innerWidth - hoverTip.x }
+            : { top: hoverTip.y, left: hoverTip.x }
+          }
+        >
+          {hoverTip.text}
         </div>
       )}
 

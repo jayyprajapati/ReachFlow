@@ -993,7 +993,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Folder list */}
-            <div className="rml-folders">
+            <div className={`rml-folders${!isRoadmapMode ? ' rml-folders--bookmarks' : ''}`}>
               {boardLoading && !rm ? (
                 <div className="rml-folders__loading"><Loader size={16} className="rml-spin" /> Loading…</div>
               ) : stages.length === 0 ? (

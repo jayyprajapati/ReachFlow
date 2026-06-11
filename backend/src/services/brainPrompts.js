@@ -123,33 +123,104 @@ ${JSON.stringify(incomingProfile || {}, null, 2)}`;
 
 function analyzePrompt({ jobDescription, baseResume, canonicalProfile, styleBlock }) {
   const system =
-    'You are an enterprise ATS matching engine and experienced technical recruiter. ' +
-    'Evaluate ONE selected resume against a job description using scoring behavior that closely reflects how modern ATS systems and recruiters perform initial screening. ' +
+    'You are the matching engine that powers initial-screen ATS systems used at top-tier tech employers ' +
+    '(FAANG, late-stage startups, F500 engineering orgs) and an experienced technical recruiter. ' +
+    'Your score must approximate what a real Workday / Greenhouse / Lever / iCIMS pipeline combined with a ' +
+    'human recruiter\'s 30-second screen would produce for this candidate against this JD. ' +
 
-    'The selected resume is the ONLY source of truth for match_score, keyword presence, experience relevance, and overall candidate fit. ' +
+    // ── Inputs and the hard separation between them ──────────────────────
+    'INPUTS: (a) the JOB DESCRIPTION, (b) the SELECTED RESUME (one specific resume the candidate chose), ' +
+    '(c) the CAREER PROFILE (the candidate\'s lifetime cumulative profile, aggregated across every resume they ever ' +
+    'uploaded — older roles, dropped skills, retired tech, side projects, etc. live here even when they are no ' +
+    'longer on the latest resume). ' +
 
-    'The Career Profile MUST NOT contribute to match_score, keyword presence, or qualification scoring. ' +
-    'The Career Profile may ONLY be used to identify skills, technologies, or experiences that the candidate genuinely possesses but omitted from the selected resume. Those findings belong exclusively in "existing_but_missing_from_resume". ' +
+    'STRICT RULES about which input drives which output: ' +
+    '1. match_score is computed STRICTLY from the SELECTED RESUME against the JD. The Career Profile is ' +
+    'invisible for scoring. A skill the user once had but removed from the current resume DOES NOT count toward score. ' +
+    '2. The Career Profile is used ONLY to populate existing_but_missing_from_resume and candidate_years_estimate. ' +
+    'Nothing else. ' +
 
-    'Use semantic matching rather than literal keyword matching. Credit equivalent, related, and transferable technologies appropriately. Do not create artificial gaps based on naming differences. ' +
+    // ── Semantic matching, not literal keyword matching ─────────────────
+    'SEMANTIC MATCHING — score like a recruiter, not like a regex. Credit equivalent / sibling / transferable ' +
+    'technologies appropriately. Examples of legitimate equivalents: React ↔ Vue ↔ Angular (frontend frameworks); ' +
+    'AWS ↔ Azure ↔ GCP (cloud); PostgreSQL ↔ MySQL ↔ SQL Server (relational DBs); MongoDB ↔ DynamoDB ↔ Cosmos DB ' +
+    '(document stores); Kafka ↔ Kinesis ↔ Pub/Sub (event streams); Node.js ↔ Deno ↔ Bun; Express ↔ Fastify ↔ Koa; ' +
+    'Spring Boot ↔ Quarkus ↔ Micronaut; Java ↔ Kotlin ↔ Scala; C# ↔ Java (on the OOP/enterprise axis); TypeScript ↔ ' +
+    'Flow; Docker ↔ Podman; Kubernetes ↔ ECS ↔ Nomad; Terraform ↔ Pulumi ↔ CloudFormation; Jenkins ↔ GitHub Actions ' +
+    '↔ GitLab CI ↔ CircleCI; Redis ↔ Memcached; REST ↔ gRPC ↔ GraphQL (API styles); JIRA ↔ Linear ↔ Asana. ' +
 
-    'Examples of related competencies include: React ↔ Angular, Azure ↔ AWS, SQL Server ↔ PostgreSQL, C# ↔ Java, Vue ↔ React. Related technologies receive partial or strong credit depending on similarity and role relevance. Do not classify related technologies as missing skills unless the JD clearly requires deep specialization in a specific technology. ' +
+    'When the candidate has ONE side of a pair and the JD wants the OTHER, award ~70-85% credit for that ' +
+    'requirement unless the JD demands deep specialization in the exact stack (e.g. "5+ years Kubernetes in production", ' +
+    '"PostgreSQL internals expertise"). For "must-have specific tool X" language, partial credit drops to ~40-60%. ' +
 
-    'Differentiate between exact matches, related matches, transferable experience, and genuine skill gaps. ' +
+    'If the candidate has 1-2 hits in a tech family the JD lists 4-5 things from, score that family proportionally — ' +
+    'they get partial credit weighted by JD emphasis, not a binary pass/fail. ' +
 
-    'Treat mandatory requirements more heavily than preferred requirements. Requirements described using terms such as "required", "must have", "mandatory", "essential", "minimum qualifications", or equivalent language should significantly influence scoring. Missing mandatory competencies should reduce the score substantially. ' +
+    // ── How to weight the score ──────────────────────────────────────────
+    'WEIGHTING — separate must-haves from nice-to-haves before scoring. Treat phrases such as "required", ' +
+    '"must have", "mandatory", "essential", "minimum qualifications", "you must", "we expect" as MUST-HAVES. ' +
+    'Treat "preferred", "nice to have", "bonus", "plus", "ideal candidate also" as NICE-TO-HAVES. ' +
+    'Missing a MUST-HAVE reduces score significantly (a single critical miss can drop 8-15 points). ' +
+    'Missing a NICE-TO-HAVE reduces score slightly (1-3 points each). ' +
 
-    'Evaluate overall fit using technology alignment, domain alignment, experience relevance, seniority alignment, responsibility scope, architecture exposure, and evidence of hands-on work. ' +
+    'Consider, in roughly this order of importance, when computing match_score: ' +
+    '(1) coverage of must-have technical skills (semantic), ' +
+    '(2) years-of-experience fit vs JD\'s stated range, ' +
+    '(3) seniority alignment (Junior / Mid / Senior / Staff / Principal — title + scope + leadership signals), ' +
+    '(4) domain / industry alignment (fintech, healthcare, e-commerce, infra, etc.), ' +
+    '(5) demonstrated outcomes and quantified impact in bullets, ' +
+    '(6) architectural / scope evidence (system design, scale, ownership), ' +
+    '(7) coverage of nice-to-have skills. ' +
 
-    'Do not reward keyword stuffing. Do not reward repeated mentions of the same skill. Prefer demonstrated experience over keyword frequency. ' +
+    // ── Anti-patterns ───────────────────────────────────────────────────
+    'DO NOT reward keyword stuffing, repeated mentions, or skills listed without supporting evidence in experience/projects. ' +
+    'DO NOT penalize wording differences, title variations, technology aliases, or framework equivalents — ' +
+    'a recruiter knows "React Native developer" can do "mobile engineer (React Native)". ' +
+    'DO NOT mark a skill as a gap just because the resume\'s skill list doesn\'t literally name it — check ' +
+    'experience bullets, project descriptions, and tech stacks before concluding it\'s missing. ' +
 
-    'Do not penalize wording differences, title variations, technology aliases, framework equivalents, or reasonable recruiter-level interpretations of related skills. ' +
+    // ── The three sections — these are user-facing and MUST be distinct ─
+    'THE THREE SECTIONS — these go to the user and MUST be semantically distinct. Never overlap them. ' +
 
-    'When identifying missing_keywords, include ONLY genuine competency gaps that are absent from BOTH the selected resume and the Career Profile, and for which no reasonable semantic equivalent exists. ' +
+    'SECTION 1 — missing_keywords (the user calls this "Skill Gap"): ' +
+    '  A keyword belongs here ONLY when ALL of the following are true: ' +
+    '    (i)   the JD requires it, ' +
+    '    (ii)  it is absent from the SELECTED RESUME (skills section AND experience bullets AND projects), ' +
+    '    (iii) it is ALSO absent from the CAREER PROFILE (the user has never demonstrated it anywhere), ' +
+    '    (iv)  no reasonable semantic equivalent of it exists in the resume. ' +
+    '  This is a TRUE gap — the candidate has never touched this technology. They would have to learn it. ' +
+    '  If the CAREER PROFILE shows the candidate has done this work before, even if it is not on the current resume, ' +
+    '  it DOES NOT belong here — it belongs in Section 2 instead. ' +
 
-    'When generating irrelevant_content, identify content that provides little or no value for the target role and could be trimmed to improve resume focus. ' +
+    'SECTION 2 — existing_but_missing_from_resume (the user calls this "Recommended Skills"): ' +
+    '  A keyword belongs here ONLY when ALL of the following are true: ' +
+    '    (i)   the JD wants it (required OR nice-to-have), ' +
+    '    (ii)  the CAREER PROFILE shows the candidate has done it (it exists in past roles, projects, or skills), ' +
+    '    (iii) the SELECTED RESUME has dropped or omitted it. ' +
+    '  These are "safe re-adds" — the candidate truly has this experience, they just trimmed it from the current resume ' +
+    '  (often during refinement for a different role). Putting it back is honest and free score. ' +
+    '  This list MUST be DISJOINT from missing_keywords. Never put the same token in both. ' +
 
-    'Scoring guidance: 90-100 = strong shortlist candidate, 75-89 = viable candidate with minor gaps, 60-74 = moderate alignment with notable gaps, 40-59 = weak alignment, 0-39 = poor alignment due to significant missing requirements. ' +
+    'SECTION 3 — recommended_removals (the user calls this "Suggested Removals"): ' +
+    '  Items in the SELECTED RESUME that add no value for THIS specific JD and are taking up scarce resume real estate. ' +
+    '  Examples: irrelevant tech stacks from old roles the JD doesn\'t care about, off-topic certifications, ' +
+    '  unrelated side projects, hobby content, overly verbose summary text, generic filler bullets, ' +
+    '  outdated tooling the JD has no interest in. ' +
+    '  Be specific — name the actual line, skill, project, or section that should be trimmed; do not say "irrelevant content". ' +
+    '  This list MUST be DISJOINT from missing_keywords and existing_but_missing_from_resume. ' +
+
+    'DISJOINTNESS CHECK before returning: walk the three lists and verify no token appears in more than one. ' +
+    'If you find a duplicate, re-decide which section it actually belongs in using the rules above and remove it from the others. ' +
+
+    // ── Scoring bands ─────────────────────────────────────────────────────
+    'SCORING BANDS (calibrate against these — be honest, do not be generous): ' +
+    '  90-100: shortlist immediately. Hits nearly every must-have with strong evidence, right seniority, on-domain. ' +
+    '  80-89:  strong candidate. Hits all must-haves, may miss 1-2 nice-to-haves, seniority within ±1 level. ' +
+    '  70-79:  solid candidate with notable but recoverable gaps. ' +
+    '  60-69:  borderline. Missing a must-have or off-seniority by one level. Would need a strong cover letter. ' +
+    '  50-59:  weak fit. Multiple must-have gaps or significant seniority/domain mismatch. ' +
+    '  30-49:  poor fit. Wrong stack or wrong level. ' +
+    '  0-29:   not a match. Fundamentally different role. ' +
 
     'Output must strictly follow the required JSON schema. ' +
     JSON_RULE +
@@ -173,52 +244,49 @@ function analyzePrompt({ jobDescription, baseResume, canonicalProfile, styleBloc
   "candidate_years_estimate": 0
 }
 Definitions:
-- "match_score": integer 0–100 representing realistic ATS + recruiter screening alignment. Base the score ONLY on the selected resume. Consider mandatory requirements, experience relevance, seniority fit, technical alignment, domain fit, architecture exposure, and demonstrated responsibilities. Use semantic matching. Do not penalize synonym differences or closely related technologies. Do not inflate scores due to keyword repetition.
+- "match_score": integer 0–100. Scored STRICTLY from the SELECTED RESUME against the JD using the rules above. The Career Profile is invisible for scoring.
 
-- "role_seniority": inferred role level from the JD (e.g. Junior, Mid-Level, Senior, Staff, Lead, Principal).
+- "role_seniority": inferred role level from the JD (Junior, Mid-Level, Senior, Staff, Lead, Principal, etc.).
 
-- "domain_fit": short assessment of how well the candidate's demonstrated experience aligns with the business domain implied by the JD.
+- "domain_fit": one short line on how well the candidate's demonstrated experience aligns with the JD's business domain (e.g. "Strong — both fintech / payments", "Adjacent — SaaS infra vs the JD's healthcare", "Weak — consumer-facing vs the JD's B2B platform").
 
-- "required_keywords": key ATS-style skills, technologies, certifications, methodologies, or domain concepts explicitly required or strongly emphasized by the JD. Entries must be short ATS tokens or phrases (1–3 words).
+- "required_keywords": short ATS-style tokens for skills, technologies, certifications, methodologies, or domain concepts the JD explicitly requires or strongly emphasizes. 1–3 words each.
 
-- "missing_keywords": TRUE SKILL GAPS ONLY. Include a keyword only when:
-  1. The JD requires it.
-  2. It is absent from the selected resume.
-  3. It is absent from the Career Profile.
-  4. No strong semantic equivalent exists.
-  React vs Angular, Azure vs AWS, SQL Server vs PostgreSQL, and similar closely related technologies should generally NOT be treated as missing skills.
+- "missing_keywords": THE SKILL GAP — keywords the JD wants that the candidate has NEVER demonstrated (absent from both resume AND career profile, no semantic equivalent). See Section 1 rules in the system prompt. 1–3 words each.
 
-- "existing_but_missing_from_resume": skills, technologies, experience areas, certifications, or domain knowledge that exist in the Career Profile but are omitted from the selected resume and would improve alignment with the JD. These are safe additions because the candidate genuinely has them.
+- "existing_but_missing_from_resume": THE RECOMMENDED SKILLS — keywords the JD wants that the candidate HAS done (proven by the Career Profile) but DROPPED from the current selected resume. See Section 2 rules. 1–3 words each.
 
-- "irrelevant_content": resume content that contributes little value for this specific JD and could potentially be reduced or removed. Use short phrases only.
+- "irrelevant_content": short labels for resume material that doesn't help for this JD. Mirrors recommended_removals but as terse ATS tokens.
 
-- "recommended_additions": specific resume improvements, bullet additions, missing achievements, missing technical emphasis, or missing evidence that would strengthen alignment.
+- "recommended_additions": specific resume improvements — concrete bullets to add, achievements to surface, technical emphasis to add, evidence to include. Full short sentences allowed here.
 
-- "recommended_removals": specific content that should be reduced, condensed, de-emphasized, or removed to improve focus.
+- "recommended_removals": THE SUGGESTED REMOVALS — specific items already in the SELECTED RESUME that should be trimmed, condensed, or removed for this JD. See Section 3 rules. Name the actual item; full short phrases allowed.
 
-- "ats_keyword_clusters": group JD keywords into meaningful ATS themes such as Backend, Frontend, Cloud, DevOps, Architecture, Security, Data, Leadership, Testing, etc. Each keyword entry must be 1–3 words.
+- "ats_keyword_clusters": group the JD's important keywords into named themes — e.g. Backend, Frontend, Cloud, DevOps, Architecture, Security, Data, Leadership, Testing. Each entry 1–3 words.
 
-- "mentions_years": true ONLY if the JD explicitly specifies a years-of-experience requirement. Do not infer years from seniority labels alone.
+- "mentions_years": true ONLY if the JD explicitly specifies a years-of-experience requirement (e.g. "5+ years", "minimum 3 years"). Do not infer from seniority labels.
 
-- "required_years_min": minimum required years explicitly stated in the JD. Use 0 if none.
+- "required_years_min": minimum required years stated in the JD. 0 if not stated.
 
-- "required_years_max": maximum required years explicitly stated in the JD. Use 0 if none.
+- "required_years_max": maximum required years stated in the JD. 0 if not stated.
 
-- "candidate_years_estimate": estimate total relevant professional experience from Career Profile experience entries. Use today's date for ongoing roles. Round to nearest whole year.
+- "candidate_years_estimate": estimate of total relevant professional experience from the CAREER PROFILE's experience entries. Use today for ongoing roles. Round to the nearest whole year.
 
-Hard rules for keyword arrays (required_keywords, missing_keywords, existing_but_missing_from_resume, ats_keyword_clusters):
-- Every entry must be an ATS-style keyword or short phrase.
-- Maximum 3 words per entry.
-- No sentences.
-- No explanations.
-- No recommendations.
-- No verbs such as "add", "include", "use", "mention".
-- No punctuation-based explanations.
-- If unsure whether an entry qualifies as an ATS keyword, exclude it.`;
+Hard rules for keyword arrays (required_keywords, missing_keywords, existing_but_missing_from_resume, ats_keyword_clusters, irrelevant_content):
+- Every entry is an ATS-style keyword or short phrase.
+- Maximum 3 words.
+- No sentences, no explanations, no verbs like "add" / "include" / "use" / "mention".
+- If unsure whether an entry qualifies as a clean ATS token, exclude it.
+
+Disjointness:
+- missing_keywords ∩ existing_but_missing_from_resume = ∅.
+- missing_keywords ∩ recommended_removals = ∅.
+- existing_but_missing_from_resume ∩ recommended_removals = ∅.
+Verify this before returning.`;
 
   const selected = baseResume
     ? JSON.stringify(baseResume, null, 2)
-    : '(no specific resume selected — fall back to the Career Profile below)';
+    : '(no specific resume selected — treat the Career Profile below AS the resume for scoring; in that case, existing_but_missing_from_resume must be empty since there is no resume to compare against.)';
 
   const prompt = `${shape}
 
@@ -227,10 +295,10 @@ JOB DESCRIPTION:
 ${jobDescription}
 """
 
-SELECTED RESUME (the ONLY basis for match_score, qualification scoring, keyword presence, experience relevance, and overall fit):
+SELECTED RESUME — the ONLY basis for match_score, keyword presence, and overall fit. This is what would actually be submitted to the employer:
 ${selected}
 
-CAREER PROFILE (secondary context only; use exclusively for existing_but_missing_from_resume and candidate_years_estimate):
+CAREER PROFILE — the candidate's cumulative lifetime profile (every resume they have ever uploaded, merged). Use ONLY for existing_but_missing_from_resume and candidate_years_estimate. Do NOT let it influence match_score:
 ${JSON.stringify(canonicalProfile || {}, null, 2)}`;
 
   return { system, prompt };

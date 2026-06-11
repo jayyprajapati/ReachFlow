@@ -398,6 +398,23 @@
 .rml-folders::-webkit-scrollbar { width: 4px; }
 .rml-folders::-webkit-scrollbar-thumb { background: var(--rf-border); border-radius: 2px; }
 
+/* Bookmark mode — folders are independent collections, so render them in a
+   2-column grid to cut vertical scrolling. Connectors are not rendered in
+   this mode so the grid layout is safe. */
+.rml-folders--bookmarks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+.rml-folders--bookmarks .rml-folder { align-self: start; }
+.rml-folders--bookmarks .rml-folder + .rml-folder { margin-top: 0; }
+.rml-folders--bookmarks .rml-folders__empty,
+.rml-folders--bookmarks .rml-folders__loading { grid-column: 1 / -1; }
+@media (max-width: 880px) {
+  .rml-folders--bookmarks { grid-template-columns: minmax(0, 1fr); }
+}
+
 .rml-folders__loading {
   display: flex;
   align-items: center;
