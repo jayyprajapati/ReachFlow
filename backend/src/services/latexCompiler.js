@@ -246,6 +246,14 @@ async function compileToPdf({ latexSource, userId, outputName }) {
       }
     }
 
+    // Safety-net: sourcesanspro was removed from TeX Live 2026's tlnet repo.
+    // Strip the package and any \sourcesanspro font activation; the document
+    // falls back to lmodern (already loaded by every bundled template).
+    if (/\\usepackage(?:\[[^\]]*\])?\{sourcesanspro\}/.test(src)) {
+      src = src.replace(/\\usepackage(?:\[[^\]]*\])?\{sourcesanspro\}[ \t]*\n?/g, '');
+      src = src.replace(/\\sourcesanspro\b[ \t]*\n?/g, '');
+    }
+
     // Safety-net: fix unescaped & outside tabular/array/align environments.
     // LLMs often write "AT&T" instead of "AT\&T", causing "Misplaced alignment
     // tab character &" fatal errors. We protect genuine table environments, then
