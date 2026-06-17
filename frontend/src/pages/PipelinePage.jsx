@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useRouter } from '../router.jsx';
 import {
@@ -147,10 +147,11 @@ function normalizeCompanyKey(value) {
 function relDate(d) {
   if (!d) return '';
   const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return '1d ago';
-  if (diff < 14)  return `${diff}d ago`;
-  return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const abs = new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (diff === 0) return `Today (${abs})`;
+  if (diff === 1) return `1d ago (${abs})`;
+  if (diff < 14)  return `${diff}d ago (${abs})`;
+  return abs;
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -189,6 +190,9 @@ export default function PipelinePage() {
   const [newCompanyName, setNewCompanyName] = useState('');
   const [companyBusyId, setCompanyBusyId] = useState('');
   const [fieldBusyId, setFieldBusyId] = useState('');
+  const [jobIdSearch, setJobIdSearch] = useState('');
+  const [pendingEntries, setPendingEntries] = useState([]);
+  const autoGhostedRef = useRef(false);
 
   const hdrs = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
@@ -201,6 +205,19 @@ export default function PipelinePage() {
     if (company) setCompanyFilter(company);
   }, [search]);
   useEffect(() => { if (copiedId) { const t = setTimeout(() => setCopiedId(''), 1500); return () => clearTimeout(t); } }, [copiedId]);
+
+  useEffect(() => {
+    if (loading || autoGhostedRef.current || !apps.length) return;
+    autoGhostedRef.current = true;
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const toGhost = apps.filter(a =>
+      ['applied', 'oa', 'interviewing', 'on_hold'].includes(a.status) &&
+      a.appliedDate && new Date(a.appliedDate).getTime() < thirtyDaysAgo
+    );
+    if (!toGhost.length) return;
+    toGhost.forEach(a => updateStatus(a.id, 'ghosted'));
+    setNotice({ type: 'info', message: `${toGhost.length} application${toGhost.length > 1 ? 's' : ''} auto-moved to Ghosted (30+ days without response)` });
+  }, [loading, apps.length]);
 
   async function loadApps() {
     setLoading(true);
@@ -221,15 +238,44 @@ export default function PipelinePage() {
         return group ? { ...app, companyGroupId: group.id, companyName: group.companyName } : app;
       });
       if (!parsed.length) { setNotice({ type: 'error', message: 'No valid applications found' }); return; }
-      for (const app of parsed) {
+
+      const directSave = parsed.filter(app => !app.companyName || !!app.companyGroupId);
+      const needsConfirm = parsed.filter(app => app.companyName && !app.companyGroupId);
+
+      let savedCount = 0;
+      for (const app of directSave) {
         const r = await authedFetch(`${API_BASE_URL}/api/applications`, { method: 'POST', headers: hdrs, body: JSON.stringify(app) });
         const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
         setApps(p => [d, ...p]);
+        savedCount++;
       }
+
       setRawInput(''); setInputOpen(false);
-      setNotice({ type: 'success', message: `Added ${parsed.length} application${parsed.length === 1 ? '' : 's'}` });
+
+      if (needsConfirm.length) {
+        setPendingEntries(needsConfirm);
+      } else if (savedCount > 0) {
+        setNotice({ type: 'success', message: `Added ${savedCount} application${savedCount === 1 ? '' : 's'}` });
+      }
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setParsing(false); }
+  }
+
+  async function savePendingEntry(entry) {
+    try {
+      const group = findGroupByName(entry.companyName);
+      const payload = {
+        jobTitle: entry.jobTitle || '',
+        jobId: entry.jobId || '',
+        companyNameSnapshot: group?.companyName || entry.companyName || '',
+        companyGroupId: group?.id || null,
+        status: entry.status || 'applied',
+        appliedDate: entry.appliedDate || new Date().toISOString().split('T')[0],
+      };
+      const r = await authedFetch(`${API_BASE_URL}/api/applications`, { method: 'POST', headers: hdrs, body: JSON.stringify(payload) });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed');
+      setApps(p => [d, ...p]);
+    } catch (e) { setNotice({ type: 'error', message: e.message }); }
   }
 
   async function updateStatus(id, status) {
@@ -355,12 +401,26 @@ export default function PipelinePage() {
       .sort((a, b) => a.localeCompare(b));
   }, [apps, groupById]);
 
+  const companyAppCounts = useMemo(() => {
+    const counts = {};
+    apps.forEach(a => {
+      if (a.status === 'rejected') return;
+      const name = getCompanyName(a);
+      if (!name) return;
+      counts[name] = (counts[name] || 0) + 1;
+    });
+    return counts;
+  }, [apps, groupById]);
+
   const filtered = useMemo(() => {
     let list = apps;
     if (statusFilter)  list = list.filter(a => a.status === statusFilter);
     if (companyFilter) list = list.filter(a => getCompanyName(a) === companyFilter);
+    if (jobIdSearch)   list = list.filter(a => (a.jobId || '').toLowerCase().includes(jobIdSearch.toLowerCase()));
     return list;
-  }, [apps, statusFilter, companyFilter, groupById]);
+  }, [apps, statusFilter, companyFilter, jobIdSearch, groupById]);
+
+  const hasFilters = !!(statusFilter || companyFilter || jobIdSearch);
 
   const byStatus = useMemo(() => {
     const map = {}; STATUS_COLS.forEach(c => { map[c.key] = []; });
@@ -401,6 +461,18 @@ export default function PipelinePage() {
         >
           {hoverTip.text}
         </div>
+      )}
+      {pendingEntries.length > 0 && (
+        <CompanyConfirmDialog
+          key={`${pendingEntries[0].companyName}:${pendingEntries[0].jobTitle}:${pendingEntries.length}`}
+          entry={pendingEntries[0]}
+          remaining={pendingEntries.length - 1}
+          onSave={async (editedEntry) => {
+            await savePendingEntry(editedEntry);
+            setPendingEntries(prev => prev.slice(1));
+          }}
+          onSkip={() => setPendingEntries(prev => prev.slice(1))}
+        />
       )}
       {/* sec1: title left, stats right */}
       <div className="rf-pl-sec1">
@@ -446,6 +518,14 @@ export default function PipelinePage() {
         </div>
         {apps.length > 0 && (
           <div className="rf-pl-sec2__right">
+            <input
+              type="text"
+              className="rf-input rf-input--sm"
+              style={{ width: 150 }}
+              placeholder="Search job ID…"
+              value={jobIdSearch}
+              onChange={e => setJobIdSearch(e.target.value)}
+            />
             <select className="rf-select rf-input--sm rf-pl-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
@@ -457,9 +537,20 @@ export default function PipelinePage() {
             >
               <option value="">All companies</option>
               {uniqueCompanies.map(name => (
-                <option key={name} value={name}>{name}</option>
+                <option key={name} value={name}>
+                  {name}{companyAppCounts[name] ? ` (${companyAppCounts[name]})` : ''}
+                </option>
               ))}
             </select>
+            {hasFilters && (
+              <button
+                className="rf-btn rf-btn--ghost rf-btn--sm"
+                onClick={() => { setStatusFilter(''); setCompanyFilter(''); setJobIdSearch(''); }}
+                title="Reset all filters"
+              >
+                <X size={13} /> Reset
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -749,5 +840,68 @@ function SummaryStat({ label, value, sub, active, accent, onClick }) {
       <span className="rf-pl-summary__value rf-num">{value}</span>
       {sub && <span className="rf-pl-summary__sub">{sub}</span>}
     </button>
+  );
+}
+
+function CompanyConfirmDialog({ entry, remaining, onSave, onSkip }) {
+  const [jobTitle, setJobTitle] = useState(entry.jobTitle || '');
+  const [companyName, setCompanyName] = useState(entry.companyName || '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    await onSave({ ...entry, jobTitle, companyName });
+    setSaving(false);
+  }
+
+  return (
+    <div className="rf-dialog-overlay">
+      <div className="rf-dialog" style={{ maxWidth: 440 }}>
+        <div className="rf-dialog__title">New company detected</div>
+        <div className="rf-dialog__body">
+          <p style={{ marginBottom: 'var(--rf-sp-3)', color: 'var(--rf-text-secondary)', fontSize: 'var(--rf-text-sm)' }}>
+            <strong>{entry.companyName}</strong> isn't in your contacts. Review the details below and edit if needed.
+            {remaining > 0 && (
+              <span style={{ color: 'var(--rf-text-muted)' }}> ({remaining} more to review after this)</span>
+            )}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--rf-sp-2)' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Job title</span>
+              <input
+                className="rf-input rf-input--sm"
+                value={jobTitle}
+                onChange={e => setJobTitle(e.target.value)}
+                placeholder="Job title"
+                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 'var(--rf-text-xs)', color: 'var(--rf-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Company name</span>
+              <input
+                className="rf-input rf-input--sm"
+                value={companyName}
+                onChange={e => setCompanyName(e.target.value)}
+                placeholder="Company name"
+                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                autoFocus
+              />
+            </label>
+          </div>
+        </div>
+        <div className="rf-dialog__actions">
+          <button className="rf-btn rf-btn--ghost rf-btn--sm" onClick={onSkip} disabled={saving}>
+            Skip
+          </button>
+          <button
+            className="rf-btn rf-btn--primary rf-btn--sm"
+            onClick={handleSave}
+            disabled={saving || (!jobTitle.trim() && !companyName.trim())}
+          >
+            {saving ? <><Loader size={13} className="rf-spin" /> Saving…</> : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
