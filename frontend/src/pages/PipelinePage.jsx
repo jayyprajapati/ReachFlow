@@ -121,9 +121,11 @@ function parseApplicationBlock(text, groups = []) {
     const parts = line.split(/[|\t]/).map(s => s.trim()).filter(Boolean);
     if (parts.length >= 2) {
       const title = parts[0] || '';
-      const rawId = parts[1] || '';
-      const jobId = extractJobId(rawId).jobId || cleanupParsedText(rawId);
-      const company = parts[2] || '';
+      // With 2 parts: title | company (job ID absent)
+      // With 3+ parts: title | jobId | company
+      const rawId = parts.length >= 3 ? parts[1] : '';
+      const jobId = rawId ? (extractJobId(rawId).jobId || cleanupParsedText(rawId)) : '';
+      const company = parts.length >= 3 ? parts[2] : parts[1];
       const group = groups.find(g => normalizeCompanyKey(g.companyName) === normalizeCompanyKey(company));
       results.push({
         jobTitle: title,
@@ -326,18 +328,15 @@ export default function PipelinePage() {
     }
     setCompanyBusyId(id);
     try {
-      const r = await authedFetch(`${API_BASE_URL}/api/groups`, {
-        method: 'POST', headers: hdrs, body: JSON.stringify({ companyName: name }),
-      });
-      const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed to create company');
-      await loadGroups();
+      // Store as a temporary name snapshot — does NOT create a contact
       const ar = await authedFetch(`${API_BASE_URL}/api/applications/${id}`, {
-        method: 'PATCH', headers: hdrs, body: JSON.stringify({ companyGroupId: d.id }),
+        method: 'PATCH', headers: hdrs,
+        body: JSON.stringify({ companyNameSnapshot: name, companyGroupId: null }),
       });
       const appData = await ar.json(); if (!ar.ok) throw new Error(appData.error || 'Failed to update application');
       setApps(p => p.map(a => a.id === id ? { ...a, ...appData } : a));
       setAddingCompanyForId(''); setNewCompanyName('');
-      setNotice({ type: 'success', message: 'Company added to contacts' });
+      setNotice({ type: 'success', message: 'Company name saved' });
     } catch (e) { setNotice({ type: 'error', message: e.message }); }
     finally { setCompanyBusyId(''); }
   }
@@ -564,7 +563,7 @@ export default function PipelinePage() {
               <span
                 className="rf-info-btn"
                 aria-label="Paste format help"
-                onMouseEnter={(e) => showHoverTip(e, 'Format: Job Title | Job ID | Company — one per line. Loose format works too.')}
+                onMouseEnter={(e) => showHoverTip(e, 'Format: Job Title | Company or Job Title | Job ID | Company — one per line. Loose format works too.')}
                 onMouseLeave={hideHoverTip}
               ><Info size={14} /></span>
             </div>
