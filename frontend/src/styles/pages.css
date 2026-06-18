@@ -4551,6 +4551,39 @@
   .rf-settings-sheet-trigger {
     display: flex !important;
   }
+
+  /* Settings: backdrop-filter on rf-settings-rail at 1024px creates a new
+     containing block for position:fixed, trapping the overlay inside the rail.
+     Remove it at mobile so the sheet renders relative to the viewport. */
+  .rf-settings-rail {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* Allow sheet list to scroll if content is tall */
+  .rf-settings-panel-sheet__list {
+    overflow-y: auto;
+    max-height: 60vh;
+  }
+
+  /* Contacts table: Name column needs a minimum width so email/actions
+     don't crowd it to nothing on a narrow horizontal-scroll table */
+  .rf-ct__table th:first-child,
+  .rf-ct__table td:first-child {
+    min-width: 110px;
+  }
+
+  /* Contacts: search is too tall due to 16px iOS font-size enforcement;
+     tighten it and reduce the inline search */
+  .rf-ct__global-search .rf-search__input { height: 28px; }
+  .rf-ct__contact-search { width: min(100%, 200px); }
+  .rf-ct__contact-search--inline { width: clamp(80px, 22vw, 140px); }
+
+  /* Contacts: stats counts — shrink font so they fit beside the search */
+  .rf-ct__header-stats-col {
+    font-size: var(--rf-text-xs);
+    padding-top: 4px;
+  }
 }
 
 /* ── Pipeline: mobile filter bottom sheet ──────────────── */
@@ -4560,23 +4593,24 @@
   gap: 6px;
   padding: 6px 10px;
   border-radius: var(--rf-radius-md);
-  background: var(--rf-bg-overlay);
-  border: none;
-  color: var(--rf-text-secondary);
+  background: transparent;
+  border: 1px solid var(--rf-border);
+  color: var(--rf-accent-text);
   font-size: var(--rf-text-sm);
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: background var(--rf-duration-fast), color var(--rf-duration-fast);
+  transition: background var(--rf-duration-fast), border-color var(--rf-duration-fast);
   white-space: nowrap;
 }
 
 .rf-pl-filter-btn:hover {
-  background: var(--rf-bg-hover);
-  color: var(--rf-text);
+  background: var(--rf-accent-subtle);
+  border-color: var(--rf-accent-subtle);
 }
 
 .rf-pl-filter-btn--active {
   background: var(--rf-accent-subtle);
+  border-color: transparent;
   color: var(--rf-accent-text);
 }
 
