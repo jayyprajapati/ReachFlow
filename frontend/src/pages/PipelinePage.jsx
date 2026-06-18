@@ -4,6 +4,7 @@ import { useRouter } from '../router.jsx';
 import {
   Plus, Trash2, Copy, Loader, LayoutGrid, List, Check, X, Briefcase,
   ChevronRight, ChevronDown, Info, Users, Building2, ArrowUpRight, CheckCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -185,6 +186,7 @@ export default function PipelinePage() {
   const [viewMode, setViewMode] = useState('kanban');
   const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
   const [copiedId, setCopiedId] = useState('');
@@ -514,6 +516,15 @@ export default function PipelinePage() {
               ><List size={15} /></button>
             </span>
           </div>
+          {apps.length > 0 && (
+            <button
+              className={`rf-pl-filter-btn${hasFilters ? ' rf-pl-filter-btn--active' : ''}`}
+              onClick={() => setFilterSheetOpen(true)}
+              aria-label="Open filters"
+            >
+              <SlidersHorizontal size={14} /> Filters{hasFilters ? ` (${[statusFilter, companyFilter, jobIdSearch].filter(Boolean).length})` : ''}
+            </button>
+          )}
         </div>
         {apps.length > 0 && (
           <div className="rf-pl-sec2__right">
@@ -698,6 +709,61 @@ export default function PipelinePage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Mobile filter bottom sheet */}
+      {filterSheetOpen && (
+        <div className="rf-pl-filter-sheet-overlay" onClick={() => setFilterSheetOpen(false)}>
+          <div className="rf-pl-filter-sheet" onClick={e => e.stopPropagation()}>
+            <div className="rf-pl-filter-sheet__head">
+              <span className="rf-pl-filter-sheet__title">Filters</span>
+              <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setFilterSheetOpen(false)} aria-label="Close filters">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="rf-pl-filter-sheet__body">
+              <div>
+                <div className="rf-pl-filter-sheet__label">Search by job ID</div>
+                <input
+                  type="text"
+                  className="rf-input rf-input--sm"
+                  style={{ width: '100%' }}
+                  placeholder="Search job ID…"
+                  value={jobIdSearch}
+                  onChange={e => setJobIdSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <div className="rf-pl-filter-sheet__label">Status</div>
+                <select className="rf-select rf-input--sm" style={{ width: '100%' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                  <option value="">All statuses</option>
+                  {STATUS_COLS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="rf-pl-filter-sheet__label">Company</div>
+                <select className="rf-select rf-input--sm" style={{ width: '100%' }} value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}>
+                  <option value="">All companies</option>
+                  {uniqueCompanies.map(name => (
+                    <option key={name} value={name}>{name}{companyAppCounts[name] ? ` (${companyAppCounts[name]})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {hasFilters && (
+              <div className="rf-pl-filter-sheet__footer">
+                <button
+                  className="rf-btn rf-btn--ghost rf-btn--sm"
+                  style={{ width: '100%' }}
+                  onClick={() => { setStatusFilter(''); setCompanyFilter(''); setJobIdSearch(''); setFilterSheetOpen(false); }}
+                >
+                  <X size={13} /> Reset all filters
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

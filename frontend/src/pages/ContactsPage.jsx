@@ -1166,82 +1166,101 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="rf-page-header__actions rf-ct__header-side">
-          {/* Top row — global contact search */}
-          <div className="rf-ct__global-search-wrap" ref={globalSearchRef}>
-            <div className="rf-search rf-ct__global-search">
-              <Search size={14} className="rf-search__icon" />
-              <input
-                ref={globalSearchInputRef}
-                className="rf-search__input"
-                placeholder="Search all contacts…"
-                value={globalSearch}
-                onChange={e => { setGlobalSearch(e.target.value); setGlobalSearchOpen(true); }}
-                onFocus={() => { setGlobalSearchOpen(true); loadAllContacts(); }}
-                onKeyDown={e => { if (e.key === 'Escape') { setGlobalSearchOpen(false); setGlobalSearch(''); } }}
-              />
-              {globalSearch && (
-                <button className="rf-ct__search-clear" onClick={() => { setGlobalSearch(''); setGlobalSearchOpen(false); }} aria-label="Clear global search">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            {globalSearchOpen && (globalSearch.trim() || allContactsLoading) && (
-              <div className="rf-ct__global-dropdown">
-                {allContactsLoading ? (
-                  <div className="rf-ct__global-status"><Loader size={13} className="rf-spin" /> Loading contacts…</div>
-                ) : !globalSearch.trim() ? null : globalSearch.trim().length < 3 ? (
-                  <div className="rf-ct__global-status rf-ct__global-status--hint">
-                    {3 - globalSearch.trim().length} more character{3 - globalSearch.trim().length === 1 ? '' : 's'} to search
-                  </div>
-                ) : globalSearchResults.length === 0 ? (
-                  <div className="rf-ct__global-status">No results for "{debouncedQuery}"</div>
-                ) : (
-                  <>
-                    {globalSearchResults.map(({ contact, group }, i) => (
-                      <div
-                        key={`${group.id}-${contact.id || i}`}
-                        className="rf-ct__global-result"
-                        onClick={() => { openGroup(group.id); navigateTo(`/contacts/${group.id}`); setGlobalSearchOpen(false); }}
-                      >
-                        <span className="rf-ct__global-result-name" title={contact.name || ''}>
-                          {highlightWithQuery(contact.name || '—', debouncedQuery)}
-                          {contact.name && (
-                            <button
-                              className={`rf-copy-btn${copiedField === `gs-n-${i}` ? ' rf-copy-btn--copied' : ''}`}
-                              onClick={e => { e.stopPropagation(); copyVal(contact.name, `gs-n-${i}`); }}
-                              title="Copy name"
-                            >
-                              {copiedField === `gs-n-${i}` ? <Check size={11} /> : <Copy size={11} />}
-                            </button>
-                          )}
-                        </span>
-                        {contact.email && (
-                          <span className="rf-ct__global-result-email" title={contact.email}>
-                            <Mail size={11} />
-                            <span className="rf-ct__global-result-email-text">{highlightWithQuery(contact.email, debouncedQuery)}</span>
-                            <button
-                              className={`rf-copy-btn${copiedField === `gs-e-${i}` ? ' rf-copy-btn--copied' : ''}`}
-                              onClick={e => { e.stopPropagation(); copyVal(contact.email, `gs-e-${i}`); }}
-                              title="Copy email"
-                            >
-                              {copiedField === `gs-e-${i}` ? <Check size={11} /> : <Copy size={11} />}
-                            </button>
-                          </span>
-                        )}
-                        <span className="rf-ct__global-result-meta" title={group.companyName}>
-                          <Building2 size={11} />
-                          <span className="rf-truncate">{group.companyName}</span>
-                          {contact.linkedin && <ExternalLink size={11} />}
-                        </span>
-                      </div>
-                    ))}
-                  </>
+          {/* Top row — search + mobile stats */}
+          <div className="rf-ct__header-row1">
+            <div className="rf-ct__global-search-wrap" ref={globalSearchRef}>
+              <div className="rf-search rf-ct__global-search">
+                <Search size={14} className="rf-search__icon" />
+                <input
+                  ref={globalSearchInputRef}
+                  className="rf-search__input"
+                  placeholder="Search all contacts…"
+                  value={globalSearch}
+                  onChange={e => { setGlobalSearch(e.target.value); setGlobalSearchOpen(true); }}
+                  onFocus={() => { setGlobalSearchOpen(true); loadAllContacts(); }}
+                  onKeyDown={e => { if (e.key === 'Escape') { setGlobalSearchOpen(false); setGlobalSearch(''); } }}
+                />
+                {globalSearch && (
+                  <button className="rf-ct__search-clear" onClick={() => { setGlobalSearch(''); setGlobalSearchOpen(false); }} aria-label="Clear global search">
+                    <X size={13} />
+                  </button>
                 )}
               </div>
-            )}
+              {globalSearchOpen && (globalSearch.trim() || allContactsLoading) && (
+                <div className="rf-ct__global-dropdown">
+                  {allContactsLoading ? (
+                    <div className="rf-ct__global-status"><Loader size={13} className="rf-spin" /> Loading contacts…</div>
+                  ) : !globalSearch.trim() ? null : globalSearch.trim().length < 3 ? (
+                    <div className="rf-ct__global-status rf-ct__global-status--hint">
+                      {3 - globalSearch.trim().length} more character{3 - globalSearch.trim().length === 1 ? '' : 's'} to search
+                    </div>
+                  ) : globalSearchResults.length === 0 ? (
+                    <div className="rf-ct__global-status">No results for "{debouncedQuery}"</div>
+                  ) : (
+                    <>
+                      {globalSearchResults.map(({ contact, group }, i) => (
+                        <div
+                          key={`${group.id}-${contact.id || i}`}
+                          className="rf-ct__global-result"
+                          onClick={() => { openGroup(group.id); navigateTo(`/contacts/${group.id}`); setGlobalSearchOpen(false); }}
+                        >
+                          <span className="rf-ct__global-result-name" title={contact.name || ''}>
+                            {highlightWithQuery(contact.name || '—', debouncedQuery)}
+                            {contact.name && (
+                              <button
+                                className={`rf-copy-btn${copiedField === `gs-n-${i}` ? ' rf-copy-btn--copied' : ''}`}
+                                onClick={e => { e.stopPropagation(); copyVal(contact.name, `gs-n-${i}`); }}
+                                title="Copy name"
+                              >
+                                {copiedField === `gs-n-${i}` ? <Check size={11} /> : <Copy size={11} />}
+                              </button>
+                            )}
+                          </span>
+                          {contact.email && (
+                            <span className="rf-ct__global-result-email" title={contact.email}>
+                              <Mail size={11} />
+                              <span className="rf-ct__global-result-email-text">{highlightWithQuery(contact.email, debouncedQuery)}</span>
+                              <button
+                                className={`rf-copy-btn${copiedField === `gs-e-${i}` ? ' rf-copy-btn--copied' : ''}`}
+                                onClick={e => { e.stopPropagation(); copyVal(contact.email, `gs-e-${i}`); }}
+                                title="Copy email"
+                              >
+                                {copiedField === `gs-e-${i}` ? <Check size={11} /> : <Copy size={11} />}
+                              </button>
+                            </span>
+                          )}
+                          <span className="rf-ct__global-result-meta" title={group.companyName}>
+                            <Building2 size={11} />
+                            <span className="rf-truncate">{group.companyName}</span>
+                            {contact.linkedin && <ExternalLink size={11} />}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Mobile-only stacked stats beside search bar */}
+            <div className="rf-ct__header-stats-col">
+              <span><span className="rf-num">{groups.length}</span> companies</span>
+              <span>
+                <span className="rf-num">{totalContacts}</span> contacts
+                {totalInvalid > 0 && (
+                  <span
+                    className="rf-ct__count-info"
+                    style={{ marginLeft: 2 }}
+                    onMouseEnter={(e) => showHoverTip(e, `${totalInvalid} invalid contact${totalInvalid !== 1 ? 's' : ''} excluded from total`)}
+                    onMouseLeave={hideHoverTip}
+                  >
+                    <Info size={12} className="rf-ct__count-info-icon" />
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
 
-          {/* Bottom row — stats + action buttons */}
+          {/* Bottom row — stats (desktop) + action buttons */}
           <div className="rf-ct__header-meta">
             <span className="rf-ct__header-stats">
               <span className="rf-num rf-ct__header-stat-num">{groups.length}</span> companies

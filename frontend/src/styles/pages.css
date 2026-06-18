@@ -2867,6 +2867,14 @@
   gap: var(--rf-sp-3);
   flex-wrap: nowrap;
 }
+/* Wrapper for search + mobile-only stacked stats */
+.rf-ct__header-row1 {
+  width: 100%;
+}
+/* Mobile stacked stats (beside search on small screens) — hidden on desktop */
+.rf-ct__header-stats-col {
+  display: none;
+}
 .rf-ct__header-meta {
   display: flex;
   align-items: center;
@@ -3105,6 +3113,10 @@
   color: var(--rf-text-muted);
   font-size: var(--rf-text-sm);
   line-height: var(--rf-leading-normal);
+}
+
+.rf-settings-tabs-wrap {
+  /* Wrapper for the desktop/tablet tab nav — hidden on mobile in favour of bottom sheet */
 }
 
 .rf-settings-tabs {
@@ -4236,19 +4248,31 @@
   }
 
   .rf-pl-summary__stat {
-    flex-basis: 100px;
+    flex-basis: 80px;
     min-width: 0;
-    padding: var(--rf-sp-2) var(--rf-sp-3);
+    padding: var(--rf-sp-1) var(--rf-sp-2);
   }
 
   .rf-pl-summary__value {
-    font-size: var(--rf-text-xl);
+    font-size: var(--rf-text-md);
   }
 
-  .rf-pl-sec2__right .rf-search,
-  .rf-pl-sec2__right .rf-select {
-    width: 100% !important;
-    min-width: 0 !important;
+  .rf-pl-summary__label {
+    font-size: 10px;
+  }
+
+  .rf-pl-summary__sub {
+    font-size: 9px;
+  }
+
+  /* Filters are moved to a bottom sheet on mobile */
+  .rf-pl-sec2__right {
+    display: none;
+  }
+
+  /* Filter trigger button — only visible on mobile */
+  .rf-pl-filter-btn {
+    display: inline-flex !important;
   }
 
   .rf-pl-board {
@@ -4264,8 +4288,8 @@
   }
 
   .rf-pl-col__body {
-    max-height: 58vh;
-    min-height: 220px;
+    max-height: 72vh;
+    min-height: 320px;
   }
 
   .rf-pl-card__actions {
@@ -4445,6 +4469,321 @@
   }
 
   .rf-scope-banner { padding: var(--rf-sp-2) var(--rf-sp-4); }
+
+  /* Contacts: detail head — merge name row and count row into one line */
+  .rf-ct__detail-titlewrap {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+
+  .rf-ct__title-line {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .rf-ct__title-line .rf-ct__title {
+    max-width: min(160px, 40vw);
+  }
+
+  .rf-ct__detail-sub {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+
+  /* Contacts: header layout — search + stats on same row, actions below */
+  .rf-ct__header-row1 {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--rf-sp-2);
+    width: 100%;
+  }
+
+  .rf-ct__header-row1 .rf-ct__global-search-wrap {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+  }
+
+  .rf-ct__header-stats-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: var(--rf-text-sm);
+    color: var(--rf-text-muted);
+    padding-top: 6px;
+  }
+
+  .rf-ct__header-stats-col .rf-num {
+    color: var(--rf-text);
+    font-weight: 600;
+  }
+
+  /* Hide the inline stats from header-meta on mobile (shown in header-row1 instead) */
+  .rf-ct__header-meta .rf-ct__header-stats {
+    display: none;
+  }
+
+  .rf-ct__header-meta {
+    justify-content: flex-start;
+    gap: var(--rf-sp-2);
+  }
+
+  /* Compact the "New company" button on mobile */
+  .rf-ct__new-company {
+    padding: 5px var(--rf-sp-2) !important;
+    font-size: var(--rf-text-xs) !important;
+  }
+
+  .rf-ct__nc-company,
+  .rf-ct__shortcut {
+    display: none;
+  }
+
+  /* Settings: show bottom-sheet nav trigger, hide scroll tabs */
+  .rf-settings-tabs-wrap {
+    display: none;
+  }
+
+  .rf-settings-sheet-trigger {
+    display: flex !important;
+  }
+}
+
+/* ── Pipeline: mobile filter bottom sheet ──────────────── */
+.rf-pl-filter-btn {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--rf-radius-md);
+  background: var(--rf-bg-overlay);
+  border: none;
+  color: var(--rf-text-secondary);
+  font-size: var(--rf-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--rf-duration-fast), color var(--rf-duration-fast);
+  white-space: nowrap;
+}
+
+.rf-pl-filter-btn:hover {
+  background: var(--rf-bg-hover);
+  color: var(--rf-text);
+}
+
+.rf-pl-filter-btn--active {
+  background: var(--rf-accent-subtle);
+  color: var(--rf-accent-text);
+}
+
+.rf-pl-filter-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: var(--rf-z-overlay);
+  display: flex;
+  align-items: flex-end;
+}
+
+.rf-pl-filter-sheet {
+  width: 100%;
+  background: var(--rf-bg-canvas);
+  border-radius: var(--rf-radius-xl) var(--rf-radius-xl) 0 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--rf-shadow-xl);
+  animation: rf-slideUp var(--rf-duration-slow) var(--rf-ease-out);
+}
+
+.rf-pl-filter-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+
+.rf-pl-filter-sheet__title {
+  font-weight: 600;
+  font-size: var(--rf-text-base);
+  color: var(--rf-text);
+}
+
+.rf-pl-filter-sheet__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rf-sp-3);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.rf-pl-filter-sheet__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--rf-tracking-wider);
+  color: var(--rf-text-faint);
+  margin-bottom: 4px;
+}
+
+.rf-pl-filter-sheet__footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+
+/* ── Settings: mobile panel selector bottom sheet ──────── */
+.rf-settings-sheet-trigger {
+  display: none;
+  align-items: center;
+  gap: var(--rf-sp-3);
+  padding: 12px 16px;
+  background: var(--rf-bg-canvas);
+  border: 1px solid var(--rf-border-subtle);
+  border-radius: var(--rf-radius-md);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  margin-bottom: var(--rf-sp-3);
+  transition: border-color var(--rf-duration-fast);
+}
+
+.rf-settings-sheet-trigger:hover {
+  border-color: var(--rf-border);
+}
+
+.rf-settings-sheet-trigger__icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--rf-radius-sm);
+  background: var(--rf-bg-overlay);
+  color: var(--rf-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rf-settings-sheet-trigger__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.rf-settings-sheet-trigger__name {
+  font-weight: 600;
+  font-size: var(--rf-text-sm);
+  color: var(--rf-text);
+}
+
+.rf-settings-sheet-trigger__kicker {
+  font-size: 11px;
+  color: var(--rf-text-muted);
+}
+
+.rf-settings-panel-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: var(--rf-z-overlay);
+  display: flex;
+  align-items: flex-end;
+}
+
+.rf-settings-panel-sheet {
+  width: 100%;
+  background: var(--rf-bg-canvas);
+  border-radius: var(--rf-radius-xl) var(--rf-radius-xl) 0 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--rf-shadow-xl);
+  animation: rf-slideUp var(--rf-duration-slow) var(--rf-ease-out);
+}
+
+.rf-settings-panel-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--rf-border-subtle);
+  flex-shrink: 0;
+}
+
+.rf-settings-panel-sheet__title {
+  font-weight: 600;
+  font-size: var(--rf-text-base);
+  color: var(--rf-text);
+}
+
+.rf-settings-panel-sheet__list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+}
+
+.rf-settings-panel-sheet__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--rf-duration-fast);
+}
+
+.rf-settings-panel-sheet__item:hover {
+  background: var(--rf-bg-hover);
+}
+
+.rf-settings-panel-sheet__item--active {
+  background: var(--rf-accent-subtle);
+}
+
+.rf-settings-panel-sheet__item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--rf-radius-sm);
+  background: var(--rf-bg-overlay);
+  color: var(--rf-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rf-settings-panel-sheet__item--active .rf-settings-panel-sheet__item-icon {
+  background: var(--rf-accent-subtle);
+  color: var(--rf-accent-text);
+}
+
+.rf-settings-panel-sheet__item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rf-settings-panel-sheet__item-name {
+  font-weight: 600;
+  font-size: var(--rf-text-sm);
+  color: var(--rf-text);
+}
+
+.rf-settings-panel-sheet__item-kicker {
+  font-size: 11px;
+  color: var(--rf-text-muted);
 }
 
 /* ── Contacts: mobile company selector bar ─────────────── */

@@ -1186,6 +1186,7 @@
 
 @media (max-width: 680px) {
   .rf-landing__header {
+    grid-template-columns: 1fr auto;
     padding-inline: 16px;
     gap: 10px;
   }
@@ -1234,85 +1235,84 @@
     overflow-wrap: anywhere;
   }
 
-  /* Constellation -> mobile vertical flow */
+  /* Constellation -> clean 2-col list on mobile, no cards */
   .rf-constellation { display: none; }
   .rf-constellation__mobile {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    position: relative;
-    padding-left: 22px;
-    width: 100%;
-    max-width: 360px;
-    margin-inline: auto;
-  }
-  .rf-constellation__mobile::before {
-    content: "";
-    position: absolute;
-    left: 8px;
-    top: 18px;
-    bottom: 18px;
-    width: 1px;
-    background: linear-gradient(to bottom, transparent, var(--L-line) 14%, var(--L-line) 86%, transparent);
-  }
-  .rf-mobile-node {
-    position: relative;
     display: grid;
-    grid-template-columns: 30px 1fr;
-    column-gap: 12px;
-    padding: 10px 0;
+    grid-template-columns: 1fr 1fr;
+    row-gap: 0;
+    column-gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
   }
-  .rf-mobile-node::before {
-    content: "";
-    position: absolute;
-    left: -14px;
-    top: 22px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--L-accent);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--L-accent) 14%, transparent),
-                0 0 12px var(--L-halo);
+  .rf-constellation__mobile::before { display: none; }
+  .rf-mobile-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--L-rule);
   }
-  .rf-mobile-node--primary::before { width: 12px; height: 12px; top: 21px; left: -15px; }
+  .rf-mobile-node:nth-last-child(-n+2) { border-bottom: none; }
+  .rf-mobile-node::before { display: none; }
+  .rf-mobile-node--primary { display: none; }
+  .rf-mobile-node--primary::before { display: none; }
   .rf-mobile-node__icon {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
+    width: 18px;
+    height: 18px;
     display: grid;
     place-items: center;
-    color: var(--L-accent);
-    background: color-mix(in oklab, var(--L-accent) 10%, transparent);
-    border: 1px solid var(--L-line-faint);
+    color: var(--L-fg-faint);
+    flex-shrink: 0;
   }
   .rf-mobile-node__title {
     font-family: var(--rf-font-display);
-    font-weight: 700;
-    font-size: 0.96rem;
-    color: var(--L-fg);
-    line-height: 1.15;
-  }
-  .rf-mobile-node__desc {
-    font-size: 0.76rem;
+    font-weight: 500;
+    font-size: 0.82rem;
     color: var(--L-fg-soft);
-    line-height: 1.4;
-    margin-top: 2px;
+    line-height: 1.2;
   }
+  .rf-mobile-node__desc { display: none; }
+
+  .rf-hero__meta { display: none; }
+  .rf-hero__subtitle { font-size: 0.9rem; }
+  .rf-hero__canvas {
+    margin-top: 8px;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  /* Workflow — tighter on mobile */
+  .rf-step__icon { width: 48px; height: 48px; }
+  .rf-step { gap: 8px; }
+  .rf-step__title { font-size: 0.95rem; margin-top: 0; }
+  .rf-step__desc { font-size: 0.82rem; max-width: 100%; }
+  .rf-workflow { padding: 24px 18px; }
+
+  /* Section heads — less margin, smaller sub */
+  .rf-section__head { margin-bottom: 22px; }
+  .rf-section__sub { font-size: 0.86rem; }
 
   .rf-modules { grid-template-columns: 1fr; }
-  .rf-section { padding-block: 48px; }
-  .rf-trust { padding-block: 48px; }
-  .rf-final { padding-block: 56px; }
+  .rf-section { padding-block: 40px; }
 
+  /* Trust — tighter pillars */
+  .rf-trust { padding-block: 40px; }
   .rf-trust__row { grid-template-columns: 1fr; }
+  .rf-trust__pillar { padding: 18px 16px; gap: 8px; }
+  .rf-trust__pillar h4 { font-size: 0.92rem; }
+  .rf-trust__pillar p { font-size: 0.82rem; }
   .rf-trust__pillar + .rf-trust__pillar::before {
-    left: 14%;
-    right: 14%;
+    left: 0;
+    right: 0;
     top: 0;
     bottom: auto;
     width: auto;
     height: 1px;
   }
+
+  .rf-final { padding-block: 48px; }
 
   .rf-landing__footer {
     flex-direction: column;

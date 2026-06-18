@@ -843,6 +843,21 @@
   line-height: 1.45;
 }
 
+/* Hide hover tips and CSS tooltips on touch devices — they get stuck on tap */
+@media (hover: none) {
+  .rf-hover-tip { display: none !important; }
+  .rf-tooltip-wrap::after { display: none !important; }
+}
+
+/* On small screens, clamp hover tip width to prevent overflow */
+@media (max-width: 640px) {
+  .rf-hover-tip {
+    max-width: min(80vw, 280px);
+    white-space: normal;
+    line-height: 1.4;
+  }
+}
+
 /* Fixed-position copy toast — escapes every overflow:hidden ancestor */
 .rf-copy-toast {
   position: fixed;

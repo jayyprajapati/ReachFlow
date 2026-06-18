@@ -5,6 +5,7 @@ import { makeResumeLabApi } from '../services/resumeLabApi.js';
 import {
   CheckCircle2, XCircle, Save, AlertCircle, CheckCheck, Loader,
   Wifi, WifiOff, Eye, EyeOff, Mail, Brain, LogOut, Trash2, ShieldAlert, Sliders,
+  ChevronDown, X,
 } from 'lucide-react';
 
 const PROVIDER_LABELS = {
@@ -617,6 +618,7 @@ export default function SettingsPage() {
   const llmConfigured = !!aiSettings?.configured;
 
   const [activePanel, setActivePanel] = useState(SETTINGS_PANELS[0].id);
+  const [panelSheetOpen, setPanelSheetOpen] = useState(false);
   const panels = useMemo(() => (
     SETTINGS_PANELS.map(panel => ({
       ...panel,
@@ -636,31 +638,87 @@ export default function SettingsPage() {
             <p>Connection, AI, writing, and account controls without the clutter.</p>
           </div>
 
-          <nav className="rf-settings-tabs" role="tablist" aria-label="Settings areas">
-            {panels.map(panel => {
-              const PanelIcon = panel.Icon;
-              const isActive = activePanel === panel.id;
-              return (
-                <button
-                  key={panel.id}
-                  id={`settings-tab-${panel.id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls={`settings-panel-${panel.id}`}
-                  className={`rf-settings-tab${isActive ? ' rf-settings-tab--active' : ''}`}
-                  onClick={() => setActivePanel(panel.id)}
-                >
-                  <span className="rf-settings-tab__icon"><PanelIcon size={16} /></span>
-                  <span className="rf-settings-tab__label">
-                    <strong>{panel.label}</strong>
-                    <span>{panel.kicker}</span>
-                  </span>
-                  <SettingsStatus label={panel.status.label} tone={panel.status.tone} />
-                </button>
-              );
-            })}
-          </nav>
+          {/* Desktop/tablet: horizontal scroll tabs */}
+          <div className="rf-settings-tabs-wrap">
+            <nav className="rf-settings-tabs" role="tablist" aria-label="Settings areas">
+              {panels.map(panel => {
+                const PanelIcon = panel.Icon;
+                const isActive = activePanel === panel.id;
+                return (
+                  <button
+                    key={panel.id}
+                    id={`settings-tab-${panel.id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls={`settings-panel-${panel.id}`}
+                    className={`rf-settings-tab${isActive ? ' rf-settings-tab--active' : ''}`}
+                    onClick={() => setActivePanel(panel.id)}
+                  >
+                    <span className="rf-settings-tab__icon"><PanelIcon size={16} /></span>
+                    <span className="rf-settings-tab__label">
+                      <strong>{panel.label}</strong>
+                      <span>{panel.kicker}</span>
+                    </span>
+                    <SettingsStatus label={panel.status.label} tone={panel.status.tone} />
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Mobile: bottom-sheet trigger */}
+          <button
+            className="rf-settings-sheet-trigger"
+            onClick={() => setPanelSheetOpen(true)}
+            aria-haspopup="dialog"
+          >
+            <span className="rf-settings-sheet-trigger__icon">
+              <ActiveIcon size={16} />
+            </span>
+            <span className="rf-settings-sheet-trigger__label">
+              <span className="rf-settings-sheet-trigger__name">{activeMeta.label}</span>
+              <span className="rf-settings-sheet-trigger__kicker">{activeMeta.kicker}</span>
+            </span>
+            <SettingsStatus label={activeMeta.status.label} tone={activeMeta.status.tone} />
+            <ChevronDown size={16} style={{ color: 'var(--rf-text-muted)', flexShrink: 0 }} />
+          </button>
+
+          {/* Mobile panel selector bottom sheet */}
+          {panelSheetOpen && (
+            <div className="rf-settings-panel-sheet-overlay" onClick={() => setPanelSheetOpen(false)}>
+              <div className="rf-settings-panel-sheet" onClick={e => e.stopPropagation()}>
+                <div className="rf-settings-panel-sheet__head">
+                  <span className="rf-settings-panel-sheet__title">Settings</span>
+                  <button className="rf-btn rf-btn--ghost rf-btn--icon rf-btn--sm" onClick={() => setPanelSheetOpen(false)} aria-label="Close">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="rf-settings-panel-sheet__list">
+                  {panels.map(panel => {
+                    const PanelIcon = panel.Icon;
+                    const isActive = activePanel === panel.id;
+                    return (
+                      <button
+                        key={panel.id}
+                        className={`rf-settings-panel-sheet__item${isActive ? ' rf-settings-panel-sheet__item--active' : ''}`}
+                        onClick={() => { setActivePanel(panel.id); setPanelSheetOpen(false); }}
+                      >
+                        <span className="rf-settings-panel-sheet__item-icon">
+                          <PanelIcon size={18} />
+                        </span>
+                        <span className="rf-settings-panel-sheet__item-body">
+                          <span className="rf-settings-panel-sheet__item-name">{panel.label}</span>
+                          <span className="rf-settings-panel-sheet__item-kicker">{panel.kicker} · {panel.description}</span>
+                        </span>
+                        <SettingsStatus label={panel.status.label} tone={panel.status.tone} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="rf-settings-rail__footer">
             <div>
